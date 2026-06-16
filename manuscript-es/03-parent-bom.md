@@ -1,33 +1,37 @@
-Open any reactive Spring Boot service and the first thing you meet, before a single
-line of business code, is the `pom.xml` — and the first place a fleet goes wrong.
-Two services pull `spring-boot-starter-webflux` at slightly different versions; a
-third drags in a Reactor patch that disagrees with both; a fourth pins Netty by
-hand to silence a CVE scanner. Nothing here is dramatic on its own. Together they
-are the dependency drift that Chapter 1 called part of the enterprise tax, and they
-cost real hours in convergence errors and "works on my machine" mysteries.
+Abre cualquier servicio reactivo de Spring Boot y lo primero con lo que te topas,
+antes de una sola línea de código de negocio, es el `pom.xml` — y es el primer
+lugar donde una flota de servicios se tuerce. Dos servicios traen
+`spring-boot-starter-webflux` en versiones ligeramente distintas; un tercero
+arrastra un parche de Reactor que no encaja con ninguno de los dos; un cuarto fija
+Netty a mano para acallar a un escáner de CVE. Nada de esto es dramático por sí
+solo. Juntos forman la deriva de dependencias que el Capítulo 1 llamó parte del
+impuesto empresarial, y cuestan horas reales en errores de convergencia y misterios
+del estilo "en mi máquina funciona".
 
-Firefly's answer is the most boring kind of good engineering: pin everything,
-once, in a place every service inherits. This chapter is short because the payoff
-is short — a parent POM, a BOM, one property — and after this page your modules
-declare framework dependencies with *no version at all*. You already saw the shape
-in the prelude ("inherit a parent, add a starter, omit versions"). Here you see the
-real reactor wiring that makes it true, and you learn when to inherit and when to
-import.
+La respuesta de Firefly es la clase más aburrida de buena ingeniería: fíjalo todo,
+una sola vez, en un lugar que cada servicio hereda. Este capítulo es corto porque la
+recompensa es corta — un POM padre, un BOM, una propiedad — y, tras esta página, tus
+módulos declaran las dependencias del framework *sin versión alguna*. Ya viste la
+forma en el preludio ("hereda un padre, añade un starter, omite las versiones").
+Aquí ves el cableado real del reactor que lo hace posible, y aprendes cuándo heredar
+y cuándo importar.
 
-We work entirely in the Lumen Lending build files. By the end you will be able to
-read every `pom.xml` in the reactor and know exactly where each version comes from.
+Trabajamos íntegramente en los archivos de compilación de Lumen Lending. Al final
+serás capaz de leer cada `pom.xml` del reactor y saber con exactitud de dónde sale
+cada versión.
 
-## The two coordination files
+## Los dos archivos de coordinación
 
-A Maven multi-module build has a **reactor root** — the top `pom.xml` that lists
-the modules and sets shared policy — and one `pom.xml` per module. Version coherence
-lives almost entirely in the root. Lumen Lending's root does three things that
-matter, and we will take them one at a time: it *inherits* a Firefly parent, it
-*imports* a Firefly BOM, and it sets one version property that ties them together.
+Una compilación multimódulo de Maven tiene una **raíz del reactor** — el `pom.xml`
+superior que enumera los módulos y fija la política compartida — y un `pom.xml` por
+módulo. La coherencia de versiones vive casi por completo en la raíz. La raíz de
+Lumen Lending hace tres cosas que importan, y las abordaremos una a una: *hereda* un
+padre de Firefly, *importa* un BOM de Firefly y fija una propiedad de versión que los
+ata entre sí.
 
-Here is the parent declaration at the top of the reactor root.
+Aquí tienes la declaración del padre en la parte superior de la raíz del reactor.
 
-::: listing pom.xml | Listing 3.1 — the reactor inherits fireflyframework-parent
+::: listing pom.xml | Listado 3.1 — el reactor hereda fireflyframework-parent
     <parent>
         <groupId>org.fireflyframework</groupId>
         <artifactId>fireflyframework-parent</artifactId>
@@ -36,12 +40,12 @@ Here is the parent declaration at the top of the reactor root.
     </parent>
 :::
 
-That single block is the foundation. By inheriting `fireflyframework-parent`, the
-reactor takes on a large amount of policy it never has to spell out itself. The
-comment in the file names what the parent brings, and it is worth reading as the
-chapter's thesis.
+Ese único bloque es el cimiento. Al heredar `fireflyframework-parent`, el reactor
+asume una gran cantidad de política que nunca tiene que detallar por sí mismo. El
+comentario del archivo nombra lo que el padre aporta, y merece leerse como la tesis
+del capítulo.
 
-::: listing pom.xml | Listing 3.2 — what the parent brings (reactor root comment)
+::: listing pom.xml | Listado 3.2 — lo que aporta el padre (comentario de la raíz del reactor)
     <!--
       Lumen Lending — trimmed reactor mirroring the firefly-oss lending vertical.
 
@@ -52,30 +56,32 @@ chapter's thesis.
     -->
 :::
 
-Read that list again, because it is the whole value proposition in five clauses.
-The parent supplies the Spring Boot and Spring Cloud BOMs (so Firefly stays aligned
-with the Spring releases it builds on), the build-plugin configuration (compiler,
-enforcer, Surefire), the **Java 25 baseline**, and a `java21` profile for shops not
-yet on 25. You inherit all of it by writing the five lines of Listing 3.1.
+Lee esa lista otra vez, porque es toda la propuesta de valor en cinco cláusulas. El
+padre suministra los BOMs de Spring Boot y Spring Cloud (para que Firefly se mantenga
+alineado con las versiones de Spring sobre las que se construye), la configuración de
+los plugins de compilación (compiler, enforcer, Surefire), la **base de Java 25** y un
+perfil `java21` para los equipos que aún no están en la 25. Heredas todo ello
+escribiendo las cinco líneas del Listado 3.1.
 
-!!! spring "Spring parity"
-    In a typical Spring Boot project you would write
-    `<parent>spring-boot-starter-parent</parent>` to inherit Spring's plugin
-    management and dependency versions. `fireflyframework-parent` plays the same
-    role, one level up: it *imports* the Spring Boot BOM internally rather than
-    extending `spring-boot-starter-parent`, which is precisely why it can coexist
-    with a corporate parent. You get Spring Boot's curated versions plus Firefly's,
-    without giving up your organization's own parent POM.
+!!! spring "Equivalente en Spring"
+    En un proyecto típico de Spring Boot escribirías
+    `<parent>spring-boot-starter-parent</parent>` para heredar la gestión de plugins
+    y las versiones de dependencias de Spring. `fireflyframework-parent` cumple el
+    mismo papel, un nivel por encima: *importa* el BOM de Spring Boot internamente en
+    lugar de extender `spring-boot-starter-parent`, que es precisamente la razón por
+    la que puede convivir con un padre corporativo. Obtienes las versiones curadas de
+    Spring Boot más las de Firefly, sin renunciar al propio POM padre de tu
+    organización.
 
-## Importing the BOM
+## Importar el BOM
 
-Inheriting the parent pins Spring and the build plugins. It does **not**, by itself,
-pin the ~70 `org.fireflyframework` modules — the starters, the web and R2DBC
-helpers, the validators, the CQRS and event modules you will meet later. Those
-versions come from a separate **Bill of Materials**, imported in the reactor root's
-`dependencyManagement`.
+Heredar el padre fija Spring y los plugins de compilación. **No** fija, por sí solo,
+los ~70 módulos `org.fireflyframework` — los starters, los ayudantes de web y R2DBC,
+los validadores, los módulos de CQRS y eventos que conocerás más adelante. Esas
+versiones vienen de un **Bill of Materials** aparte, importado en el
+`dependencyManagement` de la raíz del reactor.
 
-::: listing pom.xml | Listing 3.3 — importing fireflyframework-bom pins every framework module
+::: listing pom.xml | Listado 3.3 — importar fireflyframework-bom fija cada módulo del framework
     <properties>
         <firefly.version>26.06.01</firefly.version>
     </properties>
@@ -94,88 +100,93 @@ versions come from a separate **Bill of Materials**, imported in the reactor roo
     </dependencyManagement>
 :::
 
-Two details carry the weight. The `<type>pom</type>` with `<scope>import</scope>`
-is Maven's idiom for *pulling another POM's `dependencyManagement` into your own* —
-the BOM is a long table of `groupId:artifactId → version` entries, and importing it
-merges that table into yours without adding a single dependency to the build. And
-the version is `${firefly.version}`, a property declared one block up, so the parent
-version and the BOM version are stated in exactly one place each and read at a glance.
+Dos detalles cargan con el peso. El `<type>pom</type>` con `<scope>import</scope>` es
+el idioma de Maven para *traer el `dependencyManagement` de otro POM al tuyo* — el BOM
+es una larga tabla de entradas `groupId:artifactId → version`, e importarlo fusiona
+esa tabla en la tuya sin añadir una sola dependencia a la compilación. Y la versión es
+`${firefly.version}`, una propiedad declarada un bloque más arriba, de modo que la
+versión del padre y la versión del BOM se enuncian en exactamente un único lugar cada
+una y se leen de un vistazo.
 
-!!! note "Key term — BOM (Bill of Materials)"
-    A **BOM** is a POM whose only job is its `dependencyManagement` section: a
-    curated list pinning the versions of a family of artifacts. You *import* it
-    (rather than depend on it), and from then on you reference those artifacts with
-    no `<version>` of your own — the BOM supplies it. `spring-boot-dependencies` is
-    the BOM you already rely on; `fireflyframework-bom` is the same pattern for the
-    Firefly modules.
+!!! note "Término clave — BOM (Bill of Materials)"
+    Un **BOM** es un POM cuyo único cometido es su sección `dependencyManagement`: una
+    lista curada que fija las versiones de una familia de artefactos. Lo *importas* (en
+    lugar de depender de él) y, a partir de ahí, referencias esos artefactos sin
+    `<version>` propia — el BOM la suministra. `spring-boot-dependencies` es el BOM en
+    el que ya confías; `fireflyframework-bom` es el mismo patrón para los módulos de
+    Firefly.
 
-## Inherit the parent, or import the BOM?
+## ¿Heredar el padre o importar el BOM?
 
-You have now seen both mechanisms in one file, which raises the obvious question:
-if both pin versions, when do you use which? They are not redundant — they solve
-different halves of the problem, and most services want both, as Lumen does.
+Ya has visto ambos mecanismos en un mismo archivo, lo que plantea la pregunta obvia:
+si los dos fijan versiones, ¿cuándo usar cada uno? No son redundantes — resuelven
+mitades distintas del problema, y la mayoría de los servicios quieren ambos, como hace
+Lumen.
 
-- **Inherit `fireflyframework-parent`** when you want the *build policy* too: the
-  Spring/Cloud BOMs, the compiler and enforcer and Surefire configuration, the Java
-  baseline and the `java21` profile. Inheritance is all-or-nothing and single —
-  a POM has exactly one parent — so you inherit the parent when Firefly is allowed
-  to own your build conventions.
-- **Import `fireflyframework-bom`** when you want *only version coherence* for the
-  framework modules, with no opinion about plugins or Java level. Import is additive
-  and unlimited — you can import several BOMs side by side — so a service that
-  already inherits a corporate parent it cannot replace simply imports the Firefly
-  BOM and keeps its own build policy.
+- **Hereda `fireflyframework-parent`** cuando quieres también la *política de
+  compilación*: los BOMs de Spring/Cloud, la configuración de compiler, enforcer y
+  Surefire, la base de Java y el perfil `java21`. La herencia es todo-o-nada y única
+  — un POM tiene exactamente un padre — así que heredas el padre cuando a Firefly se
+  le permite ser dueño de tus convenciones de compilación.
+- **Importa `fireflyframework-bom`** cuando quieres *solo coherencia de versiones*
+  para los módulos del framework, sin opinión alguna sobre los plugins o el nivel de
+  Java. La importación es aditiva e ilimitada — puedes importar varios BOMs en
+  paralelo — de modo que un servicio que ya hereda un padre corporativo que no puede
+  reemplazar simplemente importa el BOM de Firefly y conserva su propia política de
+  compilación.
 
-In other words: inheritance gives you policy *and* versions but costs you your one
-parent slot; import gives you versions only but composes freely. Lumen Lending takes
-the parent because it is a greenfield reactor and wants Firefly's build conventions,
-and *also* imports the BOM because the parent alone does not pin the framework
-modules. If your organization mandates its own parent, drop Listing 3.1, keep
-Listing 3.3, and you still get version-coherent Firefly dependencies — you just wire
-the Java level and plugins yourself.
+Dicho de otro modo: la herencia te da política *y* versiones pero te cuesta tu único
+hueco de padre; la importación te da solo versiones pero compone con libertad. Lumen
+Lending toma el padre porque es un reactor desde cero y quiere las convenciones de
+compilación de Firefly, y *además* importa el BOM porque el padre por sí solo no fija
+los módulos del framework. Si tu organización impone su propio padre, elimina el
+Listado 3.1, conserva el Listado 3.3 y aun así obtienes dependencias de Firefly
+coherentes en versión — solo que cableas el nivel de Java y los plugins tú mismo.
 
-!!! spring "Spring parity"
-    This is the same choice Spring Boot offers. Inheriting
-    `spring-boot-starter-parent` gives you plugin management plus the dependency
-    BOM; importing `spring-boot-dependencies` as a BOM gives you only the versions,
-    leaving you free to keep another parent. Firefly mirrors the pattern exactly, so
-    the decision you already know how to make for Spring Boot is the decision you
-    make for Firefly.
+!!! spring "Equivalente en Spring"
+    Esta es la misma elección que ofrece Spring Boot. Heredar
+    `spring-boot-starter-parent` te da la gestión de plugins más el BOM de
+    dependencias; importar `spring-boot-dependencies` como BOM te da solo las
+    versiones, dejándote libre para conservar otro padre. Firefly refleja el patrón
+    con exactitud, así que la decisión que ya sabes tomar para Spring Boot es la
+    decisión que tomas para Firefly.
 
-## CalVer: reading 26.06.01
+## CalVer: leer 26.06.01
 
-The version you keep seeing — `26.06.01` — is not SemVer. Firefly uses **CalVer**,
-calendar versioning, in a `YY.MM.PATCH` scheme: the `26.06` says this release line
-was cut in June 2026, and `01` is the patch within that line. A later patch in the
-same line would be `26.06.02`; the next monthly line would be `26.07.0x`.
+La versión que sigues viendo — `26.06.01` — no es SemVer. Firefly usa **CalVer**,
+versionado de calendario, en un esquema `YY.MM.PATCH`: el `26.06` dice que esta línea
+de versión se cortó en junio de 2026, y `01` es el parche dentro de esa línea. Un
+parche posterior en la misma línea sería `26.06.02`; la siguiente línea mensual sería
+`26.07.0x`.
 
-The point of CalVer here is coordination, not novelty. Every Firefly artifact in a
-given line shares the same `YY.MM.PATCH`, so "are these modules from the same
-release?" is answered by eye, and upgrading the whole stack is a one-token edit. In
-Lumen that token is the `firefly.version` property from Listing 3.3 — bump it once,
-and the BOM (and through it every framework module) moves together. Because the
-parent and the BOM are the same line, you keep them in lockstep: when you raise
-`firefly.version`, raise the `<parent>` version to match.
+El sentido de CalVer aquí es la coordinación, no la novedad. Cada artefacto de Firefly
+de una línea dada comparte el mismo `YY.MM.PATCH`, de modo que "¿son estos módulos de
+la misma versión?" se responde a ojo, y actualizar la pila entera es una edición de un
+solo token. En Lumen ese token es la propiedad `firefly.version` del Listado 3.3 —
+súbela una vez y el BOM (y a través de él cada módulo del framework) se mueve en
+bloque. Como el padre y el BOM son de la misma línea, los mantienes acompasados: cuando
+elevas `firefly.version`, eleva la versión del `<parent>` para que coincida.
 
-!!! note "Key term — CalVer (calendar versioning)"
-    **CalVer** encodes *when* a release was made rather than the SemVer promise of
-    *what changed*. Firefly's `YY.MM.PATCH` (here `26.06.01`) means: year 26, month
-    06, patch 01. It makes a fleet legible — a service running `26.06.x` is
-    immediately known to be on the June 2026 line — and it makes "upgrade
-    everything" a single coherent step instead of a per-module negotiation.
+!!! note "Término clave — CalVer (versionado de calendario)"
+    **CalVer** codifica *cuándo* se hizo una versión en lugar de la promesa de SemVer
+    sobre *qué cambió*. El `YY.MM.PATCH` de Firefly (aquí `26.06.01`) significa: año
+    26, mes 06, parche 01. Hace legible una flota — se sabe de inmediato que un
+    servicio que corre `26.06.x` está en la línea de junio de 2026 — y convierte
+    "actualizar todo" en un único paso coherente en lugar de una negociación módulo a
+    módulo.
 
-## The Java 25 baseline and the java21 profile
+## La base de Java 25 y el perfil java21
 
-The parent sets the language baseline at **Java 25** (Listing 3.2). That is the
-default the reactor compiles against, and it is why the listings throughout this
-book use modern Java — records, sealed types, pattern-matching `switch` — without
-apology. The reactor you just built ran on it.
+El padre fija la base del lenguaje en **Java 25** (Listado 3.2). Esa es la base contra
+la que compila el reactor por defecto, y es la razón por la que los listados de todo
+este libro usan Java moderno — records, tipos sellados, `switch` con coincidencia de
+patrones — sin disculparse. El reactor que acabas de construir corrió sobre ella.
 
-Not every shop is on Java 25 the week it ships, so the parent also defines a
-`java21` profile. Activating it with `-Pjava21` retargets the build to Java 21 — the
-previous long-term-support release — so a team still on 21 can consume the same
-Firefly line without forking anything. The profile is the escape hatch; Java 25 is
-the road.
+No todos los equipos están en Java 25 la semana en que se publica, así que el padre
+define también un perfil `java21`. Activarlo con `-Pjava21` reorienta la compilación a
+Java 21 — la anterior versión de soporte a largo plazo — de modo que un equipo aún en
+21 puede consumir la misma línea de Firefly sin bifurcar nada. El perfil es la salida
+de emergencia; Java 25 es el camino.
 
 ```text
 # default: build against the Java 25 baseline
@@ -185,20 +196,21 @@ mvn verify
 mvn -Pjava21 verify
 ```
 
-!!! warning "The profile changes the target, not the JDK you run"
-    `-Pjava21` lowers the *bytecode target and source level* the build compiles to.
-    It does not downgrade your installed JDK, and it cannot conjure Java 25 features
-    on a Java 21 runtime — code that uses a 25-only API still will not run on a 21
-    JVM. Treat the profile as "produce 21-compatible artifacts," not as a way to mix
-    language levels within one build.
+!!! warning "El perfil cambia el objetivo, no el JDK con el que ejecutas"
+    `-Pjava21` baja el *objetivo de bytecode y el nivel de fuente* a los que compila
+    la build. No degrada tu JDK instalado, y no puede conjurar funciones de Java 25 en
+    un runtime de Java 21 — el código que usa una API exclusiva de la 25 sigue sin
+    poder ejecutarse en una JVM 21. Trata el perfil como "produce artefactos
+    compatibles con la 21", no como una forma de mezclar niveles de lenguaje dentro de
+    una sola build.
 
-## The payoff: version-less framework dependencies
+## La recompensa: dependencias del framework sin versión
 
-Everything so far has been setup in the root. Now open a module and see what it
-buys. `core-lending-loan-origination` is the system-of-record service you will build
-out in later chapters; here we only read its dependency block.
+Todo lo anterior ha sido configuración en la raíz. Ahora abre un módulo y mira lo que
+te compra. `core-lending-loan-origination` es el servicio sistema-de-registro que irás
+construyendo en capítulos posteriores; aquí solo leemos su bloque de dependencias.
 
-::: listing core-lending-loan-origination/pom.xml | Listing 3.4 — framework dependencies, declared with no version
+::: listing core-lending-loan-origination/pom.xml | Listado 3.4 — dependencias del framework, declaradas sin versión
     <dependencies>
         <!-- Core/infrastructure-layer microservice starter (WebFlux, EDA, CQRS, resilience). -->
         <dependency>
@@ -217,40 +229,40 @@ out in later chapters; here we only read its dependency block.
         </dependency>
 :::
 
-Look at what is *not* there: no `<version>` on any of them. `starter-core`,
-`fireflyframework-r2dbc`, `fireflyframework-web` — each names a `groupId` and an
-`artifactId` and stops. The version is supplied by the BOM you imported in the root
-(Listing 3.3), resolved through the module's parent chain. This is the entire point
-of the chapter made concrete: the module declares *what* it needs, never *which
-version*, and a single property in one file decides for all of them.
+Fíjate en lo que *no* está ahí: ningún `<version>` en ninguna de ellas. `starter-core`,
+`fireflyframework-r2dbc`, `fireflyframework-web` — cada una nombra un `groupId` y un
+`artifactId` y se detiene. La versión la suministra el BOM que importaste en la raíz
+(Listado 3.3), resuelta a través de la cadena de padres del módulo. Esto es todo el
+propósito del capítulo hecho concreto: el módulo declara *qué* necesita, nunca *qué
+versión*, y una única propiedad en un solo archivo decide por todas ellas.
 
-That is also why the module's own `pom.xml` carries no `<version>` and no
-`<groupId>` of its own at the top — it inherits both from the reactor root, so it
-only states its `<artifactId>`. The further down the tree you go, the less version
-information you write, until at the leaf you write almost none.
+Por eso también el propio `pom.xml` del módulo no lleva `<version>` ni `<groupId>`
+propios en la parte superior — hereda ambos de la raíz del reactor, así que solo enuncia
+su `<artifactId>`. Cuanto más bajas por el árbol, menos información de versión escribes,
+hasta que en la hoja no escribes casi ninguna.
 
-!!! spring "Spring parity"
-    This is exactly how a `spring-boot-starter-*` dependency looks once you inherit
-    or import Spring's BOM — `groupId` and `artifactId`, no version. Firefly extends
-    the same convenience to its ~70 modules. If omitting versions on Spring starters
-    already feels natural, Firefly asks nothing new of you; it just widens the set of
-    artifacts the trick applies to.
+!!! spring "Equivalente en Spring"
+    Así es exactamente como se ve una dependencia `spring-boot-starter-*` una vez que
+    heredas o importas el BOM de Spring — `groupId` y `artifactId`, sin versión.
+    Firefly extiende la misma comodidad a sus ~70 módulos. Si omitir versiones en los
+    starters de Spring ya te resulta natural, Firefly no te pide nada nuevo; solo
+    amplía el conjunto de artefactos a los que se aplica el truco.
 
-## Run it
+## Ejecútalo
 
-You do not need to write code to prove the wiring works — building the reactor *is*
-the proof. From the reactor root, run a full verify:
+No necesitas escribir código para probar que el cableado funciona — compilar el
+reactor *es* la prueba. Desde la raíz del reactor, lanza un verify completo:
 
 ```text
 mvn -q verify
 ```
 
-Maven reads the root `pom.xml`, resolves `fireflyframework-parent` and the imported
-`fireflyframework-bom`, and uses them to give a concrete version to every
-version-less dependency in Listing 3.4. If a single artifact could not be pinned —
-a typo'd coordinate, a BOM that did not import — the build would fail at resolution,
-before any test ran. It does not. The core module compiles and runs its tests, and
-the reactor finishes green.
+Maven lee el `pom.xml` de la raíz, resuelve `fireflyframework-parent` y el
+`fireflyframework-bom` importado, y los usa para dar una versión concreta a cada
+dependencia sin versión del Listado 3.4. Si un solo artefacto no pudiera fijarse — una
+coordenada mal tecleada, un BOM que no se importó — la build fallaría en la resolución,
+antes de que se ejecutara ningún test. No falla. El módulo core compila y corre sus
+tests, y el reactor termina en verde.
 
 ```text
 [INFO] Building Lumen Lending - Core (Loan Origination) 0.1.0-SNAPSHOT    [2/4]
@@ -259,53 +271,56 @@ the reactor finishes green.
 [INFO] BUILD SUCCESS
 ```
 
-!!! tip "Checkpoint"
-    Run `mvn -q verify` from `samples/lumen-lending` and confirm you see
-    `BUILD SUCCESS`. That single line is the version-coherence guarantee paying off:
-    a parent, a BOM, one `firefly.version`, and every framework dependency across
-    three modules resolved to one conflict-free set — with not one `<version>` on a
-    framework artifact.
+!!! tip "Punto de control"
+    Ejecuta `mvn -q verify` desde `samples/lumen-lending` y confirma que ves
+    `BUILD SUCCESS`. Esa única línea es la garantía de coherencia de versiones dando
+    sus frutos: un padre, un BOM, un `firefly.version`, y cada dependencia del
+    framework a lo largo de tres módulos resuelta a un único conjunto sin conflictos —
+    sin un solo `<version>` en un artefacto del framework.
 
-## What you learned {.recap}
+## Lo que has aprendido {.recap}
 
-- A Firefly reactor coordinates versions in its **root `pom.xml`** through three
-  pieces: an inherited `fireflyframework-parent`, an imported `fireflyframework-bom`,
-  and a single `firefly.version` property tying them together.
-- **Inherit the parent** to get build policy *and* versions (Spring/Cloud BOMs,
-  plugins, the Java baseline, the `java21` profile); **import the BOM** to get
-  *only* framework-module versions when you must keep another parent. Lumen does
-  both; a corporate-parent shop keeps just the import.
-- Firefly uses **CalVer** (`YY.MM.PATCH`, here `26.06.01`), so a whole release line
-  moves together and upgrading the stack is a one-token edit.
-- The baseline is **Java 25**, with `-Pjava21` as the opt-down profile for teams on
-  the previous LTS.
-- The payoff is that modules declare framework dependencies — `starter-core`,
-  `fireflyframework-r2dbc`, `fireflyframework-web` — with **no `<version>`**, and the
-  reactor still builds to `BUILD SUCCESS`.
+- Un reactor de Firefly coordina las versiones en su **`pom.xml` raíz** a través de
+  tres piezas: un `fireflyframework-parent` heredado, un `fireflyframework-bom`
+  importado y una única propiedad `firefly.version` que los ata entre sí.
+- **Hereda el padre** para obtener política de compilación *y* versiones (BOMs de
+  Spring/Cloud, plugins, la base de Java, el perfil `java21`); **importa el BOM** para
+  obtener *solo* las versiones de los módulos del framework cuando debes conservar
+  otro padre. Lumen hace ambas cosas; un equipo con padre corporativo se queda solo
+  con la importación.
+- Firefly usa **CalVer** (`YY.MM.PATCH`, aquí `26.06.01`), de modo que toda una línea
+  de versión se mueve en bloque y actualizar la pila es una edición de un solo token.
+- La base es **Java 25**, con `-Pjava21` como perfil de descenso para equipos en la
+  LTS anterior.
+- La recompensa es que los módulos declaran las dependencias del framework —
+  `starter-core`, `fireflyframework-r2dbc`, `fireflyframework-web` — **sin
+  `<version>`**, y el reactor sigue compilando hasta `BUILD SUCCESS`.
 
-## Try it yourself {.exercises}
+## Pruébalo tú mismo {.exercises}
 
-1. **Trace a version to its source.** In `core-lending-loan-origination/pom.xml`,
-   pick `fireflyframework-web` and follow how it gets a version: which file pins it,
-   and which property feeds that pin? Write the chain in one sentence.
-2. **Bump the line.** Change `firefly.version` in `samples/lumen-lending/pom.xml`
-   to a later patch (for example `26.06.02`), and update the `<parent>` version to
-   match. Run `mvn -q dependency:tree` and observe how the framework artifacts move
-   together. Then revert.
-3. **Resolve effective versions.** Run `mvn -q help:effective-pom` in the core
-   module and search the output for `fireflyframework-starter-core`. Find the
-   concrete version Maven injected from the BOM, even though the module's POM names
-   none.
-4. **Try the LTS profile.** Run `mvn -q -Pjava21 verify` from the reactor root and
-   confirm it still reaches `BUILD SUCCESS`. Note in the log that this is the same
-   build retargeted, not a different JDK.
-5. **Drop the parent, keep the BOM.** On a throwaway copy of
-   `samples/lumen-lending/pom.xml`, delete the `<parent>` block and add explicit
-   `<groupId>` and `<version>` to the reactor's own coordinates. Predict what breaks
-   (hint: the Java baseline and plugin config the parent supplied) before you run it.
+1. **Rastrea una versión hasta su origen.** En `core-lending-loan-origination/pom.xml`,
+   elige `fireflyframework-web` y sigue cómo obtiene una versión: qué archivo la fija y
+   qué propiedad alimenta esa fijación. Escribe la cadena en una sola frase.
+2. **Sube la línea.** Cambia `firefly.version` en `samples/lumen-lending/pom.xml` a un
+   parche posterior (por ejemplo `26.06.02`) y actualiza la versión del `<parent>` para
+   que coincida. Ejecuta `mvn -q dependency:tree` y observa cómo los artefactos del
+   framework se mueven en bloque. Luego revierte.
+3. **Resuelve las versiones efectivas.** Ejecuta `mvn -q help:effective-pom` en el
+   módulo core y busca en la salida `fireflyframework-starter-core`. Encuentra la
+   versión concreta que Maven inyectó desde el BOM, aunque el POM del módulo no nombre
+   ninguna.
+4. **Prueba el perfil LTS.** Ejecuta `mvn -q -Pjava21 verify` desde la raíz del reactor
+   y confirma que sigue llegando a `BUILD SUCCESS`. Observa en el log que se trata de la
+   misma build reorientada, no de un JDK distinto.
+5. **Quita el padre, conserva el BOM.** Sobre una copia desechable de
+   `samples/lumen-lending/pom.xml`, borra el bloque `<parent>` y añade `<groupId>` y
+   `<version>` explícitos a las propias coordenadas del reactor. Predice qué se rompe
+   (pista: la base de Java y la configuración de plugins que aportaba el padre) antes de
+   ejecutarlo.
 
-## Where to go next
+## Adónde ir ahora
 
-The build is coherent; now you make it *do* something. Chapter 4 turns to
-configuration — `application.yml`, profiles, and `@ConfigurationProperties` — so the
-same version-locked JAR can run differently in dev and production without a rebuild.
+La build es coherente; ahora haces que *haga* algo. El Capítulo 4 se vuelca en la
+configuración — `application.yml`, perfiles y `@ConfigurationProperties` — para que el
+mismo JAR con versión fijada pueda ejecutarse de forma distinta en desarrollo y en
+producción sin recompilar.

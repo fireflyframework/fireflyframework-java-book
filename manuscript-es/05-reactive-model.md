@@ -1,25 +1,25 @@
-Everything else in this book stands on the idea in this chapter. A Firefly handler
-returns a `Mono`. A repository returns a `Flux`. The command bus, the event
-publisher, the resilient HTTP client — all of them speak Project Reactor. If the
-reactive model is hazy, every later chapter feels like sleight of hand: values
-appear from nowhere, methods return things you can't print, and a stray `.block()`
-brings the whole service down. So before you build another service, you are going
-to learn Reactor properly — operator by operator, signal by signal — until none of
-it is magic.
+Todo lo demás en este libro se apoya en la idea de este capítulo. Un manejador de
+Firefly devuelve un `Mono`. Un repositorio devuelve un `Flux`. El bus de comandos, el
+publicador de eventos, el cliente HTTP resiliente: todos hablan Project Reactor. Si el
+modelo reactivo es confuso, cada capítulo posterior parece un juego de manos: los
+valores aparecen de la nada, los métodos devuelven cosas que no puedes imprimir, y un
+`.block()` despistado tumba todo el servicio. Así que, antes de construir otro servicio,
+vas a aprender Reactor como es debido (operador a operador, señal a señal) hasta que
+nada de ello sea magia.
 
-The good news: you can learn it the way you learn any code, by running it and
-watching it pass. The companion reactor ships a single self-contained test,
-`ReactiveModelTest`, whose six methods are a tour of the model. There is no
-database, no web server, no Firefly machinery — just `Mono`, `Flux`, and
-`StepVerifier`. In the steps below you will read each method, understand exactly
-what it asserts, and run the whole file green. Open a scratch buffer and type the
-examples in as you go; reactive code rewards muscle memory.
+La buena noticia: puedes aprenderlo igual que aprendes cualquier código, ejecutándolo y
+viéndolo pasar. El reactor que acompaña al libro incluye un único test autocontenido,
+`ReactiveModelTest`, cuyos seis métodos son un recorrido por el modelo. No hay base de
+datos, ni servidor web, ni maquinaria de Firefly: solo `Mono`, `Flux` y `StepVerifier`.
+En los pasos siguientes leerás cada método, entenderás exactamente qué afirma, y harás
+que todo el fichero quede en verde. Abre un buffer de pruebas y escribe los ejemplos
+sobre la marcha; el código reactivo recompensa la memoria muscular.
 
-The file lives at
+El fichero está en
 `core-lending-loan-origination/src/test/java/com/firefly/lumen/core/ReactiveModelTest.java`.
-Here is how it begins:
+Así es como empieza:
 
-::: listing core-lending-loan-origination/src/test/java/com/firefly/lumen/core/ReactiveModelTest.java | Listing 5.1 — the imports that frame the whole chapter
+::: listing core-lending-loan-origination/src/test/java/com/firefly/lumen/core/ReactiveModelTest.java | Listado 5.1 — los imports que enmarcan todo el capitulo
 package com.firefly.lumen.core;
 
 import org.junit.jupiter.api.Test;
@@ -30,34 +30,35 @@ import reactor.test.StepVerifier;
 import java.time.Duration;
 :::
 
-Three imports carry the chapter. `Mono` and `Flux` are the publishers you compose.
-`StepVerifier` from the `reactor-test` artifact is how you assert what a publisher
-emits *without blocking* — it drives a subscription and checks each signal in turn.
-`Duration` shows up only at the end, for the virtual-time example.
+Tres imports cargan con el capítulo. `Mono` y `Flux` son los publicadores que compones.
+`StepVerifier`, del artefacto `reactor-test`, es como afirmas lo que emite un publicador
+*sin bloquear*: gobierna una suscripción y comprueba cada señal por turnos. `Duration`
+aparece solo al final, en el ejemplo de tiempo virtual.
 
-## Step 1 — Mono and Flux are lazy publishers
+## Paso 1 — Mono y Flux son publicadores perezosos
 
-A `Mono<T>` is a publisher of **at most one** item: it will emit either one value
-and complete, or complete with no value, or fail. Think of a single HTTP response,
-a `findById`, a "save and return the saved row." A `Flux<T>` is a publisher of
-**zero to many** items: a stream of rows, a page of results, a feed of events.
+Un `Mono<T>` es un publicador de **como mucho un** elemento: emitirá o bien un valor y
+completará, o bien completará sin valor, o bien fallará. Piensa en una única respuesta
+HTTP, un `findById`, un "guarda y devuelve la fila guardada". Un `Flux<T>` es un
+publicador de **cero a muchos** elementos: un flujo de filas, una página de resultados,
+un feed de eventos.
 
-The word that matters most is **lazy**. A `Mono` or `Flux` is not a value; it is a
-*recipe* for producing values. Building one runs nothing. The recipe executes only
-when something **subscribes** — and not a moment before. This is the single biggest
-shift coming from blocking Java, where calling a method *is* doing the work.
+La palabra que más importa es **perezoso**. Un `Mono` o un `Flux` no es un valor; es una
+*receta* para producir valores. Construir uno no ejecuta nada. La receta se ejecuta solo
+cuando algo se **suscribe**, y ni un instante antes. Este es el mayor cambio respecto al
+Java bloqueante, donde llamar a un método *es* hacer el trabajo.
 
-!!! note "Key term — publisher, subscriber, signals"
-    A **publisher** (`Mono` or `Flux`) describes a stream of data. A **subscriber**
-    consumes it. When you subscribe, the publisher pushes a sequence of **signals**:
-    zero or more `onNext(value)` signals, then exactly one terminal signal —
-    `onComplete()` (success) or `onError(throwable)` (failure). "Reactive testing"
-    is really "asserting the exact sequence of signals," which is precisely what
-    `StepVerifier` does.
+!!! note "Término clave — publicador, suscriptor, señales"
+    Un **publicador** (`Mono` o `Flux`) describe un flujo de datos. Un **suscriptor**
+    lo consume. Cuando te suscribes, el publicador empuja una secuencia de **señales**:
+    cero o más señales `onNext(value)`, y luego exactamente una señal terminal:
+    `onComplete()` (éxito) o `onError(throwable)` (fallo). El "test reactivo" es en
+    realidad "afirmar la secuencia exacta de señales", que es precisamente lo que hace
+    `StepVerifier`.
 
-Here is the simplest possible `Mono`, and the simplest possible assertion about it:
+Aquí tienes el `Mono` más simple posible, y la afirmación más simple posible sobre él:
 
-::: listing core-lending-loan-origination/src/test/java/com/firefly/lumen/core/ReactiveModelTest.java | Listing 5.2 — one value, then completion
+::: listing core-lending-loan-origination/src/test/java/com/firefly/lumen/core/ReactiveModelTest.java | Listado 5.2 — un valor, luego completar
     @Test
     void monoEmitsOneValueThenCompletes() {
         Mono<String> greeting = Mono.just("hello");
@@ -68,17 +69,18 @@ Here is the simplest possible `Mono`, and the simplest possible assertion about 
     }
 :::
 
-Read it as a sentence. `Mono.just("hello")` builds a recipe that, *when subscribed*,
-emits `"hello"` and completes. Nothing has run yet — `greeting` is an inert
-description. `StepVerifier.create(greeting)` subscribes. `.expectNext("hello")`
-asserts the first signal is `onNext("hello")`. `.verifyComplete()` asserts the next
-signal is `onComplete()` — and, crucially, *triggers the subscription* and blocks
-the test thread until the verification finishes. Without that terminal call, nothing
-would ever run.
+Léelo como una frase. `Mono.just("hello")` construye una receta que, *al suscribirse*,
+emite `"hello"` y completa. Todavía no se ha ejecutado nada: `greeting` es una
+descripción inerte. `StepVerifier.create(greeting)` se suscribe. `.expectNext("hello")`
+afirma que la primera señal es `onNext("hello")`. `.verifyComplete()` afirma que la
+siguiente señal es `onComplete()` y, fundamentalmente, *dispara la suscripción* y
+bloquea el hilo del test hasta que la verificación termina. Sin esa llamada terminal,
+nada llegaría a ejecutarse.
 
-A `Mono` need not carry a value at all. Emptiness is a first-class, expected outcome:
+Un `Mono` no tiene por qué llevar valor alguno. El vacío es un resultado esperado y de
+primera clase:
 
-::: listing core-lending-loan-origination/src/test/java/com/firefly/lumen/core/ReactiveModelTest.java | Listing 5.3 — completion with no value at all
+::: listing core-lending-loan-origination/src/test/java/com/firefly/lumen/core/ReactiveModelTest.java | Listado 5.3 — completar sin ningun valor
     @Test
     void emptyMonoCompletesWithoutAValue() {
         StepVerifier.create(Mono.empty())
@@ -86,33 +88,33 @@ A `Mono` need not carry a value at all. Emptiness is a first-class, expected out
     }
 :::
 
-`Mono.empty()` emits no `onNext` — it just completes. There is no `null` here, and
-no exception; "nothing was found" is a normal signal, not an error. This is why a
-Firefly repository's `findById` returns `Mono<LoanApplication>`: a missing row is an
-empty `Mono`, and you handle it with an operator like `switchIfEmpty` rather than a
-null check.
+`Mono.empty()` no emite ningún `onNext`: simplemente completa. No hay ningún `null` aquí,
+ni ninguna excepción; "no se encontró nada" es una señal normal, no un error. Por eso el
+`findById` de un repositorio de Firefly devuelve `Mono<LoanApplication>`: una fila
+ausente es un `Mono` vacío, y lo gestionas con un operador como `switchIfEmpty` en lugar
+de una comprobación de nulo.
 
-!!! tip "Checkpoint"
-    Before going further, make sure the test file compiles and these first methods
-    pass. From the `samples/lumen-lending` directory, run:
+!!! tip "Punto de control"
+    Antes de seguir, asegúrate de que el fichero de test compila y de que estos primeros
+    métodos pasan. Desde el directorio `samples/lumen-lending`, ejecuta:
 
     ```text
     mvn -q -pl core-lending-loan-origination -Dtest=ReactiveModelTest#monoEmitsOneValueThenCompletes test
     ```
 
-    You should see `Tests run: 1, Failures: 0`. If you see a compilation error,
-    confirm `reactor-test` is on the test classpath — it ships with the Firefly core
-    starter.
+    Deberías ver `Tests run: 1, Failures: 0`. Si ves un error de compilación, confirma
+    que `reactor-test` está en el classpath de test: viene con el starter del core de
+    Firefly.
 
-## Step 2 — Creating Mono and Flux
+## Paso 2 — Crear Mono y Flux
 
-You rarely *write* a `Mono` from scratch in application code — operators and the
-framework hand you one. But knowing the factory methods makes every later operator
-legible, because they are how a stream begins.
+Rara vez *escribes* un `Mono` desde cero en código de aplicación: los operadores y el
+framework te entregan uno. Pero conocer los métodos de fábrica hace legible cada operador
+posterior, porque son la forma en que empieza un flujo.
 
-A `Flux` of known values is `Flux.just(...)`:
+Un `Flux` de valores conocidos es `Flux.just(...)`:
 
-::: listing core-lending-loan-origination/src/test/java/com/firefly/lumen/core/ReactiveModelTest.java | Listing 5.4 — a Flux emits each element, in order
+::: listing core-lending-loan-origination/src/test/java/com/firefly/lumen/core/ReactiveModelTest.java | Listado 5.4 — un Flux emite cada elemento, en orden
     @Test
     void fluxEmitsEachElementInOrder() {
         Flux<Integer> numbers = Flux.just(1, 2, 3);
@@ -123,11 +125,11 @@ A `Flux` of known values is `Flux.just(...)`:
     }
 :::
 
-`Flux.just(1, 2, 3)` emits `1`, then `2`, then `3`, then completes — and **order is
-guaranteed**. `.expectNext(1, 2, 3)` is shorthand for three `onNext` expectations in
-sequence; the test fails if the order differs or a value is missing.
+`Flux.just(1, 2, 3)` emite `1`, luego `2`, luego `3`, y luego completa, y el **orden está
+garantizado**. `.expectNext(1, 2, 3)` es una forma abreviada de tres expectativas
+`onNext` en secuencia; el test falla si el orden difiere o falta un valor.
 
-Beyond `just`, the factories you will reach for most are:
+Más allá de `just`, las fábricas a las que más recurrirás son:
 
 ```java
 Mono.just(value);              // one known value
@@ -142,36 +144,37 @@ Flux.fromIterable(list);       // from a collection
 Flux.empty();                  // zero values, completes
 ```
 
-The distinction between `Mono.just(compute())` and `Mono.fromCallable(compute)` is
-worth burning in: `just` evaluates its argument **now**, eagerly, the moment you
-build the recipe; `fromCallable` and `defer` postpone the work until subscription.
-On the reactive stack you want the lazy form for anything with a side effect, so the
-work happens at subscribe time, on the right thread, and re-runs on retry.
+La distinción entre `Mono.just(compute())` y `Mono.fromCallable(compute)` merece quedar
+grabada a fuego: `just` evalúa su argumento **ahora**, de forma ansiosa, en el momento en
+que construyes la receta; `fromCallable` y `defer` posponen el trabajo hasta la
+suscripción. En la pila reactiva quieres la forma perezosa para cualquier cosa con efecto
+secundario, de modo que el trabajo ocurra en el momento de la suscripción, en el hilo
+correcto, y se reejecute al reintentar.
 
-!!! warning "`Mono.just` captures its argument eagerly"
-    `Mono.just(loadFromDb())` calls `loadFromDb()` immediately, *before* anyone
-    subscribes — defeating laziness and, if that call blocks, stalling the event
-    loop. When the value comes from real work, wrap the work: `Mono.fromCallable` or
-    `Mono.defer`. Reserve `Mono.just` for values you already hold in hand.
+!!! warning "`Mono.just` captura su argumento de forma ansiosa"
+    `Mono.just(loadFromDb())` llama a `loadFromDb()` de inmediato, *antes* de que nadie
+    se suscriba, derrotando la pereza y, si esa llamada bloquea, atascando el bucle de
+    eventos. Cuando el valor proviene de trabajo real, envuelve el trabajo:
+    `Mono.fromCallable` o `Mono.defer`. Reserva `Mono.just` para valores que ya tienes en
+    la mano.
 
-!!! tip "Checkpoint"
-    In your scratch buffer, replace `Flux.just(1, 2, 3)` with `Flux.range(1, 3)` and
-    rerun the method. It still passes — `range(1, 3)` emits `1, 2, 3`. Now try
-    `Flux.range(1, 3)` against `.expectNext(1, 2, 3, 4)` and read the failure
-    message: `StepVerifier` tells you it expected a fourth `onNext` but got
-    `onComplete`. That report — expected signal versus actual signal — is how you
-    debug reactive code.
+!!! tip "Punto de control"
+    En tu buffer de pruebas, reemplaza `Flux.just(1, 2, 3)` por `Flux.range(1, 3)` y
+    vuelve a ejecutar el método. Sigue pasando: `range(1, 3)` emite `1, 2, 3`. Ahora
+    prueba `Flux.range(1, 3)` contra `.expectNext(1, 2, 3, 4)` y lee el mensaje de fallo:
+    `StepVerifier` te dice que esperaba un cuarto `onNext` pero obtuvo `onComplete`. Ese
+    informe (señal esperada frente a señal real) es como depuras el código reactivo.
 
-## Step 3 — Transforming and combining
+## Paso 3 — Transformar y combinar
 
-Composition is the whole game. You almost never subscribe yourself; instead you
-chain **operators** that return a new publisher describing the transformed stream.
-The operators mirror the `Stream` API you already know, but each one returns a
-`Mono` or `Flux` rather than a materialized collection.
+La composición es todo el juego. Casi nunca te suscribes tú mismo; en su lugar encadenas
+**operadores** que devuelven un nuevo publicador que describe el flujo transformado. Los
+operadores reflejan la API `Stream` que ya conoces, pero cada uno devuelve un `Mono` o un
+`Flux` en lugar de una colección materializada.
 
-The test demonstrates `filter` and `map` in one pipeline:
+El test demuestra `filter` y `map` en una sola tubería:
 
-::: listing core-lending-loan-origination/src/test/java/com/firefly/lumen/core/ReactiveModelTest.java | Listing 5.5 — filter, then map, build a new stream
+::: listing core-lending-loan-origination/src/test/java/com/firefly/lumen/core/ReactiveModelTest.java | Listado 5.5 — filtra, luego mapea, construye un nuevo flujo
     @Test
     void operatorsTransformTheStream() {
         Flux<Integer> evensDoubled = Flux.range(1, 6)
@@ -184,25 +187,25 @@ The test demonstrates `filter` and `map` in one pipeline:
     }
 :::
 
-`Flux.range(1, 6)` emits `1` through `6`. `.filter(n -> n % 2 == 0)` lets only the
-even values through — `2, 4, 6`. `.map(n -> n * 10)` transforms each — `20, 40, 60`.
-None of this runs when you build `evensDoubled`; it is still a recipe. Only
-`StepVerifier` subscribing pulls values through the chain, one at a time.
+`Flux.range(1, 6)` emite del `1` al `6`. `.filter(n -> n % 2 == 0)` deja pasar solo los
+valores pares: `2, 4, 6`. `.map(n -> n * 10)` transforma cada uno: `20, 40, 60`. Nada de
+esto se ejecuta cuando construyes `evensDoubled`; sigue siendo una receta. Solo cuando
+`StepVerifier` se suscribe se tiran los valores a través de la cadena, uno a uno.
 
-The four operators you will use constantly:
+Los cuatro operadores que usarás constantemente:
 
-- **`map`** — transform each item synchronously, `T` to `U`. `Mono<Applicant>` to
-  `Mono<String>` with `.map(Applicant::fullName)`.
-- **`filter`** — drop items that fail a predicate. On a `Mono`, a filtered-out value
-  becomes an *empty* `Mono`.
-- **`flatMap`** — transform each item into *another publisher* and flatten the
-  result. This is how you chain asynchronous calls.
-- **`zip`** — combine the latest values from several publishers into one.
+- **`map`** — transforma cada elemento de forma síncrona, de `T` a `U`. De
+  `Mono<Applicant>` a `Mono<String>` con `.map(Applicant::fullName)`.
+- **`filter`** — descarta los elementos que no cumplen un predicado. En un `Mono`, un
+  valor descartado se convierte en un `Mono` *vacío*.
+- **`flatMap`** — transforma cada elemento en *otro publicador* y aplana el resultado.
+  Así es como encadenas llamadas asíncronas.
+- **`zip`** — combina los últimos valores de varios publicadores en uno solo.
 
-The critical distinction is `map` versus `flatMap`. Use `map` when the
-transformation is a plain value (`n * 10`, `Applicant::fullName`). Use `flatMap`
-when the transformation is itself asynchronous and returns a publisher — for
-example, taking an application's ID and calling a repository:
+La distinción crítica es `map` frente a `flatMap`. Usa `map` cuando la transformación es
+un valor plano (`n * 10`, `Applicant::fullName`). Usa `flatMap` cuando la transformación
+es en sí misma asíncrona y devuelve un publicador; por ejemplo, tomar el ID de una
+solicitud y llamar a un repositorio:
 
 ```java
 Mono<Decision> decision =
@@ -212,10 +215,10 @@ Mono<Decision> decision =
         .map(Score::toDecision);         // plain transform — map
 ```
 
-If you reach for `map` where you needed `flatMap`, you end up with a
-`Mono<Mono<Score>>` — a publisher of a publisher — that never does the inner work.
-`flatMap` subscribes to the inner publisher for you and flattens one level. When two
-independent calls feed one result, `zip` runs them and combines:
+Si recurres a `map` donde necesitabas `flatMap`, acabas con un `Mono<Mono<Score>>` (un
+publicador de un publicador) que nunca hace el trabajo interno. `flatMap` se suscribe al
+publicador interno por ti y aplana un nivel. Cuando dos llamadas independientes alimentan
+un resultado, `zip` las ejecuta y las combina:
 
 ```java
 Mono<Quote> quote = Mono.zip(
@@ -224,28 +227,28 @@ Mono<Quote> quote = Mono.zip(
     .map(both -> new Quote(both.getT1(), both.getT2()));
 ```
 
-!!! spring "Spring parity"
-    These operators are pure Project Reactor — Firefly adds nothing here, and a
-    plain Spring WebFlux app composes the exact same way. If you came from Spring
-    MVC and the Java `Stream` API, `map`/`filter` will feel familiar; the new idea is
-    `flatMap` for *asynchronous* steps, which has no `Stream` equivalent because
-    streams are synchronous. Think of `flatMap` as the reactive `await`-and-continue.
+!!! spring "Equivalente en Spring"
+    Estos operadores son Project Reactor puro: Firefly no añade nada aquí, y una
+    aplicación Spring WebFlux normal compone exactamente igual. Si vienes de Spring MVC y
+    de la API `Stream` de Java, `map`/`filter` te resultarán familiares; la idea nueva es
+    `flatMap` para pasos *asíncronos*, que no tiene equivalente en `Stream` porque los
+    streams son síncronos. Piensa en `flatMap` como el `await`-y-continúa reactivo.
 
-!!! tip "Checkpoint"
-    Add a `.map(n -> n + 1)` to the end of the chain in `operatorsTransformTheStream`
-    and update the expectation to `.expectNext(21, 41, 61)`. Rerun and watch it pass.
-    Then delete the `.filter` line and predict the output before running — six values,
-    each multiplied by ten: `10, 20, 30, 40, 50, 60`.
+!!! tip "Punto de control"
+    Añade un `.map(n -> n + 1)` al final de la cadena en `operatorsTransformTheStream` y
+    actualiza la expectativa a `.expectNext(21, 41, 61)`. Vuelve a ejecutar y observa
+    cómo pasa. Luego elimina la línea `.filter` y predice la salida antes de ejecutar:
+    seis valores, cada uno multiplicado por diez: `10, 20, 30, 40, 50, 60`.
 
-## Step 4 — Terminating and asserting with StepVerifier
+## Paso 4 — Terminar y afirmar con StepVerifier
 
-You have been using `StepVerifier` all along; now name what it is. It is the
-canonical way to test reactive code, because the alternative — calling `.block()` to
-pull the value out — defeats the point and, in a real service, blocks the event
-loop. `StepVerifier` subscribes, then lets you assert each signal in the order it
-arrives, finishing with a terminal expectation that *runs* the verification.
+Has estado usando `StepVerifier` todo el tiempo; ahora pongámosle nombre. Es la forma
+canónica de testear código reactivo, porque la alternativa (llamar a `.block()` para
+sacar el valor) derrota el propósito y, en un servicio real, bloquea el bucle de eventos.
+`StepVerifier` se suscribe, y luego te deja afirmar cada señal en el orden en que llega,
+terminando con una expectativa terminal que *ejecuta* la verificación.
 
-The shape is always the same three parts:
+La forma es siempre la misma, con tres partes:
 
 ```java
 StepVerifier.create(publisher)   // subscribe
@@ -253,35 +256,37 @@ StepVerifier.create(publisher)   // subscribe
     .verifyComplete();           // assert terminal onComplete — and run it
 ```
 
-The terminal call is mandatory and load-bearing. `.verifyComplete()` asserts the
-stream ends with `onComplete`; `.verify()` asserts whatever terminal you described
-just before it (you will use it for errors in the next step); `.expectComplete()`
-followed by `.verify()` is the long form. Forget the terminal call and your "test"
-builds a verifier and never subscribes — so it passes by doing nothing. That is the
-most common reactive-testing bug, and it is silent.
+La llamada terminal es obligatoria y portante. `.verifyComplete()` afirma que el flujo
+termina con `onComplete`; `.verify()` afirma cualquier terminal que hayas descrito justo
+antes (lo usarás para errores en el siguiente paso); `.expectComplete()` seguido de
+`.verify()` es la forma larga. Olvida la llamada terminal y tu "test" construye un
+verificador y nunca se suscribe, así que pasa sin hacer nada. Ese es el bug más común del
+testeo reactivo, y es silencioso.
 
-!!! note "Key term — cold vs. hot publishers"
-    Every publisher in this test is **cold**: it does no work until subscribed, and
-    it produces the full sequence *afresh for each subscriber*. Subscribe twice,
-    `Flux.range(1, 6)` runs twice. A **hot** publisher emits whether or not anyone is
-    listening (a live event feed; a `Sinks.Many`), and late subscribers miss earlier
-    items. Almost everything you build in Firefly — repository calls, client calls,
-    handler results — is cold, which is why retrying simply re-runs the recipe.
+!!! note "Término clave — publicadores fríos frente a calientes"
+    Todos los publicadores de este test son **fríos**: no hacen ningún trabajo hasta que
+    se suscriben, y producen la secuencia completa *de nuevo para cada suscriptor*.
+    Suscríbete dos veces y `Flux.range(1, 6)` se ejecuta dos veces. Un publicador
+    **caliente** emite haya o no alguien escuchando (un feed de eventos en vivo; un
+    `Sinks.Many`), y los suscriptores tardíos se pierden los elementos anteriores. Casi
+    todo lo que construyes en Firefly (llamadas a repositorios, llamadas a clientes,
+    resultados de manejadores) es frío, razón por la cual reintentar simplemente
+    reejecuta la receta.
 
-!!! tip "Checkpoint"
-    Comment out the `.verifyComplete()` line in any passing test, add a plain
-    `;` to keep it compiling, and rerun. It still "passes" — because nothing
-    subscribed. Restore the terminal. This is the single most important habit in
-    reactive testing: a verifier without a terminal asserts nothing.
+!!! tip "Punto de control"
+    Comenta la línea `.verifyComplete()` en cualquier test que pase, añade un simple `;`
+    para mantenerlo compilando, y vuelve a ejecutar. Sigue "pasando", porque nada se
+    suscribió. Restaura el terminal. Este es el hábito más importante en el testeo
+    reactivo: un verificador sin terminal no afirma nada.
 
-## Step 5 — Errors and retry
+## Paso 5 — Errores y reintento
 
-On the reactive stack, an error is not thrown up a call stack — it travels *down the
-stream* as an `onError` signal, the same way values travel as `onNext`. It is a
-terminal signal: once a publisher emits `onError`, it emits nothing more. You assert
-it with `StepVerifier` just like a value.
+En la pila reactiva, un error no se lanza hacia arriba por una pila de llamadas: viaja
+*hacia abajo por el flujo* como una señal `onError`, igual que los valores viajan como
+`onNext`. Es una señal terminal: una vez que un publicador emite `onError`, no emite nada
+más. Lo afirmas con `StepVerifier` igual que un valor.
 
-::: listing core-lending-loan-origination/src/test/java/com/firefly/lumen/core/ReactiveModelTest.java | Listing 5.6 — an error is a terminal signal, asserted like any other
+::: listing core-lending-loan-origination/src/test/java/com/firefly/lumen/core/ReactiveModelTest.java | Listado 5.6 — un error es una senal terminal, afirmada como cualquier otra
     @Test
     void errorsArePropagatedAsTerminalSignals() {
         Flux<Integer> failing = Flux.just(1, 2)
@@ -295,16 +300,16 @@ it with `StepVerifier` just like a value.
     }
 :::
 
-`Flux.just(1, 2)` emits two values, then `.concatWith(Flux.error(...))` appends a
-stream that immediately fails. So the full signal sequence is `onNext(1)`,
-`onNext(2)`, `onError(IllegalStateException("boom"))`. The verifier asserts the two
-values, then `.expectErrorMatches(...)` inspects the terminal error's type and
-message, and `.verify()` runs it. Note the terminal here is `.verify()`, not
-`.verifyComplete()` — the stream does *not* complete, it fails, and asserting
-completion would be wrong.
+`Flux.just(1, 2)` emite dos valores, y luego `.concatWith(Flux.error(...))` añade un flujo
+que falla de inmediato. Así que la secuencia completa de señales es `onNext(1)`,
+`onNext(2)`, `onError(IllegalStateException("boom"))`. El verificador afirma los dos
+valores, luego `.expectErrorMatches(...)` inspecciona el tipo y el mensaje del error
+terminal, y `.verify()` lo ejecuta. Fíjate en que el terminal aquí es `.verify()`, no
+`.verifyComplete()`: el flujo *no* completa, falla, y afirmar la completitud sería
+incorrecto.
 
-In real code you do not just observe errors; you *recover*. The recovery operators
-are the reactive equivalents of `catch` and a retry loop:
+En código real no solo observas los errores; te *recuperas*. Los operadores de
+recuperación son los equivalentes reactivos de `catch` y de un bucle de reintento:
 
 ```java
 service.score(application)
@@ -313,19 +318,19 @@ service.score(application)
     .onErrorReturn(Decision.unavailable());      // last-resort constant fallback
 ```
 
-`onErrorResume` swaps in a *new publisher* when the matched error occurs — a
-fallback call, a cached value, a default. `onErrorReturn` swaps in a constant. To
-re-attempt transient failures, use `retry`:
+`onErrorResume` cambia a un *nuevo publicador* cuando ocurre el error que coincide: una
+llamada alternativa, un valor cacheado, un valor por defecto. `onErrorReturn` cambia a una
+constante. Para reintentar fallos transitorios, usa `retry`:
 
 ```java
 pricingClient.rateFor(product)
     .retry(3);                                   // re-subscribe up to 3 times on error
 ```
 
-Because the publisher is cold, `retry` simply re-runs the whole recipe. For anything
-beyond a fixed count, `retryWhen` with a backoff strategy is the production-grade
-form — it spaces attempts out and adds jitter so a struggling downstream is not
-hammered:
+Como el publicador es frío, `retry` simplemente reejecuta toda la receta. Para cualquier
+cosa más allá de un conteo fijo, `retryWhen` con una estrategia de backoff es la forma de
+grado de producción: espacia los intentos y añade jitter para que un dependiente con
+problemas no sea machacado:
 
 ```java
 import reactor.util.retry.Retry;
@@ -335,35 +340,38 @@ pricingClient.rateFor(product)
         .filter(ex -> ex instanceof TimeoutException));    // only retry timeouts
 ```
 
-!!! spring "Spring parity"
-    None of this is Firefly-specific — `onErrorResume`, `retry`, and `retryWhen` are
-    core Reactor, identical in any Spring WebFlux app. Where Firefly earns its keep
-    is one layer up: its resilient HTTP clients ship with sane retry, timeout, and
-    circuit-breaker defaults already wired (Chapter 14), so you write the `retryWhen`
-    policy once, in the framework's configuration, rather than on every call site.
+!!! spring "Equivalente en Spring"
+    Nada de esto es específico de Firefly: `onErrorResume`, `retry` y `retryWhen` son
+    Reactor del núcleo, idénticos en cualquier aplicación Spring WebFlux. Donde Firefly
+    se gana el sueldo es una capa más arriba: sus clientes HTTP resilientes vienen con
+    valores por defecto sensatos de reintento, timeout y cortacircuitos ya cableados
+    (Capítulo 14), de modo que escribes la política de `retryWhen` una sola vez, en la
+    configuración del framework, en lugar de en cada punto de llamada.
 
-!!! tip "Checkpoint"
-    Change the asserted message in `errorsArePropagatedAsTerminalSignals` from
-    `"boom"` to `"bang"` and rerun. The test fails — but read the message: the
-    verifier reports the actual error it received versus what you matched. Restore
-    `"boom"`. Now you can debug an error pipeline by reading the signal report.
+!!! tip "Punto de control"
+    Cambia el mensaje afirmado en `errorsArePropagatedAsTerminalSignals` de `"boom"` a
+    `"bang"` y vuelve a ejecutar. El test falla, pero lee el mensaje: el verificador
+    informa del error real que recibió frente al que tú hiciste coincidir. Restaura
+    `"boom"`. Ahora puedes depurar una tubería de errores leyendo el informe de señales.
 
-## Step 6 — Schedulers and threading
+## Paso 6 — Schedulers e hilos
 
-So far every example ran on the test thread, synchronously. Real services do I/O,
-and *where* that work runs matters enormously on the reactive stack. By default a
-reactive chain executes on whatever thread subscribed — for a Firefly HTTP handler,
-that is a Netty event-loop thread, of which there are only a handful, shared across
-*all* requests. Block one and you stall every request it was serving.
+Hasta ahora cada ejemplo se ejecutó en el hilo del test, de forma síncrona. Los servicios
+reales hacen E/S, y *dónde* se ejecuta ese trabajo importa enormemente en la pila
+reactiva. Por defecto, una cadena reactiva se ejecuta en el hilo que se haya suscrito;
+para un manejador HTTP de Firefly, ese es un hilo del bucle de eventos de Netty, de los
+que solo hay un puñado, compartidos entre *todas* las peticiones. Bloquea uno y atascas
+todas las peticiones que estaba sirviendo.
 
-A **scheduler** is Reactor's abstraction for "which thread pool runs this work." You
-shift execution with two operators:
+Un **scheduler** es la abstracción de Reactor para "qué pool de hilos ejecuta este
+trabajo". Desplazas la ejecución con dos operadores:
 
-- **`subscribeOn(scheduler)`** — controls the thread the *subscription and source*
-  run on. It affects the whole chain upstream of it, and there is effectively one
-  per chain.
-- **`publishOn(scheduler)`** — switches threads for everything *downstream* of it,
-  from that point on. Use it as many times as you need to move work between pools.
+- **`subscribeOn(scheduler)`** — controla el hilo en el que se ejecutan la *suscripción y
+  la fuente*. Afecta a toda la cadena aguas arriba de él, y hay efectivamente uno por
+  cadena.
+- **`publishOn(scheduler)`** — cambia de hilo para todo lo que está *aguas abajo* de él,
+  a partir de ese punto. Úsalo tantas veces como necesites para mover trabajo entre
+  pools.
 
 ```java
 Mono.fromCallable(() -> legacyBlockingLookup(id))   // a blocking call
@@ -372,44 +380,49 @@ Mono.fromCallable(() -> legacyBlockingLookup(id))   // a blocking call
     .publishOn(Schedulers.parallel());              // continue on a CPU-bound pool
 ```
 
-The schedulers you will actually name:
+Los schedulers que de verdad nombrarás:
 
-- **`Schedulers.boundedElastic()`** — a growable pool capped to protect the host,
-  meant exactly for wrapping *unavoidable blocking* calls (a legacy JDBC driver, a
-  filesystem read) so they never touch the event loop.
-- **`Schedulers.parallel()`** — a fixed pool sized to the CPUs, for CPU-bound work.
-- **`Schedulers.immediate()`** — run on the current thread; the default behavior.
+- **`Schedulers.boundedElastic()`** — un pool que crece pero está acotado para proteger el
+  host, pensado exactamente para envolver llamadas bloqueantes *inevitables* (un driver
+  JDBC heredado, una lectura de sistema de ficheros) para que nunca toquen el bucle de
+  eventos.
+- **`Schedulers.parallel()`** — un pool fijo dimensionado al número de CPUs, para trabajo
+  ligado a CPU.
+- **`Schedulers.immediate()`** — ejecuta en el hilo actual; el comportamiento por defecto.
 
-!!! warning "Don't block the event loop"
-    The cardinal sin of reactive code is a blocking call on an event-loop thread —
-    a JDBC query, `Thread.sleep`, a `.block()`, a synchronous SDK. The fix is never
-    "make it faster"; it is `subscribeOn(Schedulers.boundedElastic())` to move the
-    blocking work to a pool built to absorb it. Better still, use a non-blocking
-    client (R2DBC, `WebClient`) and avoid the blocking call entirely. This is why
-    the prelude insisted: never block.
+!!! warning "No bloquees el bucle de eventos"
+    El pecado capital del código reactivo es una llamada bloqueante en un hilo del bucle
+    de eventos: una consulta JDBC, un `Thread.sleep`, un `.block()`, un SDK síncrono. La
+    solución nunca es "hazlo más rápido"; es `subscribeOn(Schedulers.boundedElastic())`
+    para mover el trabajo bloqueante a un pool construido para absorberlo. Mejor aún, usa
+    un cliente no bloqueante (R2DBC, `WebClient`) y evita por completo la llamada
+    bloqueante. Por eso el preludio insistió: nunca bloquees.
 
-!!! spring "Spring parity"
-    Schedulers are pure Reactor and behave identically in plain Spring WebFlux.
-    Firefly does not change the threading model — it inherits it — but its starters
-    do configure the event loop and `boundedElastic` sizing through `firefly.*`
-    properties, so the fleet shares one threading policy instead of each service
-    guessing.
+!!! spring "Equivalente en Spring"
+    Los schedulers son Reactor puro y se comportan de forma idéntica en Spring WebFlux
+    normal. Firefly no cambia el modelo de hilos (lo hereda), pero sus starters sí
+    configuran el bucle de eventos y el dimensionamiento de `boundedElastic` mediante
+    propiedades `firefly.*`, de modo que la flota comparte una única política de hilos en
+    lugar de que cada servicio vaya adivinando.
 
-!!! tip "Checkpoint"
-    There is no scheduler assertion in `ReactiveModelTest` — threading is a property
-    of *where* work runs, not *what* it emits, so `StepVerifier` (which only checks
-    signals) is the wrong tool. To *see* a thread switch, add a temporary
+!!! tip "Punto de control"
+    No hay ninguna afirmación de scheduler en `ReactiveModelTest`: los hilos son una
+    propiedad de *dónde* se ejecuta el trabajo, no de *qué* emite, así que `StepVerifier`
+    (que solo comprueba señales) es la herramienta equivocada. Para *ver* un cambio de
+    hilo, añade un
     `Flux.range(1, 3).publishOn(Schedulers.parallel()).doOnNext(n -> System.out.println(Thread.currentThread().getName())).blockLast();`
-    in a throwaway `main` and watch the pool name in the output. Delete it after.
+    temporal en un `main` desechable y observa el nombre del pool en la salida. Bórralo
+    después.
 
-## Step 7 — Virtual time for time-based operators
+## Paso 7 — Tiempo virtual para operadores basados en tiempo
 
-Some operators are about *time*: `delayElement`, `timeout`, `retryWhen` with backoff,
-`interval`. Testing them naively means your test *actually waits* — a one-hour delay
-would take one hour. Reactor solves this with **virtual time**: `StepVerifier` swaps
-in a clock you control, so you advance an hour instantly and assert what happens.
+Algunos operadores van sobre *tiempo*: `delayElement`, `timeout`, `retryWhen` con
+backoff, `interval`. Testearlos de forma ingenua significa que tu test *espera de
+verdad*: un retardo de una hora tardaría una hora. Reactor lo resuelve con **tiempo
+virtual**: `StepVerifier` intercambia un reloj que tú controlas, de modo que avanzas una
+hora al instante y afirmas que ocurre.
 
-::: listing core-lending-loan-origination/src/test/java/com/firefly/lumen/core/ReactiveModelTest.java | Listing 5.7 — proving a one-hour delay in microseconds
+::: listing core-lending-loan-origination/src/test/java/com/firefly/lumen/core/ReactiveModelTest.java | Listado 5.7 — demostrar un retardo de una hora en microsegundos
     @Test
     void virtualTimeProvesDelayWithoutWaiting() {
         StepVerifier.withVirtualTime(() -> Mono.just("done").delayElement(Duration.ofHours(1)))
@@ -420,43 +433,43 @@ in a clock you control, so you advance an hour instantly and assert what happens
     }
 :::
 
-Three details make this work. First, you pass a **supplier** —
-`() -> Mono.just("done").delayElement(...)` — not a built `Mono`. `withVirtualTime`
-must install its virtual clock *before* the publisher is created, so it can only be
-given a recipe to build later. Second, `.expectSubscription()` asserts the
-subscription signal, the moment the virtual clock starts. Third, `.thenAwait(
-Duration.ofHours(1))` advances that virtual clock a full hour *immediately* — no
-real waiting — at which point the delayed element fires, so `.expectNext("done")`
-and `.verifyComplete()` succeed. The test runs in microseconds yet proves an hour of
-behavior.
+Tres detalles hacen que esto funcione. Primero, pasas un **supplier**:
+`() -> Mono.just("done").delayElement(...)`, no un `Mono` ya construido.
+`withVirtualTime` debe instalar su reloj virtual *antes* de que se cree el publicador,
+así que solo se le puede dar una receta para construir más tarde. Segundo,
+`.expectSubscription()` afirma la señal de suscripción, el momento en que arranca el reloj
+virtual. Tercero, `.thenAwait(Duration.ofHours(1))` adelanta ese reloj virtual una hora
+completa *de inmediato* (sin espera real), momento en el que el elemento retardado se
+dispara, así que `.expectNext("done")` y `.verifyComplete()` tienen éxito. El test se
+ejecuta en microsegundos y sin embargo demuestra una hora de comportamiento.
 
-!!! note "Key term — virtual time"
-    **Virtual time** replaces the real scheduler clock with one the test advances by
-    hand via `thenAwait`. It lets you assert *when* signals fire — that a timeout
-    triggers at exactly 30 seconds, that a backoff waits 200 ms — deterministically
-    and instantly. Any time-based operator should be tested this way; never with a
-    real `sleep`.
+!!! note "Término clave — tiempo virtual"
+    El **tiempo virtual** reemplaza el reloj real del scheduler por uno que el test
+    adelanta a mano mediante `thenAwait`. Te permite afirmar *cuándo* se disparan las
+    señales (que un timeout salta a exactamente 30 segundos, que un backoff espera 200 ms)
+    de forma determinista e instantánea. Cualquier operador basado en tiempo debería
+    testearse así; nunca con un `sleep` real.
 
-!!! tip "Checkpoint"
-    Change `.thenAwait(Duration.ofHours(1))` to `.thenAwait(Duration.ofMinutes(59))`
-    and rerun. It now fails: at 59 virtual minutes the element has not fired, so the
-    verifier sees no `onNext`. The delay is real, even though no real time passed.
-    Restore the hour.
+!!! tip "Punto de control"
+    Cambia `.thenAwait(Duration.ofHours(1))` por `.thenAwait(Duration.ofMinutes(59))` y
+    vuelve a ejecutar. Ahora falla: a los 59 minutos virtuales el elemento no se ha
+    disparado, así que el verificador no ve ningún `onNext`. El retardo es real, aunque no
+    haya pasado tiempo real. Restaura la hora.
 
-## Step 8 — How a Mono becomes an HTTP response
+## Paso 8 — Cómo un Mono se convierte en una respuesta HTTP
 
-Everything so far has been a `StepVerifier` subscribing in a test. In a running
-Firefly service, *who subscribes?* The framework does. When a request arrives, Spring
-WebFlux invokes your handler, which returns a `Mono` — a recipe, not a value — and
-WebFlux subscribes to it on the event loop. When the `Mono` emits `onNext`, the
-framework serializes the value to JSON and writes the HTTP response; on `onComplete`
-with no value it writes an empty body; on `onError` it maps the error to a status
-code. You never call `.subscribe()` yourself.
+Todo lo anterior ha sido un `StepVerifier` suscribiéndose en un test. En un servicio
+Firefly en ejecución, ¿quién se suscribe? El framework. Cuando llega una petición, Spring
+WebFlux invoca tu manejador, que devuelve un `Mono` (una receta, no un valor), y WebFlux se
+suscribe a él en el bucle de eventos. Cuando el `Mono` emite `onNext`, el framework
+serializa el valor a JSON y escribe la respuesta HTTP; con `onComplete` sin valor escribe
+un cuerpo vacío; con `onError` mapea el error a un código de estado. Tú nunca llamas a
+`.subscribe()`.
 
-That is the whole reason handlers return publishers. A blocking controller *holds* a
-thread while the database answers; a reactive handler *describes* the response and
-hands the recipe back, freeing the thread to serve other requests until the value is
-ready. Conceptually:
+Esa es toda la razón por la que los manejadores devuelven publicadores. Un controlador
+bloqueante *retiene* un hilo mientras la base de datos responde; un manejador reactivo
+*describe* la respuesta y devuelve la receta, liberando el hilo para servir otras
+peticiones hasta que el valor esté listo. Conceptualmente:
 
 ```java
 @GetMapping("/{id}")
@@ -468,34 +481,35 @@ public Mono<LoanApplicationDto> byId(@PathVariable UUID id) {
 }                                           // the framework subscribes; you never do
 ```
 
-The same operators you tested above — `map`, `flatMap`, `filter`, `onErrorResume` —
-are the entire vocabulary of a real handler. An empty `Mono` (no row found) becomes a
-404 via `switchIfEmpty` and Firefly's error model; an `onError` becomes an RFC 7807
-problem response (Chapter 6); a `Flux` return becomes a JSON array or a streaming
-response. The test you just ran and the production handler are *the same model* —
-which is exactly why learning it on a six-method test transfers completely.
+Los mismos operadores que testeaste arriba (`map`, `flatMap`, `filter`, `onErrorResume`)
+son todo el vocabulario de un manejador real. Un `Mono` vacío (no se encontró fila) se
+convierte en un 404 vía `switchIfEmpty` y el modelo de errores de Firefly; un `onError` se
+convierte en una respuesta de problema RFC 7807 (Capítulo 6); un retorno de `Flux` se
+convierte en un array JSON o en una respuesta en streaming. El test que acabas de ejecutar
+y el manejador de producción son *el mismo modelo*, que es exactamente por lo que
+aprenderlo en un test de seis métodos se transfiere por completo.
 
-!!! spring "Spring parity"
-    This is plain Spring WebFlux: returning `Mono<T>` or `Flux<T>` from a
-    `@RestController` and letting the framework subscribe is identical with or
-    without Firefly. What Firefly adds is the consistent edge behavior around it —
-    the RFC 7807 error mapping, pagination envelope, and context propagation — so the
-    `Mono` you return lands as a uniform response across the whole fleet.
+!!! spring "Equivalente en Spring"
+    Esto es Spring WebFlux puro: devolver `Mono<T>` o `Flux<T>` desde un `@RestController`
+    y dejar que el framework se suscriba es idéntico con o sin Firefly. Lo que Firefly
+    añade es el comportamiento consistente del borde a su alrededor: el mapeo de errores
+    RFC 7807, el envoltorio de paginación y la propagación de contexto, de modo que el
+    `Mono` que devuelves aterriza como una respuesta uniforme en toda la flota.
 
-## Step 9 — The production linchpin: context across operator boundaries
+## Paso 9 — El eje de producción: contexto a través de las fronteras de operadores
 
-Here is the problem that bites every team that hand-rolls reactive code, and the one
-thing Firefly most quietly saves you from. In blocking Java, a trace ID or tenant ID
-lives in a `ThreadLocal` (the logging MDC is one), and because one thread serves one
-request start to finish, every log line on that thread carries the right ID. On the
-reactive stack that guarantee evaporates: a single request hops across many threads
-as it crosses `flatMap`, `publishOn`, and scheduler boundaries, and `ThreadLocal`
-does **not** follow it. Your logs end up blank — or worse, stamped with another
-request's ID.
+Aquí está el problema que muerde a todo equipo que se fabrica código reactivo a mano, y la
+única cosa de la que Firefly te salva con más discreción. En Java bloqueante, un ID de
+traza o un ID de inquilino vive en un `ThreadLocal` (el MDC de logging es uno de ellos), y
+como un hilo sirve una petición de principio a fin, cada línea de log de ese hilo lleva el
+ID correcto. En la pila reactiva esa garantía se evapora: una sola petición salta entre
+muchos hilos a medida que cruza `flatMap`, `publishOn` y las fronteras de los schedulers, y
+el `ThreadLocal` **no** la sigue. Tus logs acaban en blanco o, peor, sellados con el ID de
+otra petición.
 
-Reactor's own answer is the **Context**: an immutable, subscription-scoped map that
-*does* travel with the subscription across every operator. You can read and write it
-explicitly:
+La propia respuesta de Reactor es el **Context**: un mapa inmutable, con alcance de
+suscripción, que *sí* viaja con la suscripción a través de cada operador. Puedes leerlo y
+escribirlo de forma explícita:
 
 ```java
 Mono.deferContextual(ctx ->
@@ -504,114 +518,115 @@ Mono.deferContextual(ctx ->
     .contextWrite(Context.of("tenantId", tenant));    // writes it, near the edge
 ```
 
-That works, but threading it through by hand on every call is exactly the kind of
-copy-paste boilerplate Chapter 1 called the enterprise tax. The bridge between the
-old `ThreadLocal` world (which your logging, security, and tracing libraries still
-use) and Reactor's `Context` is one line, installed once at startup:
+Eso funciona, pero pasarlo a mano en cada llamada es exactamente el tipo de boilerplate de
+copiar y pegar que el Capítulo 1 llamó el impuesto empresarial. El puente entre el viejo
+mundo de `ThreadLocal` (que tus librerías de logging, seguridad y trazas siguen usando) y
+el `Context` de Reactor es una línea, instalada una sola vez al arranque:
 
 ```java
 Hooks.enableAutomaticContextPropagation();
 ```
 
-With that hook enabled, Reactor automatically restores registered `ThreadLocal`
-values — the MDC, the trace context, the tenant — around every operator, on whatever
-thread runs it. Your logs carry the right correlation ID across every `flatMap` and
-`publishOn`, with no `contextWrite` on your part.
+Con ese hook habilitado, Reactor restaura automáticamente los valores de `ThreadLocal`
+registrados (el MDC, el contexto de trazas, el inquilino) alrededor de cada operador, en
+cualquier hilo que lo ejecute. Tus logs llevan el ID de correlación correcto a través de
+cada `flatMap` y `publishOn`, sin ningún `contextWrite` por tu parte.
 
-You will not find that call in `ReactiveModelTest` — the test is a deliberately
-context-free tour of the operators. In a Firefly service you will not write it
-either, and that is the point: the observability auto-configuration enables the hook
-and registers the trace and tenant `ThreadLocal` accessors for you, so context
-propagation simply *works* across the fleet. This is the capability the prelude and
-Chapter 1 both flagged as the most valuable thing Firefly does on the reactive
-stack, and now you know precisely what it fixes.
+No encontrarás esa llamada en `ReactiveModelTest`: el test es un recorrido por los
+operadores deliberadamente libre de contexto. En un servicio Firefly tampoco la
+escribirás, y ese es el punto: la autoconfiguración de observabilidad habilita el hook y
+registra los accesores `ThreadLocal` de trazas e inquilino por ti, de modo que la
+propagación de contexto simplemente *funciona* en toda la flota. Esta es la capacidad que
+tanto el preludio como el Capítulo 1 señalaron como lo más valioso que hace Firefly en la
+pila reactiva, y ahora sabes con precisión qué arregla.
 
-!!! warning "Without context propagation, reactive logs lie"
-    A correlation ID that does not survive operator boundaries is worse than no ID:
-    it silently attaches the *wrong* request's identity to a log line. If you ever
-    build reactive code outside Firefly, enabling
-    `Hooks.enableAutomaticContextPropagation()` and registering your `ThreadLocal`
-    accessors is not optional — it is the difference between traceable and
-    untraceable production.
+!!! warning "Sin propagación de contexto, los logs reactivos mienten"
+    Un ID de correlación que no sobrevive a las fronteras de los operadores es peor que no
+    tener ID: adjunta silenciosamente la identidad de la petición *equivocada* a una línea
+    de log. Si alguna vez construyes código reactivo fuera de Firefly, habilitar
+    `Hooks.enableAutomaticContextPropagation()` y registrar tus accesores `ThreadLocal` no
+    es opcional: es la diferencia entre una producción trazable y una intrazable.
 
-!!! spring "Spring parity"
-    This mechanism is Micrometer's `context-propagation` library plus Reactor's
-    hook — available to any Spring Boot 3 / WebFlux app. The difference is wiring:
-    in plain Spring you enable the hook and register each `ThreadLocalAccessor`
-    yourself; Firefly's observability starter does it for the trace and tenant
-    context out of the box, identically in every service.
+!!! spring "Equivalente en Spring"
+    Este mecanismo es la librería `context-propagation` de Micrometer más el hook de
+    Reactor, disponible para cualquier aplicación Spring Boot 3 / WebFlux. La diferencia
+    es el cableado: en Spring normal habilitas el hook y registras cada `ThreadLocalAccessor`
+    tú mismo; el starter de observabilidad de Firefly lo hace para el contexto de trazas e
+    inquilino de fábrica, idéntico en cada servicio.
 
-## Run it
+## Ejecútalo
 
-You have walked all six tests. Now run the whole file and watch it pass end to end.
-From the `samples/lumen-lending` directory:
+Has recorrido los seis tests. Ahora ejecuta todo el fichero y observa cómo pasa de
+principio a fin. Desde el directorio `samples/lumen-lending`:
 
 ```text
 mvn -q -pl core-lending-loan-origination -Dtest=ReactiveModelTest test
 ```
 
-The expected result:
+El resultado esperado:
 
 ```text
 Tests run: 6, Failures: 0, Errors: 0, Skipped: 0
 BUILD SUCCESS
 ```
 
-Six green tests — one per facet of the model: a `Mono` value, an empty `Mono`, a
-`Flux` sequence, an operator pipeline, an error signal, and a virtual-time delay.
-That is the entire reactive vocabulary the rest of the book uses.
+Seis tests en verde, uno por cada faceta del modelo: un valor `Mono`, un `Mono` vacío, una
+secuencia `Flux`, una tubería de operadores, una señal de error y un retardo de tiempo
+virtual. Ese es todo el vocabulario reactivo que usa el resto del libro.
 
-## What you learned {.recap}
+## Lo que has aprendido {.recap}
 
-- A `Mono<T>` publishes **at most one** item; a `Flux<T>` publishes **zero to many**.
-  Both are **lazy recipes** — nothing runs until something **subscribes**, and the
-  framework subscribes for you at the HTTP edge.
-- A subscription produces a sequence of **signals**: zero or more `onNext`, then one
-  terminal `onComplete` or `onError`. Reactive testing with `StepVerifier` is
-  asserting that exact sequence — and the terminal call (`verifyComplete`/`verify`)
-  is what actually runs it.
-- You **compose** with operators: `map`/`filter` for synchronous transforms,
-  `flatMap` for chaining asynchronous calls, `zip` for combining, and
-  `onErrorResume`/`retry`/`retryWhen` for recovery. Errors flow down the stream as a
-  terminal signal, not up a call stack.
-- **Schedulers** control which thread runs the work; you move unavoidable blocking
-  calls off the event loop with `subscribeOn(Schedulers.boundedElastic())` and never
-  block the loop. **Virtual time** lets you test time-based operators instantly.
-- A handler returns a `Mono`/`Flux`; WebFlux subscribes and writes the response. The
-  production linchpin is **automatic context propagation** —
-  `Hooks.enableAutomaticContextPropagation()` — which keeps trace and tenant context
-  alive across operator boundaries. Firefly enables it for you.
+- Un `Mono<T>` publica **como mucho un** elemento; un `Flux<T>` publica **cero a muchos**.
+  Ambos son **recetas perezosas**: nada se ejecuta hasta que algo se **suscribe**, y el
+  framework se suscribe por ti en el borde HTTP.
+- Una suscripción produce una secuencia de **señales**: cero o más `onNext`, y luego una
+  terminal `onComplete` o `onError`. Testear de forma reactiva con `StepVerifier` es
+  afirmar esa secuencia exacta, y la llamada terminal (`verifyComplete`/`verify`) es lo
+  que realmente la ejecuta.
+- **Compones** con operadores: `map`/`filter` para transformaciones síncronas, `flatMap`
+  para encadenar llamadas asíncronas, `zip` para combinar, y
+  `onErrorResume`/`retry`/`retryWhen` para recuperarte. Los errores fluyen hacia abajo por
+  el flujo como una señal terminal, no hacia arriba por una pila de llamadas.
+- Los **schedulers** controlan qué hilo ejecuta el trabajo; mueves las llamadas
+  bloqueantes inevitables fuera del bucle de eventos con
+  `subscribeOn(Schedulers.boundedElastic())` y nunca bloqueas el bucle. El **tiempo
+  virtual** te permite testear operadores basados en tiempo al instante.
+- Un manejador devuelve un `Mono`/`Flux`; WebFlux se suscribe y escribe la respuesta. El
+  eje de producción es la **propagación automática de contexto**
+  (`Hooks.enableAutomaticContextPropagation()`), que mantiene vivo el contexto de trazas e
+  inquilino a través de las fronteras de los operadores. Firefly lo habilita por ti.
 
-## Try it yourself {.exercises}
+## Pruébalo tú mismo {.exercises}
 
-Each exercise extends the real test at
+Cada ejercicio extiende el test real en
 `core-lending-loan-origination/src/test/java/com/firefly/lumen/core/ReactiveModelTest.java`.
-Add a method, run `mvn -q -pl core-lending-loan-origination -Dtest=ReactiveModelTest test`,
-and keep it green.
+Añade un método, ejecuta `mvn -q -pl core-lending-loan-origination -Dtest=ReactiveModelTest test`,
+y mantenlo en verde.
 
-1. **flatMap the depth away.** Write a test where `Flux.just(1, 2, 3)` is transformed
-   with `.flatMap(n -> Flux.just(n, n))` and assert the six values it emits. Then
-   change `flatMap` to `map` and read the compile error — you will have built a
-   `Flux<Flux<Integer>>`. That error is the lesson.
-2. **Recover from an error.** Take the `failing` flux from
-   `errorsArePropagatedAsTerminalSignals`, append `.onErrorReturn(99)`, and assert the
-   sequence is now `1, 2, 99` followed by `verifyComplete()` — the error became a
-   value and the stream completed.
-3. **Empty is not an error.** Write a test that `Mono.<String>empty()` followed by
-   `.switchIfEmpty(Mono.just("fallback"))` emits `"fallback"`. This is the exact
-   pattern a handler uses to turn a missing row into a default or a 404.
-4. **Time out fast.** Using `StepVerifier.withVirtualTime`, build
+1. **flatMap para deshacer la profundidad.** Escribe un test donde `Flux.just(1, 2, 3)` se
+   transforme con `.flatMap(n -> Flux.just(n, n))` y afirma los seis valores que emite.
+   Luego cambia `flatMap` por `map` y lee el error de compilación: habrás construido un
+   `Flux<Flux<Integer>>`. Ese error es la lección.
+2. **Recupérate de un error.** Toma el flux `failing` de
+   `errorsArePropagatedAsTerminalSignals`, añade `.onErrorReturn(99)`, y afirma que la
+   secuencia es ahora `1, 2, 99` seguida de `verifyComplete()`: el error se convirtió en un
+   valor y el flujo completó.
+3. **Vacío no es error.** Escribe un test donde `Mono.<String>empty()` seguido de
+   `.switchIfEmpty(Mono.just("fallback"))` emita `"fallback"`. Este es el patrón exacto que
+   usa un manejador para convertir una fila ausente en un valor por defecto o un 404.
+4. **Tiempo de espera rápido.** Usando `StepVerifier.withVirtualTime`, construye
    `Mono.just("late").delayElement(Duration.ofSeconds(10)).timeout(Duration.ofSeconds(2))`,
-   advance virtual time, and assert it emits an `onError` of `TimeoutException` — a
-   ten-second call cut off at two seconds, proven instantly.
-5. **Watch the thread move.** In a throwaway `main` (not a test), subscribe to a
-   `Flux.range(1, 3)` with a `.publishOn(Schedulers.parallel())` and print
-   `Thread.currentThread().getName()` in a `doOnNext` before and after the
-   `publishOn`. Confirm the name changes at the boundary — then delete it.
+   adelanta el tiempo virtual, y afirma que emite un `onError` de `TimeoutException`: una
+   llamada de diez segundos cortada a los dos segundos, demostrado al instante.
+5. **Observa el hilo moverse.** En un `main` desechable (no un test), suscríbete a un
+   `Flux.range(1, 3)` con un `.publishOn(Schedulers.parallel())` e imprime
+   `Thread.currentThread().getName()` en un `doOnNext` antes y después del `publishOn`.
+   Confirma que el nombre cambia en la frontera, y luego bórralo.
 
-## Where to go next
+## Adónde ir ahora
 
-You now read and write Reactor fluently, which means the rest of Lumen Lending is
-just this model applied. Chapter 6 takes the very next step at the HTTP edge: when a
-`Mono` emits `onError`, how does Firefly turn that terminal signal into a consistent
-RFC 7807 problem response — automatically, identically, in every service?
+Ahora lees y escribes Reactor con fluidez, lo que significa que el resto de Lumen Lending
+es solo este modelo aplicado. El Capítulo 6 da el siguiente paso justo en el borde HTTP:
+cuando un `Mono` emite `onError`, ¿cómo convierte Firefly esa señal terminal en una
+respuesta de problema RFC 7807 consistente, de forma automática, idéntica, en cada
+servicio?

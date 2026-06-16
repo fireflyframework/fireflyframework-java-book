@@ -1,28 +1,32 @@
-You have built three tiers without ever naming the architecture out loud. Chapters
-6 through 8 built a **core** service — the loan-origination system of record, with a
-reactive controller over R2DBC. Chapters 10 through 13 built a **domain** service —
-CQRS handlers, a saga, events, all orchestrating over a port instead of a database.
-This chapter adds the third, the **experience** tier, and then steps back to name
-the whole shape: the four-tier architecture that organizes every Firefly fleet, and
-the one rule that holds it together.
+Has construido tres capas sin nombrar nunca la arquitectura en voz alta. Los
+capítulos 6 a 8 construyeron un servicio **core** — el sistema de registro de la
+originación de préstamos, con un controlador reactivo sobre R2DBC. Los capítulos 10
+a 13 construyeron un servicio de **dominio** — manejadores CQRS, una saga, eventos,
+todo orquestando sobre un puerto en lugar de una base de datos. Este capítulo añade
+la tercera, la capa de **experiencia**, y luego da un paso atrás para nombrar la
+forma completa: la arquitectura de cuatro capas que organiza toda flota Firefly, y
+la única regla que la mantiene unida.
 
-The shape is not decoration. Each tier has a distinct job, picks a distinct starter,
-and integrates with its neighbors over a *contract* — a generated SDK or an HTTP
-call — never over a shared database. That single constraint is what lets a
-hundred-service platform evolve one service at a time. You met it as a promise in
-Chapter 1; now you have three tiers in front of you to make it concrete.
+La forma no es decoración. Cada capa tiene una tarea distinta, elige un starter
+distinto e integra con sus vecinas sobre un *contrato* — un SDK generado o una
+llamada HTTP — nunca sobre una base de datos compartida. Esa única restricción es lo
+que permite a una plataforma de cien servicios evolucionar un servicio cada vez. La
+conociste como una promesa en el Capítulo 1; ahora tienes tres capas delante de ti
+para hacerla concreta.
 
-We will list the directories so you can see the tiers as real modules, slice the
-experience tier's two seams — its channel-facing controller and the reactive port
-that is its boundary to the domain — and then walk the four starters, the
-no-shared-database rule, and the configuration hierarchy that ties the fleet
-together. Lumen's slice ships three of the four tiers; the fourth, **data**, we name
-here and build in Chapter 15.
+Listaremos los directorios para que puedas ver las capas como módulos reales,
+diseccionaremos las dos costuras de la capa de experiencia — su controlador de cara
+al canal y el puerto reactivo que es su frontera hacia el dominio — y luego
+recorreremos los cuatro starters, la regla de no compartir base de datos y la
+jerarquía de configuración que une la flota. La porción de Lumen entrega tres de las
+cuatro capas; la cuarta, **data**, la nombramos aquí y la construimos en el Capítulo
+15.
 
-## The four directories
+## Los cuatro directorios
 
-Open `samples/lumen-lending` and the architecture is sitting in the directory
-listing. Three modules, one per tier built so far, under one parent POM:
+Abre `samples/lumen-lending` y la arquitectura está ahí, en el listado de
+directorios. Tres módulos, uno por cada capa construida hasta ahora, bajo un único
+POM padre:
 
 ```text
 samples/lumen-lending/
@@ -32,35 +36,36 @@ samples/lumen-lending/
 └── core-lending-loan-origination/       # core tier        (starter-core)
 ```
 
-Read the names as a stack. A channel request lands on `exp-lending`, the
-Backend-for-Frontend. It calls `domain-lending-loan-origination`, the orchestration
-layer that runs the CQRS commands and the saga. That domain service calls
-`core-lending-loan-origination`, the system of record that owns the schema and the
-rows. The data flows down the stack on the way in and back up on the way out, and at
-every boundary the call crosses a *network contract*, not a method call into shared
-code.
+Lee los nombres como una pila. Una petición de canal aterriza en `exp-lending`, el
+Backend-for-Frontend. Este llama a `domain-lending-loan-origination`, la capa de
+orquestación que ejecuta los comandos CQRS y la saga. Ese servicio de dominio llama a
+`core-lending-loan-origination`, el sistema de registro que posee el esquema y las
+filas. Los datos fluyen hacia abajo por la pila en el camino de entrada y de vuelta
+hacia arriba en el de salida, y en cada frontera la llamada cruza un *contrato de
+red*, no una llamada a método dentro de código compartido.
 
-The fourth tier, **data**, would sit beside these as another module on
-`starter-data` — credit-bureau enrichment, data quality, lineage. Lumen's slice does
-not build it yet; Chapter 15 introduces it. For now, hold the picture at three real
-modules plus one named-but-not-yet-built.
+La cuarta capa, **data**, se situaría junto a estas como otro módulo sobre
+`starter-data` — enriquecimiento con la central de riesgos, calidad de datos, linaje.
+La porción de Lumen aún no la construye; el Capítulo 15 la introduce. Por ahora,
+mantén la imagen en tres módulos reales más uno nombrado-pero-aún-no-construido.
 
-!!! note "Key term — tier"
-    A **tier** in a Firefly platform is a service whose *role* is fixed by the
-    architecture: **experience** composes for a channel, **domain** orchestrates
-    business flows, **core** owns data, **data** enriches it. Each role maps to one
-    tier starter, and tiers integrate only over contracts. "Which tier is this?" is
-    answered by which starter the POM declares — not by a naming convention you have
-    to remember.
+!!! note "Término clave — capa"
+    Una **capa** en una plataforma Firefly es un servicio cuyo *rol* está fijado por
+    la arquitectura: **experiencia** compone para un canal, **dominio** orquesta
+    flujos de negocio, **core** posee los datos, **data** los enriquece. Cada rol se
+    corresponde con un starter de capa, y las capas integran solo sobre contratos.
+    "¿Qué capa es esta?" se responde con qué starter declara el POM — no con una
+    convención de nombres que tengas que recordar.
 
-## The experience tier's outward seam
+## La costura externa de la capa de experiencia
 
-The experience tier is the only one a channel — a mobile app, a web client — talks
-to directly. Its controller is a thin, stateless composition layer: validate the
-channel-shaped request, call downstream, shape a lightweight DTO back. Open
-`exp-lending`'s single web class and notice how little business logic it holds.
+La capa de experiencia es la única con la que un canal — una app móvil, un cliente
+web — habla directamente. Su controlador es una capa de composición fina y sin
+estado: validar la petición con forma de canal, llamar aguas abajo, devolver un DTO
+ligero. Abre la única clase web de `exp-lending` y fíjate en lo poca lógica de
+negocio que contiene.
 
-::: listing exp-lending/src/main/java/com/firefly/lumen/exp/web/ApplicationController.java | Listing 14.1 — the experience-tier controller: base path /api/v1/experience/lending/applications
+::: listing exp-lending/src/main/java/com/firefly/lumen/exp/web/ApplicationController.java | Listado 14.1 — el controlador de la capa de experiencia: ruta base /api/v1/experience/lending/applications
 @RestController
 @RequestMapping("/api/v1/experience/lending/applications")
 @Tag(name = "Lending - Applications")
@@ -95,41 +100,41 @@ public class ApplicationController {
 }
 :::
 
-Two things mark this as the *experience* tier, not the core controller you wrote in
-Chapter 6.
+Dos cosas marcan esto como la capa de *experiencia*, no el controlador core que
+escribiste en el Capítulo 6.
 
-First, the base path. `/api/v1/experience/lending/applications` is namespaced under
-`experience` because it is a channel-facing surface, distinct from the core's
-`/api/v1/loan-applications` system-of-record API. The two paths live in two
-different services on two different ports; a client never reaches the core directly,
-only the experience tier in front of it.
+Primero, la ruta base. `/api/v1/experience/lending/applications` está dentro del
+espacio de nombres `experience` porque es una superficie de cara al canal, distinta
+de la API de sistema de registro del core `/api/v1/loan-applications`. Las dos rutas
+viven en dos servicios distintos en dos puertos distintos; un cliente nunca alcanza
+el core directamente, solo la capa de experiencia que tiene delante.
 
-Second, the controller does no business work. `createApplication` validates the
-request and delegates to `applicationService`, which calls *downstream* — it does not
-touch a repository, because the experience tier owns no database. It composes a call
-to the domain tier and maps the result. That is the whole job of a BFF: shape, call,
-shape back. The `@Secure` method-level authorization comes from the application
-starter; we cover it fully in Chapter 19.
+Segundo, el controlador no hace ningún trabajo de negocio. `createApplication` valida
+la petición y delega en `applicationService`, que llama *aguas abajo* — no toca un
+repositorio, porque la capa de experiencia no posee base de datos. Compone una llamada
+a la capa de dominio y mapea el resultado. Esa es toda la tarea de un BFF: dar forma,
+llamar, devolver con forma. La autorización a nivel de método `@Secure` proviene del
+starter de aplicación; la cubrimos por completo en el Capítulo 19.
 
-!!! spring "Spring parity"
-    Everything structural here is plain Spring WebFlux — `@RestController`,
+!!! spring "Equivalente en Spring"
+    Todo lo estructural aquí es Spring WebFlux puro — `@RestController`,
     `@RequestMapping`, `@PostMapping`, `@GetMapping`, `@PathVariable`, `@Valid`,
-    `ResponseEntity`. The `@Tag`/`@Operation` pair is springdoc. The only Firefly
-    annotation is `@Secure`, a meta-annotated stereotype driven by the starter's
-    `SecurityAspect`. If you have written a WebFlux controller, the experience tier
-    holds no surprises — its distinctness is architectural (where it sits, what it
-    talks to), not syntactic.
+    `ResponseEntity`. El par `@Tag`/`@Operation` es springdoc. La única anotación de
+    Firefly es `@Secure`, un estereotipo meta-anotado impulsado por el `SecurityAspect`
+    del starter. Si has escrito un controlador WebFlux, la capa de experiencia no
+    guarda sorpresas — su distinción es arquitectónica (dónde se sitúa, con qué habla),
+    no sintáctica.
 
-## The experience tier's inward seam
+## La costura interna de la capa de experiencia
 
-The controller delegates to a service, and the service reaches the domain tier
-through a *port* — an interface that is the experience-to-domain boundary. This is
-the same pattern you met in Chapter 10, where the domain tier reached the core
-through `LoanOriginationClient`. One tier up, the shape repeats: the experience tier
-depends on an interface, never a concrete client, and the generated SDK plugs in
-behind it.
+El controlador delega en un servicio, y el servicio alcanza la capa de dominio a
+través de un *puerto* — una interfaz que es la frontera experiencia-a-dominio. Este
+es el mismo patrón que conociste en el Capítulo 10, donde la capa de dominio alcanzaba
+el core a través de `LoanOriginationClient`. Una capa más arriba, la forma se repite:
+la capa de experiencia depende de una interfaz, nunca de un cliente concreto, y el SDK
+generado se conecta detrás de ella.
 
-::: listing exp-lending/src/main/java/com/firefly/lumen/exp/client/LoanOriginationDomainClient.java | Listing 14.2 — the exp→domain SDK seam: a reactive port to the domain service
+::: listing exp-lending/src/main/java/com/firefly/lumen/exp/client/LoanOriginationDomainClient.java | Listado 14.2 — la costura SDK exp→dominio: un puerto reactivo hacia el servicio de dominio
 public interface LoanOriginationDomainClient {
 
     /**
@@ -152,218 +157,236 @@ public interface LoanOriginationDomainClient {
 }
 :::
 
-Every method returns a `Mono`, because the whole experience stack — controller,
-service, the HTTP hop to the domain service — is non-blocking end to end. And every
-method takes an `idempotencyKey`: the experience tier mints a deterministic key per
-logical request so that a retried channel call dedupes downstream instead of creating
-a second application. The key is the experience tier's contribution to safe retries
-across the network boundary.
+Cada método devuelve un `Mono`, porque toda la pila de experiencia — controlador,
+servicio, el salto HTTP al servicio de dominio — es no bloqueante de extremo a
+extremo. Y cada método recibe un `idempotencyKey`: la capa de experiencia acuña una
+clave determinista por petición lógica de modo que una llamada de canal reintentada se
+deduplica aguas abajo en lugar de crear una segunda aplicación. La clave es la
+contribución de la capa de experiencia a los reintentos seguros a través de la
+frontera de red.
 
-The same honesty from Chapter 10 applies here, one tier up. In a real Firefly
-deployment, `exp-lending` does not hand-write this interface — it injects the
-*generated domain SDK*, a `WebClient`-based client produced from the domain service's
-OpenAPI contract and wired by a `ClientFactory`. The reactor hand-rolls a trimmed
-port so the sample compiles and its tests run with **no running domain service and no
-Docker**; an in-memory stub lives under `src/test/java`. Chapter 16 is where the
-generated SDK and its resilient defaults — retries, timeouts, a circuit breaker —
-take over, and Chapter 17 returns to the experience tier in full.
+La misma honestidad del Capítulo 10 aplica aquí, una capa más arriba. En un despliegue
+Firefly real, `exp-lending` no escribe a mano esta interfaz — inyecta el *SDK de
+dominio generado*, un cliente basado en `WebClient` producido a partir del contrato
+OpenAPI del servicio de dominio y cableado por un `ClientFactory`. El reactor escribe
+a mano un puerto recortado para que el ejemplo compile y sus tests se ejecuten **sin
+ningún servicio de dominio en marcha y sin Docker**; un stub en memoria vive bajo
+`src/test/java`. El Capítulo 16 es donde el SDK generado y sus valores por defecto
+resilientes — reintentos, timeouts, un circuit breaker — toman el relevo, y el
+Capítulo 17 vuelve a la capa de experiencia por completo.
 
-!!! warning "The port is the SDK seam, not a hand-written client you ship"
-    Read `LoanOriginationDomainClient` as "this is where the generated domain SDK
-    plugs in," exactly as you read `LoanOriginationClient` in Chapter 10 for the
-    domain→core hop. The production path is a generated, resilient `WebClient` client;
-    the port exists so this slice can teach the *tier boundary* without standing up
-    the downstream service. The boundary is the lesson; the stub is scaffolding.
+!!! warning "El puerto es la costura del SDK, no un cliente escrito a mano que entregas"
+    Lee `LoanOriginationDomainClient` como "aquí es donde se conecta el SDK de dominio
+    generado", exactamente como leíste `LoanOriginationClient` en el Capítulo 10 para
+    el salto dominio→core. La ruta de producción es un cliente `WebClient` generado y
+    resiliente; el puerto existe para que esta porción pueda enseñar la *frontera de
+    capa* sin levantar el servicio aguas abajo. La frontera es la lección; el stub es
+    andamiaje.
 
-!!! note "Key term — the tier seam (a reactive port)"
-    A **tier seam** is the interface one tier depends on to call the next. It is a
-    reactive port — methods returning `Mono`/`Flux` — so the caller stays non-blocking
-    across the network hop. The seam is what makes the no-shared-database rule
-    enforceable in code: a tier that can only see an interface *cannot* reach into a
-    neighbor's tables. `LoanOriginationDomainClient` (exp→domain) and
-    `LoanOriginationClient` (domain→core) are the two seams in Lumen's slice.
+!!! note "Término clave — la costura de capa (un puerto reactivo)"
+    Una **costura de capa** es la interfaz de la que una capa depende para llamar a la
+    siguiente. Es un puerto reactivo — métodos que devuelven `Mono`/`Flux` — de modo
+    que el llamante permanece no bloqueante a través del salto de red. La costura es lo
+    que hace que la regla de no compartir base de datos sea exigible en código: una
+    capa que solo puede ver una interfaz *no puede* meter mano en las tablas de una
+    vecina. `LoanOriginationDomainClient` (exp→dominio) y `LoanOriginationClient`
+    (dominio→core) son las dos costuras en la porción de Lumen.
 
-## The four tiers, and why each picks its starter
+## Las cuatro capas, y por qué cada una elige su starter
 
-Now the whole shape. Four tiers, four starters, each bundling the capabilities and
-production defaults that its role needs and nothing it does not. The starter is how a
-service declares which tier it is — a single dependency, version-less because the BOM
-from Chapter 3 pins it.
+Ahora la forma completa. Cuatro capas, cuatro starters, cada uno empaquetando las
+capacidades y los valores por defecto de producción que su rol necesita y nada que no
+necesite. El starter es como un servicio declara qué capa es — una única dependencia,
+sin versión porque el BOM del Capítulo 3 la fija.
 
-- **Experience (`exp-lending`) — `fireflyframework-starter-application`.** The
-  channel-facing BFF. Stateless composition: validate, call downstream, shape a DTO.
-  Its starter brings the channel concerns — method security (`@Secure`), caching, the
-  resilient client machinery to call domain services — but no persistence, because it
-  owns no data. This is the tier in Listings 14.1 and 14.2.
-- **Domain (`domain-lending-loan-origination`) — `fireflyframework-starter-domain`.**
-  Business orchestration. Translates coarse channel requests into CQRS commands and
-  queries, runs compensating sagas, emits domain events (Chapters 10–13). Its starter
-  brings the CQRS buses, saga engine, and EDA runtime — and, like the experience tier,
-  no database, because it calls the core over an SDK.
-- **Core (`core-lending-loan-origination`) — `fireflyframework-starter-core` plus
-  R2DBC.** The system of record. Owns the schema, the rows, and the reactive CRUD and
-  business APIs over them (Chapters 6–8). It is the *only* tier with a datastore, so
-  its starter is paired with the reactive R2DBC stack.
-- **Data — `fireflyframework-starter-data`.** Enrichment, data quality, and lineage —
-  credit-bureau lookups, scoring inputs, the data-platform concerns. Lumen names it
-  here and builds it in **Chapter 15**.
+- **Experiencia (`exp-lending`) — `fireflyframework-starter-application`.** El BFF de
+  cara al canal. Composición sin estado: validar, llamar aguas abajo, dar forma a un
+  DTO. Su starter trae las preocupaciones de canal — seguridad a nivel de método
+  (`@Secure`), caché, la maquinaria de cliente resiliente para llamar a servicios de
+  dominio — pero ninguna persistencia, porque no posee datos. Esta es la capa de los
+  Listados 14.1 y 14.2.
+- **Dominio (`domain-lending-loan-origination`) — `fireflyframework-starter-domain`.**
+  Orquestación de negocio. Traduce peticiones de canal de grano grueso en comandos y
+  consultas CQRS, ejecuta sagas compensatorias, emite eventos de dominio (Capítulos
+  10–13). Su starter trae los buses CQRS, el motor de sagas y el runtime EDA — y, como
+  la capa de experiencia, ninguna base de datos, porque llama al core sobre un SDK.
+- **Core (`core-lending-loan-origination`) — `fireflyframework-starter-core` más
+  R2DBC.** El sistema de registro. Posee el esquema, las filas y las APIs reactivas
+  CRUD y de negocio sobre ellas (Capítulos 6–8). Es la *única* capa con un almacén de
+  datos, así que su starter se empareja con la pila reactiva R2DBC.
+- **Data — `fireflyframework-starter-data`.** Enriquecimiento, calidad de datos y
+  linaje — consultas a la central de riesgos, entradas de scoring, las preocupaciones
+  de plataforma de datos. Lumen la nombra aquí y la construye en el **Capítulo 15**.
 
-Look back at the three POMs from Chapter 3 and the pattern is exact: each module
-declares precisely one tier starter, with no version, and inherits the rest from the
-parent. The experience POM declares `fireflyframework-starter-application`; the domain
-POM, `fireflyframework-starter-domain`; the core POM, `fireflyframework-starter-core`.
-The starter is not a convenience — it is the machine-readable answer to "what kind of
-service is this?"
+Mira de nuevo los tres POMs del Capítulo 3 y el patrón es exacto: cada módulo declara
+precisamente un starter de capa, sin versión, y hereda el resto del padre. El POM de
+experiencia declara `fireflyframework-starter-application`; el POM de dominio,
+`fireflyframework-starter-domain`; el POM del core, `fireflyframework-starter-core`. El
+starter no es una comodidad — es la respuesta legible por máquina a "¿qué tipo de
+servicio es este?".
 
-!!! spring "Spring parity"
-    A Firefly tier starter *is* a Spring Boot starter — a POM that aggregates
-    dependencies and auto-configurations, the same mechanism behind
-    `spring-boot-starter-web`. What Firefly adds is the *opinion*: four starters
-    aligned to four architectural roles, each pre-wiring the cross-cutting behavior
-    (security, CQRS, persistence, resilient clients) that role needs. Adding
-    `starter-domain` is to a domain service what adding `starter-web` is to a web app —
-    one line that turns on a coherent slice of behavior.
+!!! spring "Equivalente en Spring"
+    Un starter de capa de Firefly *es* un starter de Spring Boot — un POM que agrega
+    dependencias y autoconfiguraciones, el mismo mecanismo detrás de
+    `spring-boot-starter-web`. Lo que Firefly añade es la *opinión*: cuatro starters
+    alineados con cuatro roles arquitectónicos, cada uno precableando el comportamiento
+    transversal (seguridad, CQRS, persistencia, clientes resilientes) que ese rol
+    necesita. Añadir `starter-domain` es para un servicio de dominio lo que añadir
+    `starter-web` es para una app web — una línea que enciende una porción coherente de
+    comportamiento.
 
-## The cardinal rule: integrate over contracts, never a shared database
+## La regla cardinal: integra sobre contratos, nunca sobre una base de datos compartida
 
-Everything above rests on one constraint, and it is worth stating as a law:
+Todo lo anterior descansa sobre una restricción, y vale la pena enunciarla como una
+ley:
 
-> Tiers integrate over generated SDKs and HTTP. **No two tiers ever share a
-> database.**
+> Las capas integran sobre SDKs generados y HTTP. **Dos capas nunca comparten una
+> base de datos.**
 
-Only the core tier owns a datastore. The domain tier reaches it through
-`LoanOriginationClient`; the experience tier reaches the domain through
-`LoanOriginationDomainClient`. Neither the experience nor the domain service has an
-R2DBC dependency, a connection pool, or a repository — and that is by design, not
-omission. If the domain tier could query the core's tables directly, every change to
-the core's schema would risk breaking the domain service silently, and the two would
-be welded together exactly the way the CQRS handler was welded to its consumers in
-Chapter 11.
+Solo la capa core posee un almacén de datos. La capa de dominio lo alcanza a través de
+`LoanOriginationClient`; la capa de experiencia alcanza el dominio a través de
+`LoanOriginationDomainClient`. Ni el servicio de experiencia ni el de dominio tienen
+una dependencia R2DBC, un pool de conexiones o un repositorio — y eso es por diseño, no
+por omisión. Si la capa de dominio pudiera consultar las tablas del core directamente,
+cada cambio en el esquema del core arriesgaría romper el servicio de dominio en
+silencio, y los dos quedarían soldados exactamente del modo en que el manejador CQRS
+quedó soldado a sus consumidores en el Capítulo 11.
 
-Integrating over a *contract* breaks that weld. The core can reshape its storage
-behind a stable OpenAPI surface; the domain only sees the generated SDK; the
-experience only sees the domain's SDK. Each tier can be deployed, scaled, and evolved
-independently because the only thing crossing a boundary is a versioned wire contract.
-This is the rule from Chapter 1 — *integrate over contracts, not over a shared
-schema* — and the two ports you sliced are where it is enforced in code: a tier that
-can only see an interface physically cannot reach into a neighbor's tables.
+Integrar sobre un *contrato* rompe esa soldadura. El core puede reformar su
+almacenamiento detrás de una superficie OpenAPI estable; el dominio solo ve el SDK
+generado; la experiencia solo ve el SDK del dominio. Cada capa puede desplegarse,
+escalarse y evolucionar de forma independiente porque lo único que cruza una frontera
+es un contrato de red versionado. Esta es la regla del Capítulo 1 — *integra sobre
+contratos, no sobre un esquema compartido* — y los dos puertos que diseccionaste son
+donde se hace cumplir en código: una capa que solo puede ver una interfaz físicamente
+no puede meter mano en las tablas de una vecina.
 
-!!! warning "A shared database is the failure mode, not a shortcut"
-    The most common way teams quietly destroy a tiered architecture is to let two
-    services point at the same database "just for this one query." The moment they do,
-    the tiers are coupled at the schema, deployments must be coordinated, and the
-    independence the architecture promised is gone. If a tier needs data it does not
-    own, it calls the owner over the owner's SDK. There is no exception that does not
-    cost you the architecture.
+!!! warning "Una base de datos compartida es el modo de fallo, no un atajo"
+    La forma más común en que los equipos destruyen silenciosamente una arquitectura
+    en capas es dejar que dos servicios apunten a la misma base de datos "solo para
+    esta consulta". En el momento en que lo hacen, las capas quedan acopladas en el
+    esquema, los despliegues deben coordinarse y la independencia que la arquitectura
+    prometía desaparece. Si una capa necesita datos que no posee, llama al dueño sobre
+    el SDK del dueño. No hay excepción que no te cueste la arquitectura.
 
-## How configuration follows the tiers
+## Cómo la configuración sigue a las capas
 
-The tiers do not only structure code — they structure *configuration*. Recall the
-config hierarchy from Chapter 4: the Firefly config server serves settings in layers,
-and the layers mirror the tiers. **common** settings apply to the whole fleet — log
-format, the tracing endpoint, shared conventions. **core**, **domain**, and
-**experience** layers each hold settings shared by every service of *that tier*. And
-each service's own `application.yml` holds what is true for it alone.
+Las capas no solo estructuran el código — estructuran la *configuración*. Recuerda la
+jerarquía de configuración del Capítulo 4: el servidor de configuración de Firefly
+sirve ajustes en capas, y las capas reflejan las capas arquitectónicas. Los ajustes
+**common** aplican a toda la flota — formato de logs, el endpoint de trazado,
+convenciones compartidas. Las capas **core**, **domain** y **experience** contienen
+cada una ajustes compartidos por cada servicio de *esa capa*. Y el propio
+`application.yml` de cada servicio contiene lo que es cierto solo para él.
 
-So a tier is a configuration scope as well as a code role. A setting that every
-domain service needs — a default timeout, a saga property — lives in the **domain**
-layer and every domain service inherits it; a setting every core service needs lives
-in **core**. A new service joins the hierarchy simply by declaring its tier starter
-and pointing at the config server: the starter establishes the tier, and the tier
-selects which shared layers it inherits. That is the convention Chapter 4 named, seen
-now from the architecture's side — the same four words, `common` / `core` / `domain` /
-`experience`, organize the dependency graph and the property graph alike.
+Así que una capa es también un ámbito de configuración además de un rol de código. Un
+ajuste que cada servicio de dominio necesita — un timeout por defecto, una propiedad de
+saga — vive en la capa **domain** y cada servicio de dominio lo hereda; un ajuste que
+cada servicio core necesita vive en **core**. Un nuevo servicio se une a la jerarquía
+simplemente declarando su starter de capa y apuntando al servidor de configuración: el
+starter establece la capa, y la capa selecciona qué capas compartidas hereda. Esa es
+la convención que el Capítulo 4 nombró, vista ahora desde el lado de la arquitectura —
+las mismas cuatro palabras, `common` / `core` / `domain` / `experience`, organizan por
+igual el grafo de dependencias y el grafo de propiedades.
 
-!!! spring "Spring parity"
-    The hierarchy rides on Spring Cloud Config, whose layered property resolution you
-    could assemble by hand. Firefly's contribution is the *convention* that the layers
-    are exactly the tiers — so "which shared config does this service inherit?" has the
-    same answer as "which starter does it declare?" One concept, the tier, indexes both
-    the build and the configuration.
+!!! spring "Equivalente en Spring"
+    La jerarquía se monta sobre Spring Cloud Config, cuya resolución de propiedades en
+    capas podrías ensamblar a mano. La contribución de Firefly es la *convención* de
+    que las capas son exactamente las capas arquitectónicas — de modo que "¿qué
+    configuración compartida hereda este servicio?" tiene la misma respuesta que "¿qué
+    starter declara?". Un concepto, la capa, indexa tanto la construcción como la
+    configuración.
 
-## Run it
+## Ejecútalo
 
-The experience tier's slice tests prove the BFF boots, secures its endpoints, and
-composes downstream — all against the in-memory stub for the domain port, with no
-running domain service and no Docker. From the `samples/lumen-lending` directory:
+Los tests de porción de la capa de experiencia demuestran que el BFF arranca, asegura
+sus endpoints y compone aguas abajo — todo contra el stub en memoria del puerto de
+dominio, sin ningún servicio de dominio en marcha y sin Docker. Desde el directorio
+`samples/lumen-lending`:
 
 ```text
 mvn -q -pl exp-lending test
 ```
 
-You should see all nine pass:
+Deberías ver los nueve pasar:
 
 ```text
 Tests run: 9, Failures: 0, Errors: 0, Skipped: 0
 BUILD SUCCESS
 ```
 
-Those nine cover the context booting (`ExpLendingApplicationTest`), the controller's
-create-and-read paths over `WebTestClient` (`ApplicationControllerTest`), and the
-service's composition logic against the stub port (`ApplicationServiceTest`). The
-substitution is the same seam trick you saw one tier down: the test supplies an
-in-memory `LoanOriginationDomainClient`, and nothing in the controller or service
-changes. That is the tier boundary earning its keep — the experience tier is testable
-in complete isolation from the domain tier it fronts.
+Esos nueve cubren el arranque del contexto (`ExpLendingApplicationTest`), las rutas de
+creación y lectura del controlador sobre `WebTestClient` (`ApplicationControllerTest`)
+y la lógica de composición del servicio contra el puerto stub (`ApplicationServiceTest`).
+La sustitución es el mismo truco de costura que viste una capa más abajo: el test
+provee un `LoanOriginationDomainClient` en memoria, y nada en el controlador o el
+servicio cambia. Eso es la frontera de capa ganándose el sueldo — la capa de
+experiencia es testeable en aislamiento completo de la capa de dominio que tiene
+delante.
 
-!!! tip "Checkpoint"
-    Run the command and confirm `Tests run: 9, Failures: 0`. Then open
-    `src/test/java` and find `StubLoanOriginationDomainClient` — the in-memory
-    implementation of the port from Listing 14.2. It is the only thing standing in for
-    a whole downstream service, which is exactly why these nine tests run in seconds.
+!!! tip "Punto de control"
+    Ejecuta el comando y confirma `Tests run: 9, Failures: 0`. Luego abre
+    `src/test/java` y encuentra `StubLoanOriginationDomainClient` — la implementación
+    en memoria del puerto del Listado 14.2. Es lo único que sustituye a todo un
+    servicio aguas abajo, que es exactamente por lo que estos nueve tests se ejecutan
+    en segundos.
 
-## What you learned {.recap}
+## Lo que has aprendido {.recap}
 
-- Lumen Lending is **four tiers**: **experience** (channel-facing BFF, on
-  `starter-application`), **domain** (orchestration, on `starter-domain`), **core**
-  (system of record, on `starter-core` plus R2DBC), and **data** (enrichment, on
-  `starter-data`). The slice builds the first three; **data** is named here and built
-  in Chapter 15.
-- A tier declares its role by the **one starter** its POM imports — the cross-ref
-  from Chapter 3, now read as architecture: experience→`starter-application`,
-  domain→`starter-domain`, core→`starter-core`.
-- The experience tier is a thin composition layer — base path
-  `/api/v1/experience/lending/applications`, no business logic, no database — that
-  reaches the domain through `LoanOriginationDomainClient`, a reactive port that is
-  the **exp→domain SDK seam** (the generated domain SDK plugs in behind it in
-  production).
-- The cardinal rule: tiers integrate over **generated SDKs and HTTP, and never share
-  a database**. Only the core owns a datastore; the two reactive ports are where the
-  rule is enforced in code.
-- Configuration follows the tiers — the Chapter 4 **common / core / domain /
-  experience** hierarchy uses the same four words, so a service's tier selects both
-  the shared dependencies and the shared config it inherits.
+- Lumen Lending son **cuatro capas**: **experiencia** (BFF de cara al canal, sobre
+  `starter-application`), **dominio** (orquestación, sobre `starter-domain`), **core**
+  (sistema de registro, sobre `starter-core` más R2DBC) y **data** (enriquecimiento,
+  sobre `starter-data`). La porción construye las tres primeras; **data** se nombra
+  aquí y se construye en el Capítulo 15.
+- Una capa declara su rol mediante el **único starter** que su POM importa — la
+  referencia cruzada del Capítulo 3, ahora leída como arquitectura:
+  experiencia→`starter-application`, dominio→`starter-domain`, core→`starter-core`.
+- La capa de experiencia es una capa de composición fina — ruta base
+  `/api/v1/experience/lending/applications`, sin lógica de negocio, sin base de datos —
+  que alcanza el dominio a través de `LoanOriginationDomainClient`, un puerto reactivo
+  que es la **costura SDK exp→dominio** (el SDK de dominio generado se conecta detrás
+  de él en producción).
+- La regla cardinal: las capas integran sobre **SDKs generados y HTTP, y nunca
+  comparten una base de datos**. Solo el core posee un almacén de datos; los dos
+  puertos reactivos son donde la regla se hace cumplir en código.
+- La configuración sigue a las capas — la jerarquía **common / core / domain /
+  experience** del Capítulo 4 usa las mismas cuatro palabras, de modo que la capa de un
+  servicio selecciona tanto las dependencias compartidas como la configuración
+  compartida que hereda.
 
-## Try it yourself {.exercises}
+## Pruébalo tú mismo {.exercises}
 
-1. **Trace a request down the stack.** Starting at `createApplication` in
-   `ApplicationController`, follow the call into `ApplicationService` and out through
-   `LoanOriginationDomainClient.submitApplication`. Write down every boundary the
-   request crosses and name which is a method call and which is (in production) a
-   network hop.
-2. **Find the absent database.** Open `exp-lending/pom.xml` and
-   `domain-lending-loan-origination/pom.xml` and confirm neither declares R2DBC or a
-   repository dependency, then open `core-lending-loan-origination/pom.xml` and find
-   where the datastore lives. Explain in one sentence why only one of the three has it.
-3. **Read the starter as the tier marker.** For each of the three modules, find the
-   single `fireflyframework-starter-*` line in its POM. Cover the artifact id and
-   predict the tier from the directory name; uncover it and check. Which starter would
-   a new `data-lending-bureau` module declare?
-4. **Compare the two seams.** Put `LoanOriginationDomainClient` (Listing 14.2) next to
-   `LoanOriginationClient` (Listing 10.6). List what is the same about them (reactive
-   ports, stand in for a generated SDK, tested with an in-memory stub) and what differs
-   (the `idempotencyKey` parameter, the DTO types). Why does the experience seam carry
-   an idempotency key the domain seam did not surface?
-5. **Place a setting in the hierarchy.** Given a default downstream timeout that
-   *every* domain service should share, and a base path that only `exp-lending` uses,
-   say which config layer each belongs in — `common`, a tier layer, or the service's
-   own `application.yml` — and justify each from the no-duplication goal of Chapter 4.
+1. **Traza una petición bajando por la pila.** Empezando en `createApplication` en
+   `ApplicationController`, sigue la llamada hacia `ApplicationService` y fuera a través
+   de `LoanOriginationDomainClient.submitApplication`. Anota cada frontera que la
+   petición cruza y nombra cuál es una llamada a método y cuál es (en producción) un
+   salto de red.
+2. **Encuentra la base de datos ausente.** Abre `exp-lending/pom.xml` y
+   `domain-lending-loan-origination/pom.xml` y confirma que ninguno declara R2DBC o una
+   dependencia de repositorio, luego abre `core-lending-loan-origination/pom.xml` y
+   encuentra dónde vive el almacén de datos. Explica en una frase por qué solo uno de
+   los tres lo tiene.
+3. **Lee el starter como el marcador de capa.** Para cada uno de los tres módulos,
+   encuentra la única línea `fireflyframework-starter-*` en su POM. Tapa el id de
+   artefacto y predice la capa a partir del nombre del directorio; destápalo y
+   comprueba. ¿Qué starter declararía un nuevo módulo `data-lending-bureau`?
+4. **Compara las dos costuras.** Pon `LoanOriginationDomainClient` (Listado 14.2) junto
+   a `LoanOriginationClient` (Listado 10.6). Enumera lo que es igual en ellos (puertos
+   reactivos, sustituyen a un SDK generado, testeados con un stub en memoria) y lo que
+   difiere (el parámetro `idempotencyKey`, los tipos DTO). ¿Por qué la costura de
+   experiencia lleva una clave de idempotencia que la costura de dominio no exponía?
+5. **Coloca un ajuste en la jerarquía.** Dado un timeout por defecto aguas abajo que
+   *todos* los servicios de dominio deberían compartir, y una ruta base que solo
+   `exp-lending` usa, di en qué capa de configuración va cada uno — `common`, una capa
+   de capa o el propio `application.yml` del servicio — y justifica cada uno desde el
+   objetivo de no duplicación del Capítulo 4.
 
-## Where to go next
+## Adónde ir ahora
 
-You now have the whole map: four tiers, four starters, two seams, one rule. The next
-chapter fills in the corner of the map Lumen has only named — the **data** tier on
-`starter-data`, the enrichment and data-quality layer that feeds the scoring the
-domain saga relies on. After that, Chapter 16 replaces both hand-rolled ports with the
-*generated* SDKs and their resilient defaults, turning the seams you sliced here into
-the real, resilient HTTP calls that hold a Firefly fleet together.
+Ahora tienes el mapa completo: cuatro capas, cuatro starters, dos costuras, una regla.
+El siguiente capítulo rellena la esquina del mapa que Lumen solo ha nombrado — la capa
+**data** sobre `starter-data`, la capa de enriquecimiento y calidad de datos que
+alimenta el scoring del que depende la saga de dominio. Después de eso, el Capítulo 16
+reemplaza ambos puertos escritos a mano con los SDKs *generados* y sus valores por
+defecto resilientes, convirtiendo las costuras que diseccionaste aquí en las llamadas
+HTTP reales y resilientes que mantienen unida una flota Firefly.

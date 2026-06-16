@@ -1,35 +1,35 @@
-A loan-origination service spends most of its time answering the same questions.
-"What is the status of this application?" "What is the rate card for this product?"
-"Is this applicant on the watch list?" The data behind those answers changes slowly,
-but the questions arrive constantly — and every one that travels all the way to the
-database, or worse to a downstream core service, costs a round trip you did not need
-to pay. Caching is how you stop paying it. Resilience is how you survive the round
-trips you *can't* avoid when the thing on the other end is slow or down.
+Un servicio de originación de préstamos pasa la mayor parte de su tiempo respondiendo a las mismas preguntas.
+"¿Cuál es el estado de esta solicitud?" "¿Cuál es el tarifario de este producto?"
+"¿Está este solicitante en la lista de vigilancia?" Los datos que hay detrás de esas respuestas cambian despacio,
+pero las preguntas llegan sin parar — y cada una que viaja hasta el final hasta la
+base de datos, o peor aún hasta un servicio central descendente, cuesta una ida y vuelta que no necesitabas
+pagar. El caching es la forma de dejar de pagarla. La resiliencia es la forma de sobrevivir a las idas y vueltas
+que *no* puedes evitar cuando lo que hay al otro lado es lento o está caído.
 
-Firefly treats both as cross-cutting capabilities, wired the same way as everything
-else in this book: a port, a default adapter, and a property to swap it. The cache is
-a reactive `CacheAdapter` with Caffeine built in and a distributed L2 one dependency
-away. Resilience is a Resilience4j circuit breaker, retry, and bulkhead that the
-unified `ServiceClient` (Chapter 16) applies for you — expressed through Reactor
-operators, never a blocking `try`/`catch`. You opt into query caching with a single
-annotation attribute, and you tune resilience with `firefly.*` properties.
+Firefly trata ambas como capacidades transversales, cableadas igual que todo lo
+demás en este libro: un puerto, un adaptador por defecto y una propiedad para intercambiarlo. La caché es
+un `CacheAdapter` reactivo con Caffeine integrado y una caché distribuida L2 a una dependencia
+de distancia. La resiliencia es un circuit breaker, un retry y un bulkhead de Resilience4j que el
+`ServiceClient` unificado (Capítulo 16) aplica por ti — expresados mediante operadores
+de Reactor, nunca un `try`/`catch` bloqueante. Te suscribes al caching de consultas con un único
+atributo de anotación, y ajustas la resiliencia con propiedades `firefly.*`.
 
-One honest note before we start. **This chapter is conceptual.** The Lumen Lending
-origination slice you have been building does *not* wire a cache — its read model is
-deliberately trivial, and its tests run against in-process defaults with no Redis and
-no circuit-breaker drama. So there is no companion test to run green here. Instead,
-every snippet below is *illustrative*: it shows the real Firefly types and properties,
-grounded in the framework source, and points at exactly where each one plugs into the
-service you already have. The exercises then have you add a cache to a real hot query
-in the reactor — `GetApplicationStatusHandler` — so you finish the chapter with
-working code even though the chapter itself ships none.
+Una nota sincera antes de empezar. **Este capítulo es conceptual.** El slice de originación
+de Lumen Lending que has estado construyendo *no* cablea una caché — su modelo de lectura es
+deliberadamente trivial, y sus pruebas se ejecutan contra valores por defecto en proceso, sin Redis ni
+dramas de circuit breaker. Así que aquí no hay una prueba acompañante que ejecutar en verde. En cambio,
+cada fragmento de abajo es *ilustrativo*: muestra los tipos y propiedades reales de Firefly,
+fundamentados en el código fuente del framework, y señala exactamente dónde se conecta cada uno en el
+servicio que ya tienes. Los ejercicios luego te hacen añadir una caché a una consulta caliente real
+en el reactor — `GetApplicationStatusHandler` — para que termines el capítulo con
+código funcionando aunque el propio capítulo no entregue ninguno.
 
-## The CacheAdapter port
+## El puerto CacheAdapter
 
-Everything starts at one interface, `org.fireflyframework.cache.core.CacheAdapter`.
-It is reactive to the core — every operation returns a `Mono`, so a cache lookup
-composes into a handler's chain exactly like a repository call, and a cache *miss* is
-just an empty `Optional`, never a blocking null check.
+Todo empieza en una sola interfaz, `org.fireflyframework.cache.core.CacheAdapter`.
+Es reactiva hasta el núcleo — cada operación devuelve un `Mono`, de modo que una consulta a la caché
+se compone en la cadena de un manejador exactamente igual que una llamada a un repositorio, y un *fallo* de caché
+es simplemente un `Optional` vacío, nunca una comprobación de nulo bloqueante.
 
 ```java
 public interface CacheAdapter {
@@ -42,10 +42,10 @@ public interface CacheAdapter {
 }
 ```
 
-The shape matters. Because `get` returns `Mono<Optional<V>>`, a present value and an
-absent one are both *normal* signals — a populated `Optional` or an empty one — and
-you branch on them with ordinary operators. A read-through pattern, the one you reach
-for most, falls out naturally:
+La forma importa. Como `get` devuelve `Mono<Optional<V>>`, un valor presente y uno
+ausente son ambos señales *normales* — un `Optional` poblado o uno vacío — y
+ramificas sobre ellos con operadores corrientes. Un patrón read-through, el que más
+sueles usar, sale de forma natural:
 
 ```java
 // Illustrative: look in the cache; on a miss, load and backfill.
@@ -58,26 +58,26 @@ cache.<String, RateCard>get(productId)
                 .thenReturn(card))));                 // ...and populate the cache
 ```
 
-No thread blocks while the cache answers, because the cache *itself* answers with a
-`Mono`. That is the whole reason the port is reactive rather than a plain `Map`-style
-API: on the reactive stack a cache that blocks to fetch from Redis would stall the
-event loop just as surely as a blocking query would.
+Ningún hilo se bloquea mientras la caché responde, porque la caché *misma* responde con un
+`Mono`. Esa es la razón completa por la que el puerto es reactivo en lugar de una API estilo `Map`
+sin más: en la pila reactiva una caché que se bloquea para recuperar de Redis pararía el
+bucle de eventos con tanta seguridad como lo haría una consulta bloqueante.
 
-!!! note "Key term — CacheAdapter (the cache port)"
-    `CacheAdapter` is the single reactive interface every cache provider implements —
-    Caffeine, Redis, Hazelcast, JCache, Postgres. Your code depends on the port, never
-    on a provider's client, so the provider is a deployment choice (a dependency plus a
-    property), not a code choice. This is the same hexagonal pattern as the EDA
-    `EventPublisher` in Chapter 11 and the IDP `IdpAdapter` in Chapter 19.
+!!! note "Termino clave — CacheAdapter (el puerto de caché)"
+    `CacheAdapter` es la única interfaz reactiva que implementa todo proveedor de caché —
+    Caffeine, Redis, Hazelcast, JCache, Postgres. Tu código depende del puerto, nunca
+    del cliente de un proveedor, así que el proveedor es una decisión de despliegue (una dependencia más una
+    propiedad), no una decisión de código. Este es el mismo patrón hexagonal que el
+    `EventPublisher` de EDA del Capítulo 11 y el `IdpAdapter` de IDP del Capítulo 19.
 
-## Caffeine is the built-in L1
+## Caffeine es la L1 integrada
 
-Add the cache capability and you get a working cache immediately, with no
-infrastructure: **Caffeine**, a high-performance in-process cache, is the built-in
-default. It lives inside your JVM, so a hit is a method call — nanoseconds, no network
-— and it needs nothing running alongside the service. For a single instance, or for
-data that each instance can cache independently, Caffeine alone is often the whole
-answer.
+Añade la capacidad de caché y obtienes una caché funcionando de inmediato, sin
+infraestructura: **Caffeine**, una caché en proceso de alto rendimiento, es el valor por defecto
+integrado. Vive dentro de tu JVM, así que un acierto es una llamada a un método — nanosegundos, sin red
+— y no necesita nada ejecutándose junto al servicio. Para una sola instancia, o para
+datos que cada instancia puede cachear de forma independiente, Caffeine por sí sola suele ser toda la
+respuesta.
 
 ```yaml
 firefly:
@@ -88,30 +88,30 @@ firefly:
       expire-after-write: 10m
 ```
 
-Caffeine is **bounded** by design — a maximum entry count and a time-to-live — so a
-runaway key space can never eat the heap. That bound is also Caffeine's one limitation:
-it is per-instance and volatile. Restart the service and the cache is cold; run three
-instances and each has its own copy, which can disagree for as long as a TTL. When that
-matters, you add a distributed layer behind it.
+Caffeine está **acotada** por diseño — un número máximo de entradas y un tiempo de vida — de modo que un
+espacio de claves desbocado nunca puede comerse el heap. Esa cota es también la única limitación de Caffeine:
+es por instancia y volátil. Reinicia el servicio y la caché queda fría; ejecuta tres
+instancias y cada una tiene su propia copia, que pueden discrepar durante todo un TTL. Cuando eso
+importa, añades una capa distribuida detrás.
 
-## A distributed L2, write-through via SmartCacheAdapter
+## Una L2 distribuida, write-through mediante SmartCacheAdapter
 
-Put a distributed cache — Redis or Hazelcast — *behind* Caffeine and you get the best
-of both: the speed of an in-process L1 for hits, and a shared L2 that survives restarts
-and is consistent across instances. Firefly composes the two for you with the
-`SmartCacheAdapter`, which is itself a `CacheAdapter` (so your code never knows there
-are two layers) wrapping an L1 and an L2.
+Pon una caché distribuida — Redis o Hazelcast — *detrás* de Caffeine y obtienes lo mejor
+de ambos mundos: la velocidad de una L1 en proceso para los aciertos, y una L2 compartida que sobrevive a los reinicios
+y es consistente entre instancias. Firefly compone las dos por ti con el
+`SmartCacheAdapter`, que es a su vez un `CacheAdapter` (así que tu código nunca sabe que hay
+dos capas) que envuelve una L1 y una L2.
 
-Its policy is **write-through with read backfill**, and it is worth understanding
-precisely because it determines what your code observes:
+Su política es **write-through con backfill en lectura**, y vale la pena entenderla
+con precisión porque determina lo que tu código observa:
 
-- On `put`, it writes to **both** layers at once — `Mono.when(l1.put(...),
-  l2.put(...))` — so the shared L2 is updated the moment the local L1 is. A write is
-  never only-local.
-- On `get`, it reads L1 first; on an L1 miss it falls through to L2, and if L2 has the
-  value it **backfills L1** so the next local read is a fast hit.
+- En `put`, escribe en **ambas** capas a la vez — `Mono.when(l1.put(...),
+  l2.put(...))` — de modo que la L2 compartida se actualiza en el momento en que lo hace la L1 local. Una escritura
+  nunca es solo local.
+- En `get`, lee primero la L1; ante un fallo de L1 cae a la L2, y si la L2 tiene el
+  valor **rellena la L1** para que la siguiente lectura local sea un acierto rápido.
 
-Conceptually, that read path is just two `CacheAdapter` calls stitched with `flatMap`:
+Conceptualmente, esa ruta de lectura son solo dos llamadas a `CacheAdapter` cosidas con `flatMap`:
 
 ```java
 // Illustrative: the SmartCacheAdapter read path — L1, then L2, then backfill L1.
@@ -122,10 +122,10 @@ l1.get(key)
             .flatMap(l2hit -> backfillL1(key, l2hit)));  // populate L1 for next time
 ```
 
-You enable all of this without touching that code. Choosing a distributed `type` (or
-letting `AUTO` pick one) and having the adapter jar on the classpath is enough; the
-auto-configuration assembles the `SmartCacheAdapter` with Caffeine as L1 and your
-provider as L2.
+Habilitas todo esto sin tocar ese código. Elegir un `type` distribuido (o
+dejar que `AUTO` elija uno) y tener el jar del adaptador en el classpath es suficiente; la
+autoconfiguración ensambla el `SmartCacheAdapter` con Caffeine como L1 y tu
+proveedor como L2.
 
 ```yaml
 firefly:
@@ -137,27 +137,27 @@ firefly:
     default-ttl: 10m
 ```
 
-!!! note "Key term — write-through L1/L2 cache"
-    A **two-level** (L1/L2) cache pairs a fast local cache (L1, Caffeine) with a shared
-    distributed cache (L2, Redis or Hazelcast). **Write-through** means every write goes
-    to *both* immediately, so the shared layer is always current; **read backfill** means
-    a value found only in L2 is copied up into L1 so subsequent local reads are fast.
-    The `SmartCacheAdapter` implements both, behind the same `CacheAdapter` port, so the
-    two layers are invisible to your handler.
+!!! note "Termino clave — caché write-through L1/L2"
+    Una caché **de dos niveles** (L1/L2) empareja una caché local rápida (L1, Caffeine) con una caché
+    distribuida compartida (L2, Redis o Hazelcast). **Write-through** significa que cada escritura va
+    a *ambas* de inmediato, así que la capa compartida está siempre al día; **backfill en lectura** significa
+    que un valor hallado solo en L2 se copia hacia arriba a L1 para que las lecturas locales posteriores sean rápidas.
+    El `SmartCacheAdapter` implementa ambos, tras el mismo puerto `CacheAdapter`, de modo que las
+    dos capas son invisibles para tu manejador.
 
-!!! warning "L1 entries can be briefly stale across instances"
-    Write-through keeps the *shared* L2 consistent, but each instance's local L1 still
-    expires on its own clock. After a write on instance A, instance B's L1 can serve the
-    old value until its entry's TTL lapses. That is the deliberate trade for L1 speed —
-    so keep L1 TTLs short for data that several instances cache and mutate, or evict on
-    the event that changed it (see "Invalidation," below). Never assume a sub-second
-    write is instantly visible on every node.
+!!! warning "Las entradas de L1 pueden quedar brevemente obsoletas entre instancias"
+    El write-through mantiene consistente la L2 *compartida*, pero la L1 local de cada instancia sigue
+    expirando con su propio reloj. Tras una escritura en la instancia A, la L1 de la instancia B puede servir el
+    valor antiguo hasta que el TTL de su entrada caduque. Ese es el compromiso deliberado por la velocidad de la L1 —
+    así que mantén TTL de L1 cortos para datos que varias instancias cachean y mutan, o invalida con
+    el evento que los cambió (véase "Invalidación", más abajo). Nunca supongas que una escritura por debajo del
+    segundo es instantáneamente visible en todos los nodos.
 
-## CacheType.AUTO picks the provider for you
+## CacheType.AUTO elige el proveedor por ti
 
-You rarely want to hard-code `REDIS` in every service and every environment. Set
-`type: AUTO` and Firefly selects the best provider actually available at runtime,
-in a fixed priority order:
+Rara vez quieres codificar a mano `REDIS` en cada servicio y cada entorno. Establece
+`type: AUTO` y Firefly selecciona el mejor proveedor realmente disponible en tiempo de ejecución,
+en un orden de prioridad fijo:
 
 ```yaml
 firefly:
@@ -165,31 +165,31 @@ firefly:
     type: AUTO   # Redis > Hazelcast > JCache > Caffeine > No-Op, by what's on the classpath
 ```
 
-`AUTO` resolves **Redis, then Hazelcast, then JCache, then Caffeine, then No-Op** — the
-first one whose adapter is present and configured wins, and Caffeine is the floor so you
-always get *a* cache even with no distributed infrastructure. This is what lets a service
-run on plain Caffeine in a developer's tests and on Redis in production *with the same
-configuration value* — the environment supplies the jar, and `AUTO` does the rest. The
-full provider matrix and the dependency for each lives in Appendix B.
+`AUTO` resuelve **Redis, luego Hazelcast, luego JCache, luego Caffeine, luego No-Op** — gana el
+primero cuyo adaptador esté presente y configurado, y Caffeine es el suelo, así que
+siempre obtienes *una* caché incluso sin infraestructura distribuida. Esto es lo que permite que un servicio
+se ejecute con Caffeine a secas en las pruebas de un desarrollador y con Redis en producción *con el mismo
+valor de configuración* — el entorno aporta el jar, y `AUTO` hace el resto. La
+matriz completa de proveedores y la dependencia de cada uno está en el Apéndice B.
 
-!!! spring "Spring parity"
-    Spring's own `@Cacheable`/`CacheManager` abstraction is **blocking** — it was built
-    for the servlet stack and wraps a synchronous `Cache`. On WebFlux that is a trap: a
-    `@Cacheable` method that reaches out to Redis blocks the event loop. Firefly's
-    `CacheAdapter` is the reactive replacement — `Mono`-returning end to end — plus the
-    provider-selection (`AUTO`) and L1/L2 composition that plain Spring leaves you to
-    assemble by hand. You are still free to use Spring's cache for blocking code paths;
-    on the reactive path, use the port.
+!!! spring "Equivalente en Spring"
+    La propia abstracción `@Cacheable`/`CacheManager` de Spring es **bloqueante** — se construyó
+    para la pila de servlets y envuelve una `Cache` síncrona. En WebFlux eso es una trampa: un
+    método `@Cacheable` que llega hasta Redis bloquea el bucle de eventos. El
+    `CacheAdapter` de Firefly es el reemplazo reactivo — devolviendo `Mono` de extremo a extremo — más la
+    selección de proveedor (`AUTO`) y la composición L1/L2 que Spring a secas te deja
+    ensamblar a mano. Sigues siendo libre de usar la caché de Spring para rutas de código bloqueantes;
+    en la ruta reactiva, usa el puerto.
 
-## CQRS query caching: opt in with one attribute
+## Caching de consultas CQRS: suscríbete con un atributo
 
-You have already met the read side of the bus in Chapter 10 — a
-`@QueryHandlerComponent` that the `QueryBus` discovers and dispatches to. Caching a
-query result does **not** mean writing any of the read-through plumbing from the first
-section. The query bus does it for you; you just declare that a handler's results are
-cacheable and how long they live.
+Ya conociste el lado de lectura del bus en el Capítulo 10 — un
+`@QueryHandlerComponent` que el `QueryBus` descubre y al que despacha. Cachear el resultado de una
+consulta **no** significa escribir nada del cableado read-through de la primera
+sección. El bus de consultas lo hace por ti; tú solo declaras que los resultados de un manejador son
+cacheables y cuánto viven.
 
-The handler in the reactor today opts out — it is a bare annotation:
+El manejador en el reactor de hoy se desuscribe — es una anotación pelada:
 
 ```java
 // In the reactor today: caching is not enabled on this handler.
@@ -204,7 +204,7 @@ public class GetApplicationStatusHandler
 }
 ```
 
-Turning on caching is two attributes — `cacheable` and `cacheTtl` (in seconds):
+Activar el caching son dos atributos — `cacheable` y `cacheTtl` (en segundos):
 
 ```java
 // Illustrative: cache this query's results for five minutes.
@@ -219,33 +219,33 @@ public class GetApplicationStatusHandler
 }
 ```
 
-With that, the bus consults the configured `CacheAdapter` *before* invoking
-`doHandle`. On a hit it returns the cached value and your handler never runs; on a miss
-it runs `doHandle`, stores the result under the query's cache key for `cacheTtl`
-seconds, and returns it. The cache key comes from the query object itself — the bus
-checks `query.isCacheable()` and the handler's `supportsCaching()`, both derived from
-that annotation, before it caches anything — so two queries with the same parameters
-share an entry and two with different parameters do not.
+Con eso, el bus consulta el `CacheAdapter` configurado *antes* de invocar
+`doHandle`. Ante un acierto devuelve el valor cacheado y tu manejador nunca se ejecuta; ante un fallo
+ejecuta `doHandle`, almacena el resultado bajo la clave de caché de la consulta durante `cacheTtl`
+segundos, y lo devuelve. La clave de caché proviene del propio objeto de consulta — el bus
+comprueba `query.isCacheable()` y el `supportsCaching()` del manejador, ambos derivados de
+esa anotación, antes de cachear nada — de modo que dos consultas con los mismos parámetros
+comparten una entrada y dos con parámetros distintos no.
 
-This is the payoff of the CQRS split from Chapter 10: because reads flow through a bus,
-the bus is the one place to add caching, and a single annotation attribute switches it
-on for any read in the fleet. No handler grows cache code; the capability lives in the
+Esta es la recompensa de la división CQRS del Capítulo 10: como las lecturas fluyen a través de un bus,
+el bus es el único lugar donde añadir caching, y un único atributo de anotación lo activa
+para cualquier lectura de la flota. Ningún manejador acumula código de caché; la capacidad vive en el
 bus.
 
-!!! note "Key term — query result caching"
-    A `@QueryHandlerComponent(cacheable = true, cacheTtl = N)` tells the `QueryBus` to
-    cache the handler's result for `N` seconds, keyed by the query's parameters. The bus
-    short-circuits to the cached value on a hit, so `doHandle` runs only on a miss. It is
-    the declarative, read-side counterpart to the manual read-through pattern shown
-    earlier — same cache, no plumbing.
+!!! note "Termino clave — caching de resultados de consulta"
+    Un `@QueryHandlerComponent(cacheable = true, cacheTtl = N)` le dice al `QueryBus` que
+    cachee el resultado del manejador durante `N` segundos, indexado por los parámetros de la consulta. El bus
+    cortocircuita al valor cacheado ante un acierto, así que `doHandle` se ejecuta solo ante un fallo. Es
+    la contraparte declarativa, del lado de lectura, del patrón read-through manual mostrado
+    antes — misma caché, sin cableado.
 
-### Keeping a cached read honest: invalidation
+### Mantener honesta una lectura cacheada: invalidación
 
-A cache is only as good as its eviction. A status cached for five minutes is wrong the
-instant the write side changes it — unless something tells the cache to forget.
-Chapter 11 showed the bridge that does exactly this: `@InvalidateCacheOn` ties a cached
-query to the domain events that make it stale, so a write that publishes
-`LoanApplicationRegisteredEvent` automatically evicts the matching cached entries.
+Una caché solo vale lo que vale su desalojo. Un estado cacheado durante cinco minutos es erróneo en el
+instante en que el lado de escritura lo cambia — a menos que algo le diga a la caché que olvide.
+El Capítulo 11 mostró el puente que hace exactamente esto: `@InvalidateCacheOn` ata una consulta
+cacheada a los eventos de dominio que la dejan obsoleta, de modo que una escritura que publica
+`LoanApplicationRegisteredEvent` invalida automáticamente las entradas cacheadas coincidentes.
 
 ```java
 // Illustrative: evict this query's cache when the matching event fires.
@@ -257,35 +257,35 @@ public class GetApplicationStatusHandler
 }
 ```
 
-The read model self-heals: it serves fast cached answers until the write side changes
-something, at which point the event invalidates the entry and the next read recomputes.
-Remember the rule from Chapter 11 — `eventTypes` matches the payload's **simple class
-name**, not the producer's dotted logical string — because `@InvalidateCacheOn` keys on
-the very same EDA runtime and the very same matching rule.
+El modelo de lectura se autorrepara: sirve respuestas cacheadas rápidas hasta que el lado de escritura cambia
+algo, momento en el que el evento invalida la entrada y la siguiente lectura recalcula.
+Recuerda la regla del Capítulo 11 — `eventTypes` coincide con el **nombre simple de clase** del payload,
+no con la cadena lógica con puntos del productor — porque `@InvalidateCacheOn` se indexa sobre
+el mismísimo runtime de EDA y la mismísima regla de coincidencia.
 
-## Resilience: surviving the calls you can't cache
+## Resiliencia: sobrevivir a las llamadas que no puedes cachear
 
-Caching removes round trips; resilience governs the ones that remain. When the
-origination domain calls the core over a generated SDK (Chapter 7), or any tier calls
-another through the unified `ServiceClient` (Chapter 16), that call can be slow, flaky,
-or flat-out down. Firefly wraps every such call in three Resilience4j patterns, applied
-for you and configured with `firefly.*` properties:
+El caching elimina idas y vueltas; la resiliencia gobierna las que quedan. Cuando el
+dominio de originación llama al núcleo a través de un SDK generado (Capítulo 7), o cualquier capa llama
+a otra mediante el `ServiceClient` unificado (Capítulo 16), esa llamada puede ser lenta, inestable
+o estar caída por completo. Firefly envuelve cada una de esas llamadas en tres patrones de Resilience4j, aplicados
+por ti y configurados con propiedades `firefly.*`:
 
-- **Circuit breaker** — after a downstream's failure rate crosses a threshold, the
-  breaker *opens* and fails fast for a cool-off window instead of piling thousands of
-  requests onto a service that is already struggling. It then half-opens to test
-  recovery with a few trial calls before closing again.
-- **Retry** — transient failures (a dropped connection, a `503`) are re-attempted a
-  bounded number of times with backoff, so a momentary blip does not surface as an
+- **Circuit breaker** — después de que la tasa de fallos de un servicio descendiente cruce un umbral, el
+  breaker *se abre* y falla rápido durante una ventana de enfriamiento en lugar de apilar miles de
+  peticiones sobre un servicio que ya está sufriendo. Luego se semiabre para probar la
+  recuperación con unas pocas llamadas de prueba antes de cerrarse de nuevo.
+- **Retry** — los fallos transitorios (una conexión caída, un `503`) se reintentan un
+  número acotado de veces con backoff, de modo que un fallo momentáneo no aflora como un
   error.
-- **Bulkhead** — the number of concurrent in-flight calls to a downstream is capped, so
-  one slow dependency cannot consume every thread and drag down calls to *healthy*
-  services along with it.
+- **Bulkhead** — el número de llamadas concurrentes en vuelo a un servicio descendiente está limitado, de modo que
+  una dependencia lenta no pueda consumir todos los hilos y arrastrar consigo las llamadas a servicios
+  *sanos*.
 
-You tune all three under the client properties. The framework ships sane defaults — a
-50% failure-rate threshold over a sliding window of 10 calls, a 60-second open state,
-and three retry attempts with 500 ms backoff — so the behavior is correct before you
-configure anything:
+Ajustas los tres bajo las propiedades del cliente. El framework trae valores por defecto sensatos — un
+umbral de tasa de fallos del 50% sobre una ventana deslizante de 10 llamadas, un estado abierto de 60 segundos,
+y tres intentos de retry con 500 ms de backoff — de modo que el comportamiento es correcto antes de que
+configures nada:
 
 ```yaml
 firefly:
@@ -304,15 +304,15 @@ firefly:
       exponential-backoff-multiplier: 2.0
 ```
 
-### Resilience as Reactor operators, not blocking guards
+### La resiliencia como operadores de Reactor, no como guardas bloqueantes
 
-The crucial part — the reason this fits the reactive stack at all — is *how* those
-patterns are applied. They are **not** a blocking `try`/`catch` around a synchronous
-call. Each is an operator in the reactive chain: the breaker, retry, and bulkhead all
-wrap a `Mono`-returning operation and return a `Mono`, so the protection composes into
-the same non-blocking pipeline as everything else. Firefly's circuit breaker, for
-instance, defers the guarded work and substitutes an error signal when the breaker is
-open — the reactive analogue of failing fast:
+La parte crucial — la razón por la que esto encaja en la pila reactiva siquiera — es *cómo* se aplican
+esos patrones. **No** son un `try`/`catch` bloqueante alrededor de una llamada
+síncrona. Cada uno es un operador en la cadena reactiva: el breaker, el retry y el bulkhead todos
+envuelven una operación que devuelve `Mono` y devuelven un `Mono`, así que la protección se compone en
+la misma tubería no bloqueante que todo lo demás. El circuit breaker de Firefly,
+por ejemplo, aplaza el trabajo protegido y sustituye una señal de error cuando el breaker está
+abierto — el análogo reactivo de fallar rápido:
 
 ```java
 // Illustrative: the breaker is a Mono operator — it defers the call and
@@ -322,10 +322,10 @@ Mono<RateCard> guarded = circuitBreaker.executeWithCircuitBreaker(
         () -> pricingClient.rateFor(productId));   // the guarded operation, a Supplier<Mono>
 ```
 
-Because the result is a `Mono`, *recovery* is just the Reactor error operators you
-already learned in Chapter 5. When the breaker is open or every retry is exhausted, you
-fall back with `onErrorResume` — a cached rate card, a conservative default — instead of
-propagating the failure to the caller:
+Como el resultado es un `Mono`, la *recuperación* son simplemente los operadores de error de Reactor que
+ya aprendiste en el Capítulo 5. Cuando el breaker está abierto o cada retry se ha agotado,
+recurres a un plan B con `onErrorResume` — un tarifario cacheado, un valor por defecto conservador — en lugar de
+propagar el fallo al llamante:
 
 ```java
 // Illustrative: combine resilience with a graceful fallback, reactively.
@@ -337,94 +337,94 @@ pricingClient.rateFor(productId)                       // ServiceClient applies 
             .switchIfEmpty(Mono.just(RateCard.conservativeDefault())));
 ```
 
-This is where caching and resilience meet: a cache is often the *fallback* a resilient
-call resumes to. The breaker keeps you from hammering a sick downstream; the cache lets
-you keep answering — with a slightly stale but safe value — while it recovers.
+Aquí es donde se encuentran el caching y la resiliencia: una caché es a menudo el *plan B* al que una
+llamada resiliente recurre. El breaker te impide machacar un servicio descendiente enfermo; la caché te deja
+seguir respondiendo — con un valor ligeramente obsoleto pero seguro — mientras se recupera.
 
-!!! spring "Spring parity"
-    Resilience4j is a standard Spring Boot library, and you could annotate methods with
-    `@CircuitBreaker`, `@Retry`, and `@Bulkhead` yourself in any Spring app. Firefly's
-    contribution is twofold: it wires those patterns into the unified `ServiceClient`
-    (Chapter 16) so *every* downstream call is protected without per-call annotations,
-    and it tunes them through fleet-wide `firefly.service-client.*` properties with
-    environment-aware defaults — so the tenth service breaks circuits and retries exactly
-    like the first, rather than each team re-deriving thresholds.
+!!! spring "Equivalente en Spring"
+    Resilience4j es una librería estándar de Spring Boot, y podrías anotar métodos con
+    `@CircuitBreaker`, `@Retry` y `@Bulkhead` tú mismo en cualquier app de Spring. La
+    contribución de Firefly es doble: cablea esos patrones en el `ServiceClient` unificado
+    (Capítulo 16) de modo que *toda* llamada descendiente está protegida sin anotaciones por llamada,
+    y los ajusta mediante propiedades `firefly.service-client.*` para toda la flota con
+    valores por defecto conscientes del entorno — de modo que el décimo servicio abre circuitos y reintenta exactamente
+    como el primero, en lugar de que cada equipo vuelva a deducir los umbrales.
 
-!!! warning "Retry only what is safe to retry"
-    Retries multiply load and can duplicate side effects. Re-issuing a `GET` is
-    harmless; re-issuing a non-idempotent `POST` can create two loan applications. This
-    is why the idempotency filter from Chapter 6 (`X-Idempotency-Key`) and retry are
-    partners: retry the read freely, but make every retried write idempotent so a
-    re-attempt deduplicates instead of double-booking. Configure retry to fire on
-    transient, *safe* failures — timeouts and `5xx` — not on every error.
+!!! warning "Reintenta solo lo que sea seguro reintentar"
+    Los reintentos multiplican la carga y pueden duplicar efectos secundarios. Reemitir un `GET` es
+    inofensivo; reemitir un `POST` no idempotente puede crear dos solicitudes de préstamo. Por eso
+    el filtro de idempotencia del Capítulo 6 (`X-Idempotency-Key`) y el retry son
+    socios: reintenta la lectura con libertad, pero haz idempotente toda escritura reintentada para que un
+    reintento deduplique en lugar de reservar por duplicado. Configura el retry para que dispare ante
+    fallos transitorios y *seguros* — timeouts y `5xx` — no ante todo error.
 
-## No companion test here — and why that's fine
+## Aquí no hay prueba acompañante — y por qué eso está bien
 
-Earlier chapters ended with `mvn ... test` and a green count, because they sliced real,
-verified code out of the reactor. This one does not, and that is deliberate honesty:
-Lumen Lending's origination slice never wires a cache, and its tests run against
-in-process defaults with no Redis and no circuit breaker to exercise. Caching is a
-production optimization the sample does not need, and bolting it on just to have
-something to assert would teach you a cache you would never keep.
+Los capítulos anteriores terminaban con `mvn ... test` y un recuento en verde, porque cortaban código real
+y verificado del reactor. Este no lo hace, y eso es honestidad deliberada:
+el slice de originación de Lumen Lending nunca cablea una caché, y sus pruebas se ejecutan contra
+valores por defecto en proceso, sin Redis ni circuit breaker que ejercitar. El caching es una
+optimización de producción que el ejemplo no necesita, y atornillarlo solo para tener
+algo que aseverar te enseñaría una caché que nunca conservarías.
 
-So treat this chapter as the map, not the territory — the real `CacheAdapter`,
-`CacheType`, `SmartCacheAdapter`, the `cacheable`/`cacheTtl` attributes, and the
-Resilience4j properties are all exactly as named here, ready in the framework the moment
-your service needs them. The exercises below close the gap: you will add a cache to a
-genuine hot query in the reactor and watch the read short-circuit, turning the map into
-running code.
+Así que trata este capítulo como el mapa, no el territorio — el `CacheAdapter` real,
+`CacheType`, `SmartCacheAdapter`, los atributos `cacheable`/`cacheTtl` y las
+propiedades de Resilience4j son todos exactamente como se nombran aquí, listos en el framework en el momento
+en que tu servicio los necesite. Los ejercicios de abajo cierran la brecha: añadirás una caché a una
+consulta caliente genuina en el reactor y verás la lectura cortocircuitar, convirtiendo el mapa en
+código que se ejecuta.
 
-## What you learned {.recap}
+## Lo que has aprendido {.recap}
 
-- The reactive **`CacheAdapter`** port returns `Mono<Optional<V>>`, so a cache hit and a
-  miss are ordinary signals and a read-through composes with `flatMap` — no blocking,
-  no null checks.
-- **Caffeine** is the built-in, bounded, in-process **L1**, needing no infrastructure.
-  A distributed **L2** (Redis or Hazelcast) sits behind it via the **`SmartCacheAdapter`**,
-  which writes through to both layers and backfills L1 on an L2 hit — all behind the same
-  port.
-- **`CacheType.AUTO`** picks the provider at runtime — Redis, then Hazelcast, then
-  JCache, then Caffeine, then No-Op — so one config value runs on Caffeine in tests and
-  Redis in production (provider matrix in Appendix B).
-- CQRS **query caching** is one attribute: `@QueryHandlerComponent(cacheable = true,
-  cacheTtl = N)` makes the `QueryBus` cache results by query parameters and run
-  `doHandle` only on a miss; `@InvalidateCacheOn` evicts on the matching domain event.
-- **Resilience** — Resilience4j circuit breaker, retry, and bulkhead — is applied by the
-  unified `ServiceClient` (Chapter 16) as **Reactor operators**, not blocking guards, so
-  recovery is just `onErrorResume`/`timeout`, and a cache makes a natural fallback.
+- El puerto reactivo **`CacheAdapter`** devuelve `Mono<Optional<V>>`, así que un acierto de caché y un
+  fallo son señales corrientes y un read-through se compone con `flatMap` — sin bloqueo,
+  sin comprobaciones de nulo.
+- **Caffeine** es la **L1** integrada, acotada y en proceso, sin necesidad de infraestructura.
+  Una **L2** distribuida (Redis o Hazelcast) se sitúa detrás mediante el **`SmartCacheAdapter`**,
+  que escribe a través de ambas capas (write-through) y rellena la L1 ante un acierto de L2 — todo tras el mismo
+  puerto.
+- **`CacheType.AUTO`** elige el proveedor en tiempo de ejecución — Redis, luego Hazelcast, luego
+  JCache, luego Caffeine, luego No-Op — de modo que un solo valor de configuración se ejecuta con Caffeine en las pruebas y
+  con Redis en producción (matriz de proveedores en el Apéndice B).
+- El **caching de consultas** CQRS es un atributo: `@QueryHandlerComponent(cacheable = true,
+  cacheTtl = N)` hace que el `QueryBus` cachee resultados por los parámetros de la consulta y ejecute
+  `doHandle` solo ante un fallo; `@InvalidateCacheOn` invalida ante el evento de dominio coincidente.
+- La **resiliencia** — circuit breaker, retry y bulkhead de Resilience4j — la aplica el
+  `ServiceClient` unificado (Capítulo 16) como **operadores de Reactor**, no como guardas bloqueantes, así que
+  la recuperación es simplemente `onErrorResume`/`timeout`, y una caché es un plan B natural.
 
-## Try it yourself {.exercises}
+## Pruebalo tu mismo {.exercises}
 
-These exercises edit the real reactor under `samples/lumen-lending`, starting from the
-uncached `GetApplicationStatusHandler` in the domain module.
+Estos ejercicios editan el reactor real bajo `samples/lumen-lending`, partiendo del
+`GetApplicationStatusHandler` sin cachear del módulo de dominio.
 
-1. **Cache a hot query.** In `GetApplicationStatusHandler`, change the bare
-   `@QueryHandlerComponent` to `@QueryHandlerComponent(cacheable = true, cacheTtl = 60)`.
-   Run the domain module's tests (`mvn -q -pl domain-lending-loan-origination test`) and
-   confirm they still pass — caching a deterministic query changes the result for nobody,
-   which is exactly the point: it is a transparent optimization.
-2. **Prove the short-circuit.** Add a counter (an `AtomicInteger`) the handler increments
-   inside `doHandle`, then write a test that dispatches the *same* query twice through the
-   `QueryBus` and asserts the counter incremented only **once** — proof the second read
-   was served from cache and `doHandle` never ran.
-3. **Wire the invalidation.** Add `@InvalidateCacheOn(eventTypes =
-   "LoanApplicationRegisteredEvent")` to the now-cacheable handler. In a sentence, explain
-   (using the Chapter 11 rule) why `eventTypes` must be the simple class name and not
+1. **Cachea una consulta caliente.** En `GetApplicationStatusHandler`, cambia la anotación
+   `@QueryHandlerComponent` pelada por `@QueryHandlerComponent(cacheable = true, cacheTtl = 60)`.
+   Ejecuta las pruebas del módulo de dominio (`mvn -q -pl domain-lending-loan-origination test`) y
+   confirma que siguen pasando — cachear una consulta determinista no cambia el resultado para nadie,
+   que es exactamente el objetivo: es una optimización transparente.
+2. **Demuestra el cortocircuito.** Añade un contador (un `AtomicInteger`) que el manejador incremente
+   dentro de `doHandle`, y luego escribe una prueba que despache la *misma* consulta dos veces a través del
+   `QueryBus` y asevere que el contador se incrementó solo **una vez** — prueba de que la segunda lectura
+   se sirvió desde la caché y `doHandle` nunca se ejecutó.
+3. **Cablea la invalidación.** Añade `@InvalidateCacheOn(eventTypes =
+   "LoanApplicationRegisteredEvent")` al manejador ahora cacheable. En una frase, explica
+   (usando la regla del Capítulo 11) por qué `eventTypes` debe ser el nombre simple de clase y no
    `"loanApplication.registered"`.
-4. **Choose a provider with AUTO.** In `application.yml`, set `firefly.cache.type: AUTO`
-   and reason through which provider it resolves to in the test profile (no Redis jar on
-   the classpath) versus a production profile that adds `fireflyframework-cache-redis`.
-   Confirm your answer against the priority order in Appendix B.
-5. **Design a resilient fallback.** Sketch (no need to run it) a `ServiceClient` call to
-   the pricing core that, on `CircuitBreakerOpenException`, resumes to a cached
-   `RateCard` and only then to a conservative default. Identify which operator handles
-   each step — `timeout`, `onErrorResume`, `switchIfEmpty` — and where the cache read
-   slots in.
+4. **Elige un proveedor con AUTO.** En `application.yml`, establece `firefly.cache.type: AUTO`
+   y razona a qué proveedor se resuelve en el perfil de pruebas (sin jar de Redis en
+   el classpath) frente a un perfil de producción que añade `fireflyframework-cache-redis`.
+   Confirma tu respuesta contra el orden de prioridad del Apéndice B.
+5. **Diseña un plan B resiliente.** Esboza (no hace falta ejecutarlo) una llamada de `ServiceClient` al
+   núcleo de pricing que, ante `CircuitBreakerOpenException`, recurra a un `RateCard`
+   cacheado y solo entonces a un valor por defecto conservador. Identifica qué operador maneja
+   cada paso — `timeout`, `onErrorResume`, `switchIfEmpty` — y dónde encaja la lectura de
+   caché.
 
-## Where to go next
+## Adonde ir ahora
 
-Caching and resilience keep a service fast and standing; the next thing you need is to
-*see* it doing so. Chapter 21 turns to observability — the metrics, traces, and the
-working Reactor context propagation that make a cache hit rate, a tripped breaker, or a
-retry storm visible across the fleet, so the behavior you configured here is something
-you can actually watch in production.
+El caching y la resiliencia mantienen un servicio rápido y en pie; lo siguiente que necesitas es
+*ver* que lo hace. El Capítulo 21 se vuelve hacia la observabilidad — las métricas, las trazas y la
+propagación funcional del contexto de Reactor que hacen visibles una tasa de aciertos de caché, un breaker disparado o una
+tormenta de reintentos en toda la flota, de modo que el comportamiento que configuraste aquí sea algo
+que realmente puedas observar en producción.

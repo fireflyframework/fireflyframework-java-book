@@ -1,31 +1,33 @@
-By now you have a service that boots, a parent POM that keeps it version-coherent,
-and a feel for the reactive types everything speaks. It is time to give Lumen
-Lending an edge a client can call. In this chapter you build the first HTTP
-surface of the loan-origination core: a reactive `@RestController` that creates,
-fetches, and lists loan applications.
+A estas alturas ya tienes un servicio que arranca, un POM padre que lo mantiene
+coherente en versiones y cierta familiaridad con los tipos reactivos que todo
+habla. Ha llegado el momento de dar a Lumen Lending una superficie que un cliente
+pueda invocar. En este capítulo construyes la primera superficie HTTP del núcleo
+de originación de préstamos: un `@RestController` reactivo que crea, recupera y
+lista solicitudes de préstamo.
 
-The controller itself is small — three methods, no error-handling code, no logging
-plumbing, no envelope. That smallness is the point. The web module that Firefly
-adds to Spring WebFlux does the cross-cutting work *around* your handler:
-validation failures and missing resources come back as standard RFC 7807
-problem-detail responses, retries are deduplicated, every response is stamped with
-a transaction id, and personally identifiable data is masked in the logs — all
-without a line of it appearing in the controller. You write the three business
-methods; the framework writes the consistency.
+El controlador en sí es pequeño: tres métodos, sin código de gestión de errores,
+sin fontanería de logging, sin envoltorio. Esa pequeñez es justamente el punto. El
+módulo web que Firefly añade a Spring WebFlux hace el trabajo transversal
+*alrededor* de tu manejador: los fallos de validación y los recursos ausentes
+vuelven como respuestas estándar de problem-detail RFC 7807, los reintentos se
+deduplican, cada respuesta se sella con un identificador de transacción y los datos
+de carácter personal se enmascaran en los logs, todo ello sin que aparezca una sola
+línea de eso en el controlador. Tú escribes los tres métodos de negocio; el
+framework escribe la consistencia.
 
-We will build the controller and its DTOs, lean on finance-aware validators for
-the request, raise a semantic exception for the not-found case, and then run the
-slice test that proves the 400 and 404 problem details come back exactly as
-promised.
+Construiremos el controlador y sus DTO, nos apoyaremos en validadores conscientes
+de las finanzas para la petición, lanzaremos una excepción semántica para el caso
+de no-encontrado y luego ejecutaremos el test de slice que demuestra que los
+problem-detail de 400 y 404 vuelven exactamente como se prometió.
 
-## A reactive controller, and nothing else
+## Un controlador reactivo, y nada más
 
-Open the loan-origination core and look at its single web class. It is a textbook
-WebFlux `@RestController` — `@RequestMapping` for the base path, constructor
-injection (here via Lombok's `@RequiredArgsConstructor`), and methods that return
-`Mono` and `Flux` instead of bare values.
+Abre el núcleo de originación de préstamos y observa su única clase web. Es un
+`@RestController` de WebFlux de manual: `@RequestMapping` para la ruta base,
+inyección por constructor (aquí vía `@RequiredArgsConstructor` de Lombok) y métodos
+que devuelven `Mono` y `Flux` en lugar de valores planos.
 
-::: listing core-lending-loan-origination/src/main/java/com/firefly/lumen/core/web/LoanApplicationController.java | Listing 6.1 — the whole web surface: three reactive methods
+::: listing core-lending-loan-origination/src/main/java/com/firefly/lumen/core/web/LoanApplicationController.java | Listado 6.1 — toda la superficie web: tres metodos reactivos
 @RestController
 @RequestMapping("/api/v1/loan-applications")
 @RequiredArgsConstructor
@@ -60,41 +62,42 @@ public class LoanApplicationController {
 }
 :::
 
-Read it slowly, because every choice is deliberate.
+Léelo despacio, porque cada decisión es deliberada.
 
-The `create` method returns `Mono<LoanApplicationResponse>` and carries
-`@ResponseStatus(HttpStatus.CREATED)`, so a successful POST answers `201 Created`
-with the new resource as its body. The `@Valid` on the `@RequestBody` is what arms
-validation — more on that next section. `getById` returns one application or
-nothing; `list` returns a `Flux`, the zero-to-many publisher, and accepts an
-optional `?status=` filter through `@RequestParam(required = false)`. Because the
-parameter is typed as `ApplicationStatus`, WebFlux converts the query string to the
-enum for you and rejects an unknown value before your code runs.
+El método `create` devuelve `Mono<LoanApplicationResponse>` y lleva
+`@ResponseStatus(HttpStatus.CREATED)`, de modo que un POST satisfactorio responde
+`201 Created` con el nuevo recurso como cuerpo. El `@Valid` sobre el `@RequestBody`
+es lo que arma la validación; más sobre esto en la siguiente sección. `getById`
+devuelve una solicitud o nada; `list` devuelve un `Flux`, el publicador de cero-a-
+muchos, y acepta un filtro `?status=` opcional a través de
+`@RequestParam(required = false)`. Como el parámetro está tipado como
+`ApplicationStatus`, WebFlux convierte la cadena de consulta al enum por ti y
+rechaza un valor desconocido antes de que tu código se ejecute.
 
-What is *not* here matters as much as what is. There is no `try`/`catch`, no
-`ResponseEntity` envelope, no `@ExceptionHandler`, no logging. The controller
-delegates to a `LoanApplicationService` and returns the publisher it gets back. The
-framework subscribes at the edge when it writes the response, so you never call
-`.subscribe()` yourself — you compose and return.
+Lo que *no* está aquí importa tanto como lo que sí está. No hay `try`/`catch`, ni
+envoltorio `ResponseEntity`, ni `@ExceptionHandler`, ni logging. El controlador
+delega en un `LoanApplicationService` y devuelve el publicador que recibe. El
+framework se suscribe en el borde cuando escribe la respuesta, de modo que nunca
+llamas a `.subscribe()` tú mismo: compones y devuelves.
 
-!!! spring "Spring parity"
-    Every annotation here is plain Spring WebFlux: `@RestController`,
+!!! spring "Equivalente en Spring"
+    Cada anotación aquí es Spring WebFlux puro: `@RestController`,
     `@RequestMapping`, `@PostMapping`, `@GetMapping`, `@PathVariable`,
-    `@RequestParam`, `@RequestBody`, `@Valid`, `@ResponseStatus`. The
-    `@Tag`/`@Operation` pair is springdoc OpenAPI. If you have written a WebFlux
-    controller, you have written this one. What Firefly changes is not the
-    controller — it is everything that happens to the request and response *around*
-    it, which the rest of the chapter is about.
+    `@RequestParam`, `@RequestBody`, `@Valid`, `@ResponseStatus`. El par
+    `@Tag`/`@Operation` es springdoc OpenAPI. Si has escrito un controlador WebFlux,
+    has escrito este. Lo que Firefly cambia no es el controlador: es todo lo que le
+    sucede a la petición y a la respuesta *alrededor* de él, que es de lo que trata
+    el resto del capítulo.
 
-## The response DTO
+## El DTO de respuesta
 
-The controller returns a `LoanApplicationResponse`, never the persistence entity.
-Keeping a dedicated view type means the wire contract is decoupled from the table:
-you can reshape storage without breaking clients, and you never accidentally leak
-an internal field. It is a `record`, so it is immutable and serializes straight to
-JSON with no getters to write.
+El controlador devuelve un `LoanApplicationResponse`, nunca la entidad de
+persistencia. Mantener un tipo de vista dedicado significa que el contrato de cable
+queda desacoplado de la tabla: puedes remodelar el almacenamiento sin romper a los
+clientes, y nunca filtras accidentalmente un campo interno. Es un `record`, así que
+es inmutable y se serializa directamente a JSON sin getters que escribir.
 
-::: listing core-lending-loan-origination/src/main/java/com/firefly/lumen/core/dto/LoanApplicationResponse.java | Listing 6.2 — the response view, a plain immutable record
+::: listing core-lending-loan-origination/src/main/java/com/firefly/lumen/core/dto/LoanApplicationResponse.java | Listado 6.2 — la vista de respuesta, un record inmutable y sencillo
 public record LoanApplicationResponse(
         UUID loanApplicationId,
         UUID applicationNumber,
@@ -111,19 +114,18 @@ public record LoanApplicationResponse(
 }
 :::
 
-There is nothing reactive about a DTO — it is the shape of one value. The `Mono`
-and `Flux` in the controller are publishers *of* this record; the record itself is
-just data.
+Un DTO no tiene nada de reactivo: es la forma de un valor. El `Mono` y el `Flux`
+del controlador son publicadores *de* este record; el record en sí es solo datos.
 
-## Validation with finance-aware constraints
+## Validación con restricciones conscientes de las finanzas
 
-A loan application carries money, a currency, and a term, and the request must be
-rejected — cleanly, before any business logic runs — if any of those is nonsense.
-That is the job of the create request DTO. It mixes ordinary Jakarta Bean
-Validation constraints with two finance-specific constraints that Firefly ships in
-`fireflyframework-validators`.
+Una solicitud de préstamo lleva dinero, una divisa y un plazo, y la petición debe
+rechazarse —limpiamente, antes de que se ejecute cualquier lógica de negocio— si
+alguno de ellos es absurdo. Ese es el trabajo del DTO de petición de creación.
+Mezcla restricciones ordinarias de Jakarta Bean Validation con dos restricciones
+específicas de finanzas que Firefly incluye en `fireflyframework-validators`.
 
-::: listing core-lending-loan-origination/src/main/java/com/firefly/lumen/core/dto/CreateLoanApplicationRequest.java | Listing 6.3 — the create request, validated by Jakarta plus finance constraints
+::: listing core-lending-loan-origination/src/main/java/com/firefly/lumen/core/dto/CreateLoanApplicationRequest.java | Listado 6.3 — la peticion de creacion, validada por Jakarta mas restricciones de finanzas
 public record CreateLoanApplicationRequest(
 
         @NotNull(message = "Applicant ID is required")
@@ -147,51 +149,56 @@ public record CreateLoanApplicationRequest(
 }
 :::
 
-`@NotNull`, `@NotBlank`, and `@Positive` are standard Jakarta constraints. The two
-that earn their keep are Firefly's:
+`@NotNull`, `@NotBlank` y `@Positive` son restricciones estándar de Jakarta. Las
+dos que se ganan el sueldo son las de Firefly:
 
-- `@ValidAmount(min = 0.01)` checks that `requestedAmount` is a sane, positive
-  monetary value — not zero, not negative, within a configurable bound. A bare
-  `@Positive` would miss the precision and range rules that money demands.
-- `@ValidCurrencyCode` checks that `currency` is a real ISO-4217 code, so `"EUR"`
-  passes and `"XYZ"` does not.
+- `@ValidAmount(min = 0.01)` comprueba que `requestedAmount` es un valor monetario
+  sensato y positivo: ni cero, ni negativo, dentro de un límite configurable. Un
+  simple `@Positive` se perdería las reglas de precisión y rango que el dinero
+  exige.
+- `@ValidCurrencyCode` comprueba que `currency` es un código ISO-4217 real, de modo
+  que `"EUR"` pasa y `"XYZ"` no.
 
-These are the same constraint annotations the production firefly-oss services use,
-surfaced here on a clean request record. You write the constraint; the framework
-supplies the validator and the consistent error message.
+Estas son las mismas anotaciones de restricción que usan los servicios de
+producción de firefly-oss, presentadas aquí sobre un record de petición limpio. Tú
+escribes la restricción; el framework suministra el validador y el mensaje de error
+consistente.
 
-!!! note "Key term — finance validators (`fireflyframework-validators`)"
-    A small library of Jakarta-compatible constraint annotations for the values a
-    banking platform handles repeatedly — amounts, currency codes, IBANs, BICs, tax
-    IDs, card numbers. Each is an ordinary `ConstraintValidator`, so it composes
-    with `@NotNull` and friends and participates in the same `@Valid` pass. Using
-    them instead of copy-pasted regexes is how an entire fleet validates an IBAN the
-    same way.
+!!! note "Término clave — validadores de finanzas (`fireflyframework-validators`)"
+    Una pequeña biblioteca de anotaciones de restricción compatibles con Jakarta
+    para los valores que una plataforma bancaria maneja repetidamente: importes,
+    códigos de divisa, IBAN, BIC, identificadores fiscales, números de tarjeta. Cada
+    una es un `ConstraintValidator` ordinario, de modo que se compone con `@NotNull`
+    y compañía y participa en la misma pasada de `@Valid`. Usarlas en lugar de
+    expresiones regulares copiadas y pegadas es como una flota entera valida un IBAN
+    de la misma manera.
 
-When `@Valid` on the controller's `@RequestBody` fails — say `requestedAmount` is
-`-5.00` — Spring raises a `WebExchangeBindException` before your handler body ever
-runs. You do not catch it. The web module's global handler turns it into a `400`
-problem detail, which is the subject of the next two sections.
+Cuando `@Valid` sobre el `@RequestBody` del controlador falla —digamos que
+`requestedAmount` es `-5.00`— Spring lanza una `WebExchangeBindException` antes de
+que el cuerpo de tu manejador llegue siquiera a ejecutarse. Tú no la capturas. El
+manejador global del módulo web la convierte en un problem-detail `400`, que es el
+tema de las dos secciones siguientes.
 
-!!! spring "Spring parity"
-    `@Valid` triggering validation on a `@RequestBody` is stock Spring. In vanilla
-    WebFlux, a failed bind produces a `WebExchangeBindException` that — without a
-    handler — yields Spring's default error JSON, whose shape varies by Boot version
-    and is not RFC 7807. Firefly's only change is to catch that exception centrally
-    and render it as a standard problem detail, identically in every service.
+!!! spring "Equivalente en Spring"
+    Que `@Valid` dispare la validación sobre un `@RequestBody` es Spring de fábrica.
+    En WebFlux puro, un bind fallido produce una `WebExchangeBindException` que —sin
+    un manejador— genera el JSON de error por defecto de Spring, cuya forma varía
+    según la versión de Boot y no es RFC 7807. El único cambio de Firefly es capturar
+    esa excepción de forma centralizada y renderizarla como un problem-detail
+    estándar, idéntico en cada servicio.
 
-## Semantic exceptions become RFC 7807, for free
+## Las excepciones semánticas se convierten en RFC 7807, gratis
 
-Now the not-found case. When you GET an application id that does not exist, the
-correct answer is `404 Not Found` with a machine-readable body. In a hand-rolled
-service that means an `@ExceptionHandler` and a custom JSON shape — invented again
-in every service, agreeing with none.
+Ahora el caso de no-encontrado. Cuando haces un GET de un id de solicitud que no
+existe, la respuesta correcta es `404 Not Found` con un cuerpo legible por máquina.
+En un servicio hecho a mano eso significa un `@ExceptionHandler` y una forma JSON a
+medida: reinventada de nuevo en cada servicio, sin coincidir con ninguno.
 
-Firefly removes the decision. The service throws a *semantic* exception from the
-framework's error kernel, and the web module renders it. Here is how the service
-handles a miss:
+Firefly elimina la decisión. El servicio lanza una excepción *semántica* del núcleo
+de errores del framework, y el módulo web la renderiza. Así gestiona el servicio un
+fallo:
 
-::: listing core-lending-loan-origination/src/main/java/com/firefly/lumen/core/service/LoanApplicationService.java | Listing 6.4 — throwing a semantic exception on a miss; no handler required
+::: listing core-lending-loan-origination/src/main/java/com/firefly/lumen/core/service/LoanApplicationService.java | Listado 6.4 — lanzar una excepcion semantica ante un fallo; sin manejador requerido
     @Transactional(readOnly = true)
     public Mono<LoanApplicationResponse> getById(UUID id) {
         return repository.findById(id)
@@ -201,16 +208,17 @@ handles a miss:
     }
 :::
 
-The reactive shape is worth a beat. `repository.findById(id)` returns a `Mono` that
-is *empty* when the row is absent — not an error, just nothing. `switchIfEmpty`
-substitutes an error signal in that case, raising
-`org.fireflyframework.web.error.exceptions.ResourceNotFoundException`. That
-exception travels down the reactive chain to the edge, where the web module's
-`GlobalExceptionHandler` catches it and emits a `404` with
-`Content-Type: application/problem+json` and an RFC 7807 body. The controller does
-not know any of this happened; it simply returned the `Mono` the service gave it.
+La forma reactiva merece un momento. `repository.findById(id)` devuelve un `Mono`
+que está *vacío* cuando la fila está ausente: no un error, simplemente nada.
+`switchIfEmpty` sustituye en ese caso una señal de error, lanzando
+`org.fireflyframework.web.error.exceptions.ResourceNotFoundException`. Esa excepción
+viaja por la cadena reactiva hacia abajo hasta el borde, donde el
+`GlobalExceptionHandler` del módulo web la captura y emite un `404` con
+`Content-Type: application/problem+json` y un cuerpo RFC 7807. El controlador no
+sabe que nada de esto ha ocurrido; simplemente devolvió el `Mono` que el servicio le
+dio.
 
-A problem-detail response looks like this on the wire:
+Una respuesta de problem-detail tiene este aspecto en el cable:
 
 ```json
 {
@@ -222,50 +230,52 @@ A problem-detail response looks like this on the wire:
 }
 ```
 
-The same machinery handles the validation failure from the previous section: a
-`400` problem detail describing which field was rejected and why. One handler, one
-shape, every error, every service.
+La misma maquinaria gestiona el fallo de validación de la sección anterior: un
+problem-detail `400` que describe qué campo fue rechazado y por qué. Un manejador,
+una forma, cada error, cada servicio.
 
-!!! note "Key term — RFC 7807 problem detail"
-    An IETF standard JSON format for HTTP error responses, served as
-    `application/problem+json`, with stable fields — `type`, `title`, `status`,
-    `detail`, `instance`. Because the shape is standard, a client writes error
-    handling once and it works against every Firefly endpoint, instead of decoding a
-    different bespoke blob per service.
+!!! note "Término clave — problem-detail RFC 7807"
+    Un formato JSON estándar del IETF para respuestas de error HTTP, servido como
+    `application/problem+json`, con campos estables: `type`, `title`, `status`,
+    `detail`, `instance`. Como la forma es estándar, un cliente escribe la gestión de
+    errores una vez y funciona contra cada endpoint de Firefly, en lugar de
+    decodificar un blob a medida distinto por servicio.
 
-!!! spring "Spring parity"
-    Spring 6 ships a `ProblemDetail` type and `ResponseEntityExceptionHandler` that
-    can produce RFC 7807 — but you still wire it up, map your domain exceptions to
-    statuses, and repeat that mapping in every service. Firefly does the wiring once
-    in the web module: throw `ResourceNotFoundException` and the `404` problem detail
-    is automatic. You are using Spring's mechanism; you just never assemble it
-    yourself.
+!!! spring "Equivalente en Spring"
+    Spring 6 incluye un tipo `ProblemDetail` y un `ResponseEntityExceptionHandler`
+    que pueden producir RFC 7807, pero aun así tienes que cablearlo, mapear tus
+    excepciones de dominio a estados y repetir ese mapeo en cada servicio. Firefly
+    hace el cableado una vez en el módulo web: lanza `ResourceNotFoundException` y el
+    problem-detail `404` es automático. Estás usando el mecanismo de Spring;
+    simplemente nunca lo ensamblas tú mismo.
 
-## The web module's free cross-cutting filters
+## Los filtros transversales gratuitos del módulo web
 
-The `GlobalExceptionHandler` is one of several behaviors the web module and the
-`core` starter bring to *every* request, with no code in your controller. They are
-ordinary Spring `WebFilter` beans, auto-configured when the framework is on the
-classpath and overridable like any bean. This service depends on
-`fireflyframework-web` and `fireflyframework-starter-core`, so it gets all of them:
+El `GlobalExceptionHandler` es uno de varios comportamientos que el módulo web y el
+starter `core` aportan a *cada* petición, sin código en tu controlador. Son beans
+`WebFilter` ordinarios de Spring, autoconfigurados cuando el framework está en el
+classpath y sobrescribibles como cualquier bean. Este servicio depende de
+`fireflyframework-web` y `fireflyframework-starter-core`, así que los obtiene todos:
 
-- **`GlobalExceptionHandler`** — translates framework exceptions and validation
-  failures into RFC 7807 responses, as you just saw. This is what makes the 400 and
-  404 in the test come back as problem details.
-- **`IdempotencyWebFilter`** — when a write request carries an `X-Idempotency-Key`
-  header, the filter caches the first response under that key and replays it on a
-  retry, so a client that resends a `POST` after a timeout does not create a second
-  loan application. Safe retries without dedupe logic in your handler.
-- **`TransactionFilter`** — stamps every response with an `X-Transaction-Id`,
-  generating one if the caller did not supply it, so a single request is traceable
-  end to end across services and logs.
-- **PII masking in logs** — the framework's logging configuration redacts
-  personally identifiable data — emails, national IDs, card numbers — so a stray log
-  line cannot leak a customer's details.
+- **`GlobalExceptionHandler`** — traduce las excepciones del framework y los fallos
+  de validación a respuestas RFC 7807, como acabas de ver. Esto es lo que hace que
+  el 400 y el 404 del test vuelvan como problem-details.
+- **`IdempotencyWebFilter`** — cuando una petición de escritura lleva una cabecera
+  `X-Idempotency-Key`, el filtro cachea la primera respuesta bajo esa clave y la
+  reproduce en un reintento, de modo que un cliente que reenvía un `POST` tras un
+  timeout no crea una segunda solicitud de préstamo. Reintentos seguros sin lógica
+  de deduplicación en tu manejador.
+- **`TransactionFilter`** — sella cada respuesta con un `X-Transaction-Id`,
+  generando uno si quien llama no lo suministró, de modo que una única petición sea
+  rastreable de extremo a extremo a través de servicios y logs.
+- **Enmascarado de PII en los logs** — la configuración de logging del framework
+  redacta los datos de carácter personal —correos electrónicos, documentos de
+  identidad nacionales, números de tarjeta— de modo que una línea de log perdida no
+  pueda filtrar los datos de un cliente.
 
-You did not opt into any of these per endpoint; they apply fleet-wide the moment
-the dependency is present. To send the idempotency key from a client, you would add
-one header:
+No optaste por ninguno de estos por endpoint; se aplican a toda la flota en el
+momento en que la dependencia está presente. Para enviar la clave de idempotencia
+desde un cliente, añadirías una cabecera:
 
 ```text
 POST /api/v1/loan-applications HTTP/1.1
@@ -276,92 +286,99 @@ X-Idempotency-Key: 4f2c9e10-7b3a-4f6e-9c21-2a1d5b8e0c33
   "termMonths": 36, "purpose": "HOME_IMPROVEMENT" }
 ```
 
-Send that POST twice with the same key and you get the same `201` and the same
-body both times — one application, not two.
+Envía ese POST dos veces con la misma clave y obtienes el mismo `201` y el mismo
+cuerpo ambas veces: una solicitud, no dos.
 
-!!! warning "These filters are real, but you still must not block"
-    The cross-cutting filters run on the same event-loop threads as your handler.
-    They are non-blocking by design; keep your handler non-blocking too. A blocking
-    call inside `create` — a JDBC query, `.block()`, `Thread.sleep` — stalls the
-    loop for every request the filter chain is serving, not just yours. The data
-    layer is R2DBC precisely so this stays true end to end.
+!!! warning "Estos filtros son reales, pero aun así no debes bloquear"
+    Los filtros transversales se ejecutan en los mismos hilos del bucle de eventos
+    que tu manejador. Son no-bloqueantes por diseño; mantén tu manejador
+    no-bloqueante también. Una llamada bloqueante dentro de `create` —una consulta
+    JDBC, `.block()`, `Thread.sleep`— atasca el bucle para cada petición que la
+    cadena de filtros esté sirviendo, no solo la tuya. La capa de datos es R2DBC
+    precisamente para que esto siga siendo cierto de extremo a extremo.
 
-!!! spring "Spring parity"
-    Each of these is a plain `WebFilter` — the WebFlux equivalent of a servlet
-    `Filter`. You could write all four by hand and register them in every service.
-    Firefly's contribution is that they are written once, tuned by `firefly.*`
-    properties, and active by default, so the tenth service behaves exactly like the
-    first without anyone re-deriving idempotency or transaction propagation.
+!!! spring "Equivalente en Spring"
+    Cada uno de estos es un `WebFilter` simple: el equivalente en WebFlux de un
+    `Filter` de servlet. Podrías escribir los cuatro a mano y registrarlos en cada
+    servicio. La aportación de Firefly es que están escritos una vez, ajustados por
+    propiedades `firefly.*` y activos por defecto, de modo que el décimo servicio se
+    comporta exactamente igual que el primero sin que nadie vuelva a derivar la
+    idempotencia o la propagación de transacciones.
 
-## Run it
+## Ejecútalo
 
-The slice test boots the full reactive context against in-memory H2 (R2DBC plus a
-Flyway migration, no Docker) and drives the API with `WebTestClient`. It asserts
-the create-and-read round trip, the RFC 7807 `404` for a missing id, and the `400`
-rejection of a bad amount. Run just this test:
+El test de slice arranca el contexto reactivo completo contra una H2 en memoria
+(R2DBC más una migración de Flyway, sin Docker) e impulsa la API con
+`WebTestClient`. Verifica el viaje de ida y vuelta de crear-y-leer, el `404` RFC
+7807 para un id ausente y el rechazo `400` de un importe incorrecto. Ejecuta solo
+este test:
 
 ```text
 mvn -q -pl core-lending-loan-origination -Dtest=LoanApplicationControllerTest test
 ```
 
-You should see it pass:
+Deberías verlo pasar:
 
 ```text
 Tests run: 3, Failures: 0, Errors: 0, Skipped: 0
 ```
 
-Three green tests confirm the chapter's three claims: a `POST` returns `201` and
-the resource reads back, an unknown id returns a `404` problem detail, and a
-negative amount is rejected with a `400` before any business logic runs.
+Tres tests en verde confirman las tres afirmaciones del capítulo: un `POST`
+devuelve `201` y el recurso se vuelve a leer, un id desconocido devuelve un
+problem-detail `404`, y un importe negativo se rechaza con un `400` antes de que se
+ejecute cualquier lógica de negocio.
 
-!!! tip "Checkpoint"
-    Run the command above and confirm `Tests run: 3, Failures: 0`. The
-    `returnsRfc7807ProblemDetailWhenMissing` test asserts `$.status` equals `404` in
-    the response body — proof that the problem detail is real JSON, not just a status
-    code. The `rejectsAnInvalidPayload` test sends `requestedAmount = -5.00` and
-    expects `400`, proof that `@ValidAmount` is doing its job.
+!!! tip "Punto de control"
+    Ejecuta el comando de arriba y confirma `Tests run: 3, Failures: 0`. El test
+    `returnsRfc7807ProblemDetailWhenMissing` verifica que `$.status` es igual a `404`
+    en el cuerpo de la respuesta: prueba de que el problem-detail es JSON real, no
+    solo un código de estado. El test `rejectsAnInvalidPayload` envía
+    `requestedAmount = -5.00` y espera `400`, prueba de que `@ValidAmount` está
+    haciendo su trabajo.
 
-## What you built {.recap}
+## Lo que has construido {.recap}
 
-- A reactive `@RestController` at `/api/v1/loan-applications` with three methods —
-  `create` (POST, `201`), `getById` (GET one), and `list` (GET many with an
-  optional `?status=` filter) — returning `Mono` and `Flux` of DTOs and containing
-  no error-handling code.
-- A `CreateLoanApplicationRequest` validated by Jakarta constraints plus Firefly's
-  finance-aware `@ValidAmount` and `@ValidCurrencyCode`, and an immutable
-  `LoanApplicationResponse` record as the wire contract.
-- A not-found path that throws the framework's `ResourceNotFoundException` and gets
-  an RFC 7807 `404` rendered automatically by the web module's
-  `GlobalExceptionHandler` — alongside the free `IdempotencyWebFilter`,
-  `TransactionFilter`, and PII masking that every request inherits.
-- A passing slice test (`Tests run: 3, Failures: 0`) that verifies the `201` round
-  trip, the `404` problem detail, and the `400` validation rejection.
+- Un `@RestController` reactivo en `/api/v1/loan-applications` con tres métodos —
+  `create` (POST, `201`), `getById` (GET de uno) y `list` (GET de muchos con un
+  filtro `?status=` opcional)— que devuelven `Mono` y `Flux` de DTO y no contienen
+  código de gestión de errores.
+- Un `CreateLoanApplicationRequest` validado por restricciones de Jakarta más los
+  validadores conscientes de las finanzas `@ValidAmount` y `@ValidCurrencyCode` de
+  Firefly, y un record `LoanApplicationResponse` inmutable como contrato de cable.
+- Un camino de no-encontrado que lanza la `ResourceNotFoundException` del framework y
+  obtiene un `404` RFC 7807 renderizado automáticamente por el
+  `GlobalExceptionHandler` del módulo web, junto con el `IdempotencyWebFilter`, el
+  `TransactionFilter` y el enmascarado de PII gratuitos que cada petición hereda.
+- Un test de slice que pasa (`Tests run: 3, Failures: 0`) que verifica el viaje de
+  ida y vuelta del `201`, el problem-detail `404` y el rechazo de validación `400`.
 
-## Try it yourself {.exercises}
+## Pruébalo tú mismo {.exercises}
 
-1. **Add a constraint.** In `CreateLoanApplicationRequest.java`, cap the term with
-   a Jakarta `@Max` on `termMonths` (for example, 84 months). Re-run the test, then
-   add a fourth test case that posts a 120-month term and asserts a `400`.
-2. **Filter the list.** The `list` method already accepts `?status=`. Add a test to
-   `LoanApplicationControllerTest` that creates an application and then GETs
-   `/api/v1/loan-applications?status=SUBMITTED`, asserting the new application is in
-   the returned `Flux`.
-3. **Reject a bad currency.** Add a test that posts a request with
-   `currency = "XYZ"` and asserts a `400`, confirming `@ValidCurrencyCode` rejects a
-   non-ISO-4217 code the same way `@ValidAmount` rejects a bad amount.
-4. **Inspect the problem detail.** Extend `returnsRfc7807ProblemDetailWhenMissing`
-   to also assert that `$.detail` contains the phrase `Loan application not found`,
-   tying the response body back to the message thrown in
-   `LoanApplicationService.getById`.
-5. **Prove idempotency by hand.** Boot the service (Chapter 2) and `POST` the same
-   valid body twice with an identical `X-Idempotency-Key` header. Confirm you get
-   one application back, not two, then list applications to verify only one was
-   created.
+1. **Añade una restricción.** En `CreateLoanApplicationRequest.java`, limita el
+   plazo con un `@Max` de Jakarta sobre `termMonths` (por ejemplo, 84 meses).
+   Vuelve a ejecutar el test y luego añade un cuarto caso de test que envíe un plazo
+   de 120 meses y verifique un `400`.
+2. **Filtra la lista.** El método `list` ya acepta `?status=`. Añade un test a
+   `LoanApplicationControllerTest` que cree una solicitud y luego haga GET de
+   `/api/v1/loan-applications?status=SUBMITTED`, verificando que la nueva solicitud
+   está en el `Flux` devuelto.
+3. **Rechaza una divisa incorrecta.** Añade un test que envíe una petición con
+   `currency = "XYZ"` y verifique un `400`, confirmando que `@ValidCurrencyCode`
+   rechaza un código no-ISO-4217 igual que `@ValidAmount` rechaza un importe
+   incorrecto.
+4. **Inspecciona el problem-detail.** Amplía
+   `returnsRfc7807ProblemDetailWhenMissing` para que también verifique que `$.detail`
+   contiene la frase `Loan application not found`, vinculando el cuerpo de la
+   respuesta con el mensaje lanzado en `LoanApplicationService.getById`.
+5. **Demuestra la idempotencia a mano.** Arranca el servicio (Capítulo 2) y haz
+   `POST` del mismo cuerpo válido dos veces con una cabecera `X-Idempotency-Key`
+   idéntica. Confirma que recuperas una solicitud, no dos, y luego lista las
+   solicitudes para verificar que solo se creó una.
 
-## Where to go next
+## Adónde ir ahora
 
-You have a working HTTP surface, but the service behind it is still thin: `create`
-maps a request to an entity and saves it, and `getById` reads one row back. The
-next chapters fill in what those methods orchestrate — the domain model and the
-reactive persistence layer that turns these three endpoints into a real system of
-record.
+Tienes una superficie HTTP funcional, pero el servicio que hay detrás sigue siendo
+delgado: `create` mapea una petición a una entidad y la guarda, y `getById` lee una
+fila de vuelta. Los próximos capítulos rellenan lo que esos métodos orquestan: el
+modelo de dominio y la capa de persistencia reactiva que convierte estos tres
+endpoints en un sistema de registro real.

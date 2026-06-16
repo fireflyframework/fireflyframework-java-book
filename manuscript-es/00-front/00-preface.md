@@ -1,127 +1,138 @@
-## Preface
+## Prefacio
 
-Spring Boot solved a real problem. Before it, standing up a Java service meant
-hand-assembling a servlet container, a JSON mapper, a validation provider, a
-data layer, and a dozen other moving parts — every team a little differently.
-Spring Boot replaced that ceremony with *convention over configuration*: add a
-starter, get a working slice. But Spring Boot is deliberately unopinionated
-about the next problem — building a **fleet** of consistent, production-grade,
-*reactive* microservices. Each service still re-invents the same cross-cutting
-plumbing: error shapes that never quite agree, idempotency, PII redaction,
-correlation IDs that vanish across reactive thread boundaries, pagination and
-filtering DTOs, validation of IBANs and tax IDs, event publishing welded to one
-broker, sagas hand-rolled per project, and N subtly different copies of
-`WebClient` resilience config. Multiply that by dependency drift across dozens
-of independently versioned libraries and you get the enterprise tax: inconsistent
-APIs, copy-paste boilerplate, subtle production bugs, and slow onboarding.
+Spring Boot resolvió un problema real. Antes de él, levantar un servicio Java
+significaba ensamblar a mano un contenedor de servlets, un mapeador de JSON, un
+proveedor de validación, una capa de datos y una docena de piezas más en
+movimiento — cada equipo a su manera. Spring Boot sustituyó esa ceremonia por la
+*convención sobre configuración*: añades un starter y obtienes una porción que
+funciona. Pero Spring Boot es deliberadamente neutral respecto al siguiente
+problema — construir una **flota** de microservicios *reactivos*, consistentes y
+listos para producción. Cada servicio sigue reinventando la misma fontanería
+transversal: formas de error que nunca acaban de coincidir, idempotencia,
+redacción de datos personales, identificadores de correlación que se desvanecen
+al cruzar las fronteras de los hilos reactivos, DTOs de paginación y filtrado,
+validación de IBANs e identificadores fiscales, publicación de eventos soldada a
+un único broker, sagas montadas a mano en cada proyecto y N copias sutilmente
+distintas de la configuración de resiliencia de `WebClient`. Multiplica eso por la
+deriva de dependencias entre docenas de librerías versionadas de forma
+independiente y obtienes el impuesto empresarial: APIs inconsistentes, código
+repetitivo de copiar y pegar, errores sutiles en producción y una incorporación
+lenta de nuevos miembros.
 
-**The Firefly Framework** is the answer to *that* problem. It is a metaframework
-*on top of* Spring Boot — a curated, opinionated, batteries-included superset for
-reactive microservices. A parent POM and a calendar-versioned BOM pin Spring Boot,
-Spring Cloud, and ~70 framework modules into one conflict-free set. A shared
-kernel gives every service one error model, surfaced as RFC 7807 everywhere.
-Capability modules — CQRS, event-driven messaging, Saga/TCC orchestration, event
-sourcing, caching, observability with *working* Reactor context propagation —
-ship as toggleable, overridable Spring auto-configuration. Hexagonal integration
-cores turn a vendor swap (Kafka↔RabbitMQ, Keycloak↔Cognito, DocuSign↔Adobe Sign)
-into a one-property change. Four tier-aligned starters turn "stand up a correct
-microservice" into adding a single dependency. Crucially, Firefly never forks
-Spring Boot or hides it: you still write `@RestController`, `@SpringBootApplication`,
-`@ConfigurationProperties`; every Firefly bean is overridable; adoption is additive
-and reversible.
+**El Firefly Framework** es la respuesta a *ese* problema. Es un metaframework
+*por encima de* Spring Boot — un superconjunto curado, con opiniones y con todo
+incluido para microservicios reactivos. Un POM padre y un BOM versionado por
+calendario fijan Spring Boot, Spring Cloud y ~70 módulos del framework en un único
+conjunto libre de conflictos. Un núcleo compartido da a cada servicio un único
+modelo de error, expuesto como RFC 7807 en todas partes. Los módulos de
+capacidades — CQRS, mensajería orientada a eventos, orquestación Saga/TCC, event
+sourcing, caché, observabilidad con propagación *funcional* del contexto de
+Reactor — se entregan como autoconfiguración de Spring activable y sustituible.
+Los núcleos de integración hexagonales convierten un cambio de proveedor
+(Kafka↔RabbitMQ, Keycloak↔Cognito, DocuSign↔Adobe Sign) en el cambio de una sola
+propiedad. Cuatro starters alineados con las capas convierten «levantar un
+microservicio correcto» en añadir una única dependencia. Y, fundamentalmente,
+Firefly nunca bifurca Spring Boot ni lo oculta: sigues escribiendo
+`@RestController`, `@SpringBootApplication`, `@ConfigurationProperties`; cada bean
+de Firefly es sustituible; la adopción es aditiva y reversible.
 
-This book teaches Firefly **by doing**. You build one real application from an
-empty folder to a secured, observable, event-driven, three-tier system. And the
-code in these pages is not illustrative pseudocode: every listing is a **verbatim
-slice** of a companion Maven reactor that compiles, boots, and passes its tests
-in continuous integration. When prose drifts from the source, the build fails.
-What you read is what actually works.
+Este libro enseña Firefly **haciendo**. Construyes una aplicación real desde una
+carpeta vacía hasta un sistema seguro, observable, orientado a eventos y de tres
+capas. Y el código de estas páginas no es pseudocódigo ilustrativo: cada listado
+es una **porción literal** de un reactor Maven de acompañamiento que compila,
+arranca y pasa sus pruebas en integración continua. Cuando la prosa se aparta del
+código fuente, la compilación falla. Lo que lees es lo que de verdad funciona.
 
-### Who This Book Is For
+### Para quién es este libro
 
-This book is for Java developers who want to build serious backend systems and
-want one coherent way to do it. You should be comfortable with modern Java
-(records, generics, lambdas) and the basics of HTTP services. You need *no* prior
-Firefly experience, and you do not need to be a reactive expert — a front-matter
-prelude brings you up to speed on Spring Boot, WebFlux, Project Reactor, and
-R2DBC, and a dedicated keystone chapter teaches the reactive model from first
-principles before any framework feature relies on it.
+Este libro es para desarrolladores de Java que quieren construir sistemas backend
+serios y quieren una forma coherente de hacerlo. Deberías sentirte cómodo con el
+Java moderno (records, genéricos, lambdas) y con lo básico de los servicios HTTP.
+*No* necesitas experiencia previa con Firefly, y no hace falta que seas un experto
+en programación reactiva — un preludio en las páginas iniciales te pone al día
+sobre Spring Boot, WebFlux, Project Reactor y R2DBC, y un capítulo angular
+dedicado enseña el modelo reactivo desde los primeros principios antes de que
+ninguna funcionalidad del framework dependa de él.
 
-If your last Spring was MVC and JPA, you are welcome here; *Coming from Spring MVC*
-notes ease the jump to the reactive stack. If you arrive from another Firefly port
-such as PyFly, you will recognize the shape and can move quickly.
+Si tu último Spring fue MVC y JPA, eres bienvenido aquí; las notas *Si vienes de
+Spring MVC* facilitan el salto a la pila reactiva. Si llegas desde otro port de
+Firefly como PyFly, reconocerás la forma y podrás avanzar deprisa.
 
-### What You Will Build
+### Lo que vas a construir
 
-Every chapter advances **Lumen Lending**, a personal-loan origination service
-modeled on a real core-banking platform. The narrative follows one natural user
-story — *apply → get scored → get a decision → review offers → accept an offer* —
-and the journey follows a deliberate arc:
+Cada capítulo hace avanzar **Lumen Lending**, un servicio de originación de
+préstamos personales modelado sobre una plataforma real de banca core. La
+narrativa sigue una historia de usuario natural — *solicitar → ser puntuado →
+obtener una decisión → revisar ofertas → aceptar una oferta* — y el recorrido sigue
+un arco deliberado:
 
-- **Part I — Foundations.** You learn *why* a metaframework on Spring Boot exists,
-  scaffold and run your first service, make the whole stack version-coherent with
-  the parent and BOM, bind typed configuration, and master the reactive
-  Mono/Flux model that everything else stands on.
-- **Part II — Modeling & Persisting.** You expose your first reactive HTTP API
-  with finance-grade validation and RFC 7807 errors, generate a typed SDK,
-  persist the loan application with R2DBC and Flyway, and model a rich domain
-  aggregate with a `Money` value object.
-- **Part III — CQRS, EDA & Decisioning.** You split writes from reads with a
-  command/query bus, raise and route domain events (in-JVM, then over Kafka),
-  optionally event-source a ledger, and meet the reactive rule engine where
-  automated credit decisioning *belongs*.
-- **Part IV — The Four Tiers.** You split the system into experience, domain,
-  core, and data tiers communicating over generated SDKs; wire resilient,
-  multi-protocol service clients; build the BFF; and orchestrate the headline
-  **registration saga** with parallel fan-out and automatic compensation.
-- **Part V — Secure · Observe · Ship.** You secure the endpoints, cache and
-  harden them, make the system observable, connect it to the outside world with
-  documents, scheduling, notifications, webhooks and callbacks, test the whole
-  stack, and extend and ship it to production.
+- **Parte I — Fundamentos.** Aprendes *por qué* existe un metaframework sobre
+  Spring Boot, montas y ejecutas tu primer servicio, haces que toda la pila sea
+  coherente en versiones con el padre y el BOM, enlazas configuración tipada y
+  dominas el modelo reactivo Mono/Flux sobre el que se asienta todo lo demás.
+- **Parte II — Modelar y persistir.** Expones tu primera API HTTP reactiva con
+  validación de nivel financiero y errores RFC 7807, generas un SDK tipado,
+  persistes la solicitud de préstamo con R2DBC y Flyway, y modelas un agregado de
+  dominio rico con un objeto de valor `Money`.
+- **Parte III — CQRS, EDA y decisión.** Separas las escrituras de las lecturas con
+  un bus de comandos/consultas, emites y enrutas eventos de dominio (en la propia
+  JVM, y después sobre Kafka), opcionalmente aplicas event sourcing a un libro
+  mayor, y conoces el motor de reglas reactivo donde la decisión crediticia
+  automatizada *debe estar*.
+- **Parte IV — Las cuatro capas.** Divides el sistema en capas de experiencia,
+  dominio, core y datos que se comunican mediante SDKs generados; conectas clientes
+  de servicio resilientes y multiprotocolo; construyes el BFF; y orquestas la
+  **saga de registro** protagonista con fan-out paralelo y compensación automática.
+- **Parte V — Asegurar · Observar · Desplegar.** Aseguras los endpoints, los
+  cacheas y los fortaleces, haces el sistema observable, lo conectas con el mundo
+  exterior mediante documentos, planificación, notificaciones, webhooks y
+  callbacks, pruebas la pila completa, y la extiendes y la despliegas a producción.
 
-By the last page you have a working, tested, observable, secured, multi-tier
-service — and the mental model to extend it.
+Al llegar a la última página tienes un servicio multicapa funcional, probado,
+observable y seguro — y el modelo mental para extenderlo.
 
-### How to Use This Book
+### Cómo usar este libro
 
-**Read sequentially.** Each chapter builds on the one before, and the Lumen
-Lending codebase grows incrementally; skipping ahead leaves gaps.
+**Lee de forma secuencial.** Cada capítulo se apoya en el anterior, y el código de
+Lumen Lending crece de forma incremental; saltar adelante deja huecos.
 
-**Type every listing yourself.** Reading and typing at the same time is how the
-patterns stick. Resist copy-pasting until you have written each listing once.
+**Teclea cada listado tú mismo.** Leer y teclear a la vez es como se fijan los
+patrones. Resiste la tentación de copiar y pegar hasta que hayas escrito cada
+listado al menos una vez.
 
-**Run it.** Lumen Lending really runs. Whenever a chapter adds a feature, start
-the service or its tests and watch it work — `mvn verify` boots the reactor and
-exercises it. Seeing real JSON come back from a real endpoint is worth a hundred
-diagrams.
+**Ejecútalo.** Lumen Lending se ejecuta de verdad. Siempre que un capítulo añada
+una funcionalidad, arranca el servicio o sus pruebas y míralo funcionar —
+`mvn verify` arranca el reactor y lo ejercita. Ver JSON real de vuelta desde un
+endpoint real vale más que cien diagramas.
 
-Each chapter closes with a **Recap** of what changed and a set of **Exercises**
-that push one step further. The exercises are optional but recommended for
-anything you intend to apply immediately.
+Cada capítulo se cierra con un **Resumen** de lo que cambió y un conjunto de
+**Ejercicios** que empujan un paso más allá. Los ejercicios son opcionales, pero
+recomendables para cualquier cosa que tengas intención de aplicar de inmediato.
 
-### Conventions in Brief
+### Convenciones en breve
 
-Typographic and structural conventions — code-listing captions, the callout types
-(including the **Spring parity** callout that maps each Firefly idea back to plain
-Spring Boot), and figure numbering — are demonstrated with live examples in the
-**Conventions** section that follows.
+Las convenciones tipográficas y estructurales — los pies de los listados de código,
+los tipos de callout (incluido el callout **Equivalente en Spring** que asocia cada
+idea de Firefly de vuelta con Spring Boot a secas) y la numeración de las figuras —
+se demuestran con ejemplos en vivo en la sección **Convenciones** que viene a
+continuación.
 
-### The Companion Code
+### El código de acompañamiento
 
-The complete, runnable project lives in this repository's `samples/lumen-lending`
-directory: a layered Maven reactor — `core-lending-loan-origination`,
-`domain-lending-loan-origination`, `exp-lending` — that you grow chapter by
-chapter. The finished source there is the destination this book walks you to.
-Build it once, and use it to compare your work, catch up if you fall behind, or
-simply run the parts you are reading about.
+El proyecto completo y ejecutable vive en el directorio `samples/lumen-lending` de
+este repositorio: un reactor Maven en capas — `core-lending-loan-origination`,
+`domain-lending-loan-origination`, `exp-lending` — que haces crecer capítulo a
+capítulo. El código terminado que hay allí es el destino al que este libro te
+lleva. Constrúyelo una vez y úsalo para comparar tu trabajo, ponerte al día si te
+quedas atrás, o simplemente ejecutar las partes sobre las que estás leyendo.
 
-### What This Book Is *Not*
+### Lo que este libro *no* es
 
-This is a book about the **Java** Firefly Framework. The framework has sibling
-ports in Python (PyFly), Rust, Go, and .NET, a Python agentic metaframework with
-its `agentic-bridge`, and frontend frameworks — these are parallel projects with
-their own documentation and are **out of scope** here. Where Firefly relies on
-Spring Boot, Spring Cloud, or Project Reactor, this book teaches just enough to
-use it well; it is not a comprehensive reference for those platforms or for every
-one of the framework's ~70 modules. It is a guided path from zero to a real,
-multi-tier reactive service — and the foundation to go anywhere from there.
+Este es un libro sobre el Firefly Framework de **Java**. El framework tiene ports
+hermanos en Python (PyFly), Rust, Go y .NET, un metaframework agéntico en Python
+con su `agentic-bridge`, y frameworks de frontend — son proyectos paralelos con su
+propia documentación y quedan **fuera del alcance** de aquí. Donde Firefly se apoya
+en Spring Boot, Spring Cloud o Project Reactor, este libro enseña lo justo para
+usarlo bien; no es una referencia exhaustiva de esas plataformas ni de cada uno de
+los ~70 módulos del framework. Es un camino guiado de cero a un servicio reactivo
+multicapa real — y la base para ir desde ahí a donde quieras.

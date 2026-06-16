@@ -1,32 +1,34 @@
-A loan does not end at "approved." Somewhere a contract is generated, presented,
-signed, and stored as durable evidence — and in a regulated lender that paper trail
-is the difference between a booked loan and a compliance finding. Firefly's
-Enterprise Content Management (ECM) module handles it, and like every Firefly
-integration it is hexagonal: you depend on ports, and a provider adapter does the
-real work.
+Un préstamo no termina en "aprobado". En algún punto se genera un contrato, se
+presenta, se firma y se almacena como evidencia duradera, y en un prestamista
+regulado ese rastro documental es la diferencia entre un préstamo formalizado y un
+hallazgo de incumplimiento. El módulo de Enterprise Content Management (ECM) de
+Firefly se encarga de ello, y como toda integración de Firefly es hexagonal:
+dependes de puertos, y un adaptador de proveedor hace el trabajo real.
 
-!!! warning "Honesty about Lumen Lending"
-    The companion reactor does **not** implement the contract flow — in the trimmed
-    origination slice, accepting an offer is where the story stops, and a real
-    service's `signContract(...)` would be a stub returning `ACTIVE`. This appendix
-    therefore teaches the ECM model and shows how the contract step *would* be
-    built; the snippets are illustrative, not slices of the reactor.
+!!! warning "Honestidad sobre Lumen Lending"
+    El reactor de acompañamiento **no** implementa el flujo de contratos: en la
+    rebanada recortada de originación, aceptar una oferta es donde se detiene la
+    historia, y el `signContract(...)` de un servicio real sería un stub que
+    devuelve `ACTIVE`. Por tanto, este apéndice enseña el modelo de ECM y muestra
+    cómo *se construiría* el paso del contrato; los fragmentos son ilustrativos, no
+    rebanadas del reactor.
 
-## The shape of ECM
+## La forma de ECM
 
-`fireflyframework-ecm` defines around eighteen reactive port interfaces grouped
-into families — documents, e-signature, intelligent document processing, folders,
-security, and audit. You depend on the port you need; an `@EcmAdapter` registers an
-implementation, selected by `firefly.ecm.*` properties (see Appendix B). Security
-ports deny by default, and missing capabilities fall back to safe no-ops rather
-than failing closed in surprising ways.
+`fireflyframework-ecm` define alrededor de dieciocho interfaces de puerto reactivas
+agrupadas en familias: documentos, firma electrónica, procesamiento inteligente de
+documentos, carpetas, seguridad y auditoría. Dependes del puerto que necesitas; un
+`@EcmAdapter` registra una implementación, seleccionada por las propiedades
+`firefly.ecm.*` (consulta el Apéndice B). Los puertos de seguridad deniegan por
+defecto, y las capacidades ausentes recurren a no-ops seguros en lugar de fallar de
+forma cerrada de maneras sorprendentes.
 
-## Step 1 — Generate the agreement (TemplateRenderUtil)
+## Paso 1 — Generar el acuerdo (TemplateRenderUtil)
 
-Document generation is not part of ECM proper; it lives in `fireflyframework-utils`
-as `TemplateRenderUtil`, a FreeMarker-to-XHTML-to-PDF engine with watermarks,
-encryption, metadata, and template caching. You render the loan agreement from the
-approved application and the accepted offer:
+La generación de documentos no forma parte de ECM propiamente dicho; vive en
+`fireflyframework-utils` como `TemplateRenderUtil`, un motor de FreeMarker a XHTML a
+PDF con marcas de agua, cifrado, metadatos y caché de plantillas. Renderizas el
+acuerdo de préstamo a partir de la solicitud aprobada y la oferta aceptada:
 
 ```java
 // Illustrative — not in the companion reactor.
@@ -35,13 +37,15 @@ byte[] pdf = templateRenderUtil.renderPdf(
         Map.of("application", application, "offer", acceptedOffer));
 ```
 
-The same FreeMarker engine backs the notification templates from Chapter 22, so a
-service has one templating story for documents and messages alike.
+El mismo motor de FreeMarker respalda las plantillas de notificaciones del Capítulo
+22, de modo que un servicio tiene una única historia de plantillas tanto para
+documentos como para mensajes.
 
-## Step 2 — Store it (document ports)
+## Paso 2 — Almacenarlo (puertos de documentos)
 
-The rendered bytes become a stored, versioned document through the document and
-content ports, behind whichever storage adapter is configured (AWS S3 or Azure Blob):
+Los bytes renderizados se convierten en un documento almacenado y versionado a
+través de los puertos de documentos y de contenido, detrás del adaptador de
+almacenamiento que esté configurado (AWS S3 o Azure Blob):
 
 ```java
 // Illustrative.
@@ -54,11 +58,12 @@ Mono<DocumentRef> stored = documentPort.store(
             .build());
 ```
 
-## Step 3 — Sign it (e-signature ports)
+## Paso 3 — Firmarlo (puertos de firma electrónica)
 
-The e-signature family models an envelope, a signing request, validation, and
-proof. The provider — DocuSign, Adobe Sign, or Logalty (qualified e-evidence) — is
-a property, so the lender can change vendors without touching this code:
+La familia de firma electrónica modela un sobre, una petición de firma, validación
+y prueba. El proveedor — DocuSign, Adobe Sign o Logalty (evidencia electrónica
+cualificada) — es una propiedad, de modo que el prestamista puede cambiar de
+proveedor sin tocar este código:
 
 ```java
 // Illustrative.
@@ -70,24 +75,27 @@ Mono<SignatureEnvelope> envelope = signatureEnvelopePort.create(
 // later: validationPort.validate(envelopeId), proofPort.retrieve(envelopeId)
 ```
 
-When the signature completes, the proof (the sealed evidence package) is stored
-alongside the document, and a domain event — handled exactly like the events in
-Chapter 11 — moves the application to its booked state.
+Cuando la firma se completa, la prueba (el paquete de evidencia sellado) se almacena
+junto al documento, y un evento de dominio — gestionado exactamente igual que los
+eventos del Capítulo 11 — lleva la solicitud a su estado formalizado.
 
-## The other ECM ports, briefly
+## Los demás puertos de ECM, en breve
 
-- **Intelligent document processing** — extraction, classification, and data
-  extraction ports for inbound documents (an uploaded payslip or ID), so onboarding
-  can read a document rather than just file it.
-- **Content security** — permission and document-security ports, deny-by-default,
-  governing who may read or change a stored document.
-- **Audit** — an audit port recording every access and change, which is precisely
-  what an examiner asks to see.
+- **Procesamiento inteligente de documentos** — puertos de extracción, clasificación
+  y extracción de datos para documentos entrantes (una nómina o un documento de
+  identidad subidos), de modo que el onboarding pueda leer un documento en lugar de
+  limitarse a archivarlo.
+- **Seguridad de contenido** — puertos de permisos y de seguridad de documentos,
+  deniegan por defecto, que gobiernan quién puede leer o modificar un documento
+  almacenado.
+- **Auditoría** — un puerto de auditoría que registra cada acceso y cada cambio, que
+  es justo lo que un inspector pide ver.
 
-## Where to go next
+## Adónde ir ahora
 
-The contract flow is the natural sequel to the offer-acceptance step in Part IV:
-generate with `TemplateRenderUtil`, store and secure through the document ports,
-sign through the e-signature ports, and let a domain event book the loan. Building
-it end to end — against the in-process defaults first, real providers later — is
-the most rewarding exercise in this book.
+El flujo de contratos es la secuela natural del paso de aceptación de la oferta de
+la Parte IV: genera con `TemplateRenderUtil`, almacena y asegura a través de los
+puertos de documentos, firma a través de los puertos de firma electrónica y deja que
+un evento de dominio formalice el préstamo. Construirlo de principio a fin —
+primero contra los valores por defecto en proceso, luego con proveedores reales — es
+el ejercicio más gratificante de este libro.

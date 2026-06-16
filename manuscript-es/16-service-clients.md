@@ -1,36 +1,39 @@
-Every tier in Lumen Lending leans on the tier below it. The experience tier composes
-a channel response by calling the domain service; the domain service writes through
-the core; the core reads enrichment from the data tier. Those calls cross the network,
-and the network is where a fleet earns its reputation. A downstream service is slow,
-or flapping, or briefly gone — and unless the *caller* is built for it, one sick
-dependency drags its callers down with it, until a single timeout cascades into an
-outage three tiers wide.
+Cada capa de Lumen Lending se apoya en la capa que tiene debajo. La capa de
+experiencia compone una respuesta de canal llamando al servicio de dominio; el
+servicio de dominio escribe a través del core; el core lee enriquecimiento de la capa
+de datos. Esas llamadas cruzan la red, y la red es donde una flota se juega su
+reputación. Un servicio aguas abajo va lento, o tiene intermitencias, o desaparece
+brevemente — y, a menos que quien *llama* esté preparado para ello, una dependencia
+enferma arrastra consigo a quienes la invocan, hasta que un solo timeout se propaga en
+cascada hacia una caída que abarca tres capas.
 
-This chapter is about the caller's half of that contract: how a Firefly tier reaches
-the tier below it *resiliently* and *configurably*. You will slice the experience
-tier's domain client — the SDK seam from the BFF down to `domain-lending-loan-origination` —
-and see the pattern Firefly uses everywhere a service calls another: a **port** the
-caller depends on, a `@ConfigurationProperties` record that supplies the base URL, a
-`ClientFactory`-style `@Configuration` that builds the production bean only when an
-operator points it at a real service, and a `WebClient` adapter that does the HTTP.
-Then we will look past REST entirely — at the unified, resilient `ServiceClient` that
-speaks the same fluent grammar over SOAP, gRPC, GraphQL, and WebSocket, because a
-real core-banking platform never gets to pretend everything is JSON over HTTP.
+Este capítulo trata sobre la mitad del contrato que corresponde a quien llama: cómo
+una capa de Firefly alcanza a la capa de debajo de forma *resiliente* y
+*configurable*. Vas a diseccionar el cliente de dominio de la capa de experiencia — la
+costura del SDK que va desde el BFF hasta `domain-lending-loan-origination` — y verás
+el patrón que Firefly emplea siempre que un servicio llama a otro: un **puerto** del
+que depende quien llama, un record `@ConfigurationProperties` que aporta la URL base,
+una `@Configuration` al estilo `ClientFactory` que construye el bean de producción solo
+cuando un operador lo apunta a un servicio real, y un adaptador `WebClient` que hace el
+HTTP. Después miraremos más allá del REST por completo — al `ServiceClient` unificado y
+resiliente que habla la misma gramática fluida sobre SOAP, gRPC, GraphQL y WebSocket,
+porque una plataforma de core bancario de verdad nunca puede permitirse fingir que todo
+es JSON sobre HTTP.
 
-Everything you slice lives in the `exp-lending` module, and a nine-test suite proves
-the tier boots and runs with **no domain service and no Docker** — because the
-production client is conditional, and a test stub wins by default.
+Todo lo que diseccionas vive en el módulo `exp-lending`, y una batería de nueve tests
+demuestra que la capa arranca y funciona **sin servicio de dominio y sin Docker** —
+porque el cliente de producción es condicional, y un stub de test gana por defecto.
 
-## The seam, restated: a port the caller owns
+## La costura, replanteada: un puerto del que es dueño quien llama
 
-You met the SDK-seam idea in Chapter 10: the domain tier depends on a
-`LoanOriginationClient` *interface*, not a concrete HTTP client, so a test can supply
-an in-memory implementation while production supplies the generated SDK. The
-experience tier uses the exact same move one tier up. Its port is
-`LoanOriginationDomainClient` — the seam from the BFF down to the domain origination
-service.
+Conociste la idea de la costura del SDK en el Capítulo 10: la capa de dominio depende
+de una *interfaz* `LoanOriginationClient`, no de un cliente HTTP concreto, de modo que
+un test puede aportar una implementación en memoria mientras que producción aporta el
+SDK generado. La capa de experiencia usa exactamente el mismo movimiento una capa más
+arriba. Su puerto es `LoanOriginationDomainClient` — la costura desde el BFF hasta el
+servicio de originación del dominio.
 
-::: listing exp-lending/src/main/java/com/firefly/lumen/exp/client/LoanOriginationDomainClient.java | Listing 16.1 — the experience-to-domain port, a reactive seam
+::: listing exp-lending/src/main/java/com/firefly/lumen/exp/client/LoanOriginationDomainClient.java | Listado 16.1 — el puerto de experiencia a dominio, una costura reactiva
 public interface LoanOriginationDomainClient {
 
     /**
@@ -53,37 +56,38 @@ public interface LoanOriginationDomainClient {
 }
 :::
 
-Two methods, both reactive, both taking an `idempotencyKey` alongside the payload.
-The port says *what* the experience tier needs from the domain service and nothing
-about *how*. That "how" — the base URL, the timeouts, the HTTP verbs, the retry
-policy — is the configurable, swappable part, and the rest of the chapter fills it
-in without the port ever changing.
+Dos métodos, ambos reactivos, ambos recibiendo una `idempotencyKey` junto al payload.
+El puerto dice *qué* necesita la capa de experiencia del servicio de dominio y nada
+sobre el *cómo*. Ese "cómo" — la URL base, los timeouts, los verbos HTTP, la política
+de reintentos — es la parte configurable e intercambiable, y el resto del capítulo lo
+rellena sin que el puerto cambie nunca.
 
-The idempotency key is not decoration. The experience tier derives it
-*deterministically* from stable business inputs, so a retried channel request — the
-customer double-taps "Apply," the mobile network blips, a gateway replays — produces
-the *same* key, and the domain tier dedupes instead of opening a second application.
-The key rides down as the standard `Idempotency-Key` header, which you will see the
-adapter set.
+La clave de idempotencia no es decoración. La capa de experiencia la deriva
+*deterministicamente* a partir de entradas de negocio estables, de modo que una
+petición de canal reintentada — el cliente pulsa dos veces "Solicitar", la red móvil
+parpadea, un gateway repite — produce la *misma* clave, y la capa de dominio
+deduplica en lugar de abrir una segunda solicitud. La clave viaja hacia abajo como la
+cabecera estándar `Idempotency-Key`, que verás como el adaptador la fija.
 
-!!! note "Key term — the SDK seam"
-    A **seam** is a port (an interface) at a tier boundary that the caller depends on
-    instead of a concrete client. In production it is backed by the *generated SDK* —
-    a `WebClient`-based client produced from the downstream service's OpenAPI contract.
-    In tests it is backed by an in-memory stub. Because the caller programs to the
-    interface, the same handler, service, and controller run unchanged against a real
-    service or a stub. The book sample hand-rolls a trimmed port so it compiles and
-    tests with no downstream service running; read it as "this is where the generated
-    SDK plugs in."
+!!! note "Término clave — la costura del SDK"
+    Una **costura** es un puerto (una interfaz) en un límite de capa del que depende
+    quien llama en lugar de depender de un cliente concreto. En producción está
+    respaldada por el *SDK generado* — un cliente basado en `WebClient` producido a
+    partir del contrato OpenAPI del servicio aguas abajo. En tests está respaldada por
+    un stub en memoria. Como quien llama programa contra la interfaz, el mismo manejador,
+    servicio y controlador se ejecutan sin cambios contra un servicio real o contra un
+    stub. El ejemplo del libro escribe a mano un puerto recortado para que compile y se
+    pruebe sin ningún servicio aguas abajo en ejecución; léelo como "aquí es donde se
+    enchufa el SDK generado".
 
-## Config-driven base URLs with @ConfigurationProperties
+## URLs base dirigidas por configuración con @ConfigurationProperties
 
-A BFF that hard-codes `http://domain-service:8082` into its client is a BFF you
-cannot promote from dev to staging to prod without recompiling. Firefly's answer is
-the same one Spring Boot gives you: bind the address from configuration into a typed,
-immutable record. Here is the experience tier's.
+Un BFF que codifica a fuego `http://domain-service:8082` en su cliente es un BFF que no
+puedes promover de dev a staging a prod sin recompilar. La respuesta de Firefly es la
+misma que te da Spring Boot: enlazar la dirección desde la configuración a un record
+tipado e inmutable. Aquí está el de la capa de experiencia.
 
-::: listing exp-lending/src/main/java/com/firefly/lumen/exp/config/LoanOriginationClientProperties.java | Listing 16.2 — the base URL and timeout, bound from configuration
+::: listing exp-lending/src/main/java/com/firefly/lumen/exp/config/LoanOriginationClientProperties.java | Listado 16.2 — la URL base y el timeout, enlazados desde configuracion
 @ConfigurationProperties(prefix = "lumen.exp.loan-origination")
 public record LoanOriginationClientProperties(
         String basePath,
@@ -98,15 +102,15 @@ public record LoanOriginationClientProperties(
 }
 :::
 
-Everything under `lumen.exp.loan-origination` in `application.yml` (or an environment
-variable, or a config server) binds into this record. `basePath` is the domain
-service's URL; `timeout` is the read/connect budget, defaulting to ten seconds via
-the compact constructor when nothing sets it. Because it is a `record`, the bound
-values are immutable for the life of the application — no setter accidentally mutates
-the base URL mid-flight.
+Todo lo que está bajo `lumen.exp.loan-origination` en `application.yml` (o una variable
+de entorno, o un servidor de configuración) se enlaza a este record. `basePath` es la
+URL del servicio de dominio; `timeout` es el presupuesto de lectura/conexión, con un
+valor por defecto de diez segundos mediante el constructor compacto cuando nada lo
+establece. Al ser un `record`, los valores enlazados son inmutables durante toda la
+vida de la aplicación — ningún setter muta accidentalmente la URL base en pleno vuelo.
 
-The prefix is the whole point. Promoting the service between environments is a
-property change:
+El prefijo es la clave de todo. Promover el servicio entre entornos es un cambio de
+propiedad:
 
 ```yaml
 # dev
@@ -119,28 +123,31 @@ lumen:
 # lumen.exp.loan-origination.base-path: https://loan-origination.internal.lumen.bank
 ```
 
-!!! note "Key term — relaxed binding"
-    Spring Boot's **relaxed binding** maps a record component named `basePath` to the
-    property key `base-path` (and `BASE_PATH` as an environment variable, and
-    `base_path`, …). That is why the property files above write `base-path` while the
-    record writes `basePath`, and why the `@ConditionalOnProperty` in the next listing
-    names `base-path`. They are the same property; Spring normalizes the spelling.
+!!! note "Término clave — enlazado relajado"
+    El **enlazado relajado** de Spring Boot mapea un componente de record llamado
+    `basePath` a la clave de propiedad `base-path` (y `BASE_PATH` como variable de
+    entorno, y `base_path`, …). Por eso los ficheros de propiedades de arriba escriben
+    `base-path` mientras que el record escribe `basePath`, y por eso el
+    `@ConditionalOnProperty` del siguiente listado nombra `base-path`. Son la misma
+    propiedad; Spring normaliza la forma de escribirla.
 
 !!! spring "Spring parity"
-    `@ConfigurationProperties` on a `record`, activated with
-    `@EnableConfigurationProperties`, is stock Spring Boot — no Firefly annotation in
-    sight. Firefly's contribution is the *convention*: every cross-tier client in the
-    fleet binds its address this way, under a predictable `*.loan-origination`-shaped
-    prefix, so an operator configures the tenth service exactly like the first.
+    `@ConfigurationProperties` sobre un `record`, activado con
+    `@EnableConfigurationProperties`, es Spring Boot de serie — sin ninguna anotación de
+    Firefly a la vista. La aportación de Firefly es la *convención*: cada cliente entre
+    capas de la flota enlaza su dirección de esta forma, bajo un prefijo predecible con
+    forma `*.loan-origination`, de modo que un operador configura el décimo servicio
+    exactamente igual que el primero.
 
-## The ClientFactory pattern: build the prod bean, conditionally
+## El patrón ClientFactory: construir el bean de producción, condicionalmente
 
-Now the wiring that turns the port and the properties into a live client. Firefly
-calls this the **ClientFactory** pattern: a `@Configuration` that builds a `WebClient`
-from the bound properties and exposes the port as a bean — but only under two
-conditions, so it never gets in the way of a test or a misconfigured environment.
+Ahora el cableado que convierte el puerto y las propiedades en un cliente vivo. Firefly
+llama a esto el patrón **ClientFactory**: una `@Configuration` que construye un
+`WebClient` a partir de las propiedades enlazadas y expone el puerto como un bean —
+pero solo bajo dos condiciones, para que nunca se interponga en un test o en un entorno
+mal configurado.
 
-::: listing exp-lending/src/main/java/com/firefly/lumen/exp/config/LoanOriginationClientConfig.java | Listing 16.3 — the ClientFactory: a conditional @Configuration building the prod bean
+::: listing exp-lending/src/main/java/com/firefly/lumen/exp/config/LoanOriginationClientConfig.java | Listado 16.3 — el ClientFactory: una @Configuration condicional que construye el bean de produccion
 @Configuration
 @EnableConfigurationProperties(LoanOriginationClientProperties.class)
 public class LoanOriginationClientConfig {
@@ -179,49 +186,53 @@ public class LoanOriginationClientConfig {
 }
 :::
 
-Read the two conditions on each `@Bean`, because together they make this
-configuration polite.
+Lee las dos condiciones sobre cada `@Bean`, porque juntas son las que hacen que esta
+configuración sea cortés.
 
-`@ConditionalOnProperty(... name = "base-path")` means the bean only materializes when
-an operator has actually pointed the experience tier at a real domain service. No base
-path, no client — the configuration stays inert rather than building a `WebClient`
-aimed at nothing. That is what lets the sample's tests run without any
-`lumen.exp.loan-origination.base-path` set: the production beans simply never appear.
+`@ConditionalOnProperty(... name = "base-path")` significa que el bean solo se
+materializa cuando un operador ha apuntado de verdad la capa de experiencia hacia un
+servicio de dominio real. Sin URL base, no hay cliente — la configuración permanece
+inerte en lugar de construir un `WebClient` apuntando a nada. Eso es lo que permite que
+los tests del ejemplo se ejecuten sin ningún `lumen.exp.loan-origination.base-path`
+establecido: los beans de producción simplemente no aparecen nunca.
 
-`@ConditionalOnMissingBean` means that even *with* a base path, this bean backs off
-the instant some other `LoanOriginationDomainClient` is already defined — exactly the
-back-off-to-your-bean rule from Chapter 1, applied to a client. A test registers an
-in-memory stub, and the production bean yields to it without a profile or a flag.
+`@ConditionalOnMissingBean` significa que, incluso *con* una URL base, este bean se
+retira en el instante en que ya hay definido algún otro `LoanOriginationDomainClient` —
+exactamente la regla de cede-ante-tu-bean del Capítulo 1, aplicada a un cliente. Un
+test registra un stub en memoria, y el bean de producción le cede el paso sin un perfil
+ni un flag.
 
-The `WebClient` itself is built from the bound `basePath`, with its codec sized for
-the largest payload the tier expects (here, a generous 20 MB ceiling, mirroring the
-real service's factory). In production, the second bean would wrap the *generated*
-domain SDK; the sample wraps a hand-written adapter so the wiring is faithful enough
-to slice verbatim.
+El propio `WebClient` se construye a partir del `basePath` enlazado, con su codec
+dimensionado para el payload más grande que la capa espera (aquí, un generoso techo de
+20 MB, reflejando la factoría del servicio real). En producción, el segundo bean
+envolvería el SDK de dominio *generado*; el ejemplo envuelve un adaptador escrito a mano
+para que el cableado sea lo bastante fiel como para diseccionarlo tal cual.
 
-!!! note "Key term — the ClientFactory pattern"
-    A **ClientFactory** is a `@Configuration` that assembles a downstream client from
-    bound `@ConfigurationProperties` and exposes it behind a port, gated by
-    `@ConditionalOnProperty` (only when configured) and `@ConditionalOnMissingBean`
-    (only when not overridden). It is the standard Firefly shape for "wire a resilient
-    client to the tier below," so every tier's outbound client is configured,
-    conditional, and overridable the same way.
+!!! note "Término clave — el patrón ClientFactory"
+    Un **ClientFactory** es una `@Configuration` que ensambla un cliente aguas abajo a
+    partir de `@ConfigurationProperties` enlazadas y lo expone detrás de un puerto,
+    controlado por `@ConditionalOnProperty` (solo cuando está configurado) y
+    `@ConditionalOnMissingBean` (solo cuando no se ha sobrescrito). Es la forma estándar
+    de Firefly para "cablear un cliente resiliente a la capa de debajo", de modo que el
+    cliente saliente de cada capa se configura, se condiciona y se sobrescribe de la
+    misma manera.
 
 !!! spring "Spring parity"
-    Every annotation here — `@Configuration`, `@Bean`, `@EnableConfigurationProperties`,
-    `@ConditionalOnProperty`, `@ConditionalOnMissingBean` — is plain Spring Boot, the
-    same conditionals Firefly's own auto-configurations use. Nothing is hidden. The
-    pattern is a convention, not a new mechanism: you could write it by hand in any
-    Spring app, and Firefly's value is that every service writes it identically.
+    Cada anotación de aquí — `@Configuration`, `@Bean`, `@EnableConfigurationProperties`,
+    `@ConditionalOnProperty`, `@ConditionalOnMissingBean` — es Spring Boot puro, los
+    mismos condicionales que usan las propias autoconfiguraciones de Firefly. Nada está
+    oculto. El patrón es una convención, no un mecanismo nuevo: podrías escribirlo a mano
+    en cualquier app de Spring, y el valor de Firefly es que cada servicio lo escribe de
+    forma idéntica.
 
-## The WebClient adapter: the HTTP, and the idempotency header
+## El adaptador WebClient: el HTTP, y la cabecera de idempotencia
 
-The factory hands the port off to a `WebClient`-backed adapter. This is the only
-class that knows the domain service speaks HTTP — paths, verbs, headers. Keeping it
-behind the port means the experience tier's service, controller, and tests never
-import `WebClient` at all.
+La factoría entrega el puerto a un adaptador respaldado por `WebClient`. Esta es la
+única clase que sabe que el servicio de dominio habla HTTP — rutas, verbos, cabeceras.
+Mantenerla detrás del puerto significa que el servicio, el controlador y los tests de la
+capa de experiencia no importan `WebClient` en absoluto.
 
-::: listing exp-lending/src/main/java/com/firefly/lumen/exp/config/WebClientLoanOriginationDomainClient.java | Listing 16.4 — the WebClient adapter: HTTP behind the port, idempotency key on every call
+::: listing exp-lending/src/main/java/com/firefly/lumen/exp/config/WebClientLoanOriginationDomainClient.java | Listado 16.4 — el adaptador WebClient: el HTTP detras del puerto, la clave de idempotencia en cada llamada
 class WebClientLoanOriginationDomainClient implements LoanOriginationDomainClient {
 
     private static final String IDEMPOTENCY_HEADER = "Idempotency-Key";
@@ -255,54 +266,60 @@ class WebClientLoanOriginationDomainClient implements LoanOriginationDomainClien
 }
 :::
 
-The adapter is a textbook reactive `WebClient` call: `post()` the create request,
-`get()` the detail by id, each returning a `Mono` of the channel DTO. The one detail
-worth dwelling on is the header. Both methods set `Idempotency-Key` from the
-`idempotencyKey` argument the service computed — so the dedupe guarantee travels with
-every call, write *and* read. The experience tier derives that key deterministically
-upstream (Chapter 6 introduced the idempotency filter that *honors* such a key on the
-receiving side); here you see the *sending* side put it on the wire.
+El adaptador es una llamada reactiva de `WebClient` de manual: `post()` de la petición
+de creación, `get()` del detalle por id, cada uno devolviendo un `Mono` del DTO de
+canal. El único detalle en el que merece la pena detenerse es la cabecera. Ambos
+métodos fijan `Idempotency-Key` a partir del argumento `idempotencyKey` que calculó el
+servicio — de modo que la garantía de deduplicación viaja con cada llamada, escritura
+*y* lectura. La capa de experiencia deriva esa clave deterministicamente aguas arriba
+(el Capítulo 6 introdujo el filtro de idempotencia que *honra* dicha clave en el lado
+receptor); aquí ves el lado *emisor* poniéndola en el cable.
 
-!!! note "Key term — X-Transaction-Id propagation"
-    Distinct from the idempotency key is the **transaction id**. Chapter 6's
-    `TransactionFilter` stamps every response with an `X-Transaction-Id`, minting one
-    if the caller did not supply it. For that id to actually correlate a request across
-    tiers, an outbound client must *forward* the inbound id on its downstream call.
-    Firefly's resilient client does this automatically: the `X-Transaction-Id` carried
-    on the inbound exchange is propagated onto the outbound request, so one logical
-    operation shares a transaction id from the BFF through the domain tier into the
-    core — and the JSON logs line up end to end. The slice's hand-rolled adapter sets
-    the idempotency header explicitly; treat transaction-id propagation as a property
-    of the generated SDK's resilient client, not something this trimmed adapter wires
-    by hand.
+!!! note "Término clave — propagación de X-Transaction-Id"
+    Distinta de la clave de idempotencia es el **id de transacción**. El
+    `TransactionFilter` del Capítulo 6 estampa cada respuesta con un `X-Transaction-Id`,
+    acuñando uno si quien llama no lo aportó. Para que ese id correlacione de verdad una
+    petición a través de las capas, un cliente saliente debe *reenviar* el id entrante en
+    su llamada aguas abajo. El cliente resiliente de Firefly lo hace automáticamente: el
+    `X-Transaction-Id` que lleva el intercambio entrante se propaga a la petición
+    saliente, de modo que una operación lógica comparte un id de transacción desde el
+    BFF, pasando por la capa de dominio, hasta el core — y los logs JSON cuadran de
+    principio a fin. El adaptador escrito a mano del fragmento fija la cabecera de
+    idempotencia explícitamente; trata la propagación del id de transacción como una
+    propiedad del cliente resiliente del SDK generado, no como algo que este adaptador
+    recortado cablee a mano.
 
-## Resilience, applied through Reactor operators
+## Resiliencia, aplicada mediante operadores de Reactor
 
-A `WebClient` call is only half a resilient client. The other half is what happens
-when the domain service is slow, erroring, or saturated. Firefly's production client
-— the resilient `ServiceClient` the generated SDK is built on — wraps every call in a
-**Resilience4j** stack, applied not as imperative `try`/`catch` but as *Reactor
-operators* on the same `Mono` the adapter returns. Because they are operators, they
-compose into the reactive chain without blocking a thread.
+Una llamada de `WebClient` es solo la mitad de un cliente resiliente. La otra mitad es
+lo que ocurre cuando el servicio de dominio va lento, da errores o está saturado. El
+cliente de producción de Firefly — el `ServiceClient` resiliente sobre el que se
+construye el SDK generado — envuelve cada llamada en una pila de **Resilience4j**,
+aplicada no como un `try`/`catch` imperativo sino como *operadores de Reactor* sobre el
+mismo `Mono` que devuelve el adaptador. Al ser operadores, se componen en la cadena
+reactiva sin bloquear un hilo.
 
-Three patterns do the heavy lifting:
+Tres patrones hacen el trabajo pesado:
 
-- **Circuit breaker.** After a configured proportion of recent calls fail, the breaker
-  *opens* and fails fast — every call returns immediately with an error instead of
-  waiting on a dependency everyone already knows is sick. After a cooldown it lets a
-  trickle of calls through (*half-open*); if they succeed it *closes* again. This is
-  what stops one sick tier from cascading into the tiers above it.
-- **Retry.** A transient failure — a dropped connection, a `503` during a rolling
-  deploy — is retried a bounded number of times, ideally with backoff, so a blip does
-  not surface to the customer. Retry is *only* safe because every call carries the
-  deterministic idempotency key from Listing 16.4: a retried `submitApplication`
-  dedupes downstream instead of opening a second loan.
-- **Bulkhead.** A cap on concurrent in-flight calls to the dependency, so a slow
-  downstream cannot consume every connection and starve the rest of the service. The
-  bulkhead isolates the blast radius to the one dependency that is struggling.
+- **Cortacircuitos (circuit breaker).** Después de que falle una proporción configurada
+  de llamadas recientes, el cortacircuitos se *abre* y falla rápido — cada llamada
+  devuelve inmediatamente con un error en lugar de esperar a una dependencia que todo el
+  mundo sabe ya que está enferma. Tras un enfriamiento deja pasar un goteo de llamadas
+  (*semiabierto*); si tienen éxito se *cierra* de nuevo. Esto es lo que impide que una
+  capa enferma se propague en cascada hacia las capas que tiene encima.
+- **Reintento (retry).** Un fallo transitorio — una conexión caída, un `503` durante un
+  despliegue progresivo — se reintenta un número acotado de veces, idealmente con
+  backoff, de modo que un parpadeo no aflore al cliente. El reintento *solo* es seguro
+  porque cada llamada lleva la clave de idempotencia determinista del Listado 16.4: un
+  `submitApplication` reintentado deduplica aguas abajo en lugar de abrir un segundo
+  préstamo.
+- **Mamparo (bulkhead).** Un tope al número de llamadas concurrentes en vuelo hacia la
+  dependencia, para que un servicio aguas abajo lento no pueda consumir todas las
+  conexiones y dejar sin recursos al resto del servicio. El mamparo aísla el radio de
+  impacto a la única dependencia que está sufriendo.
 
-Conceptually, the resilient client decorates the adapter's `Mono` with those
-operators — this is illustrative, not a slice from the reactor:
+Conceptualmente, el cliente resiliente decora el `Mono` del adaptador con esos
+operadores — esto es ilustrativo, no un fragmento del reactor:
 
 ```java
 // Illustrative — how the resilient client layers Resilience4j onto the reactive call.
@@ -318,49 +335,50 @@ return webClient.post()
         .timeout(properties.timeout());
 ```
 
-Each `transformDeferred` wraps the call in one Resilience4j decorator; `timeout`
-enforces the budget from the bound `LoanOriginationClientProperties`. You tune every
-threshold — failure rate, wait duration, max attempts, concurrency cap — through
-properties, never code, so the SRE who runs the fleet adjusts a flapping dependency's
-breaker without a redeploy.
+Cada `transformDeferred` envuelve la llamada en un decorador de Resilience4j; `timeout`
+impone el presupuesto de las `LoanOriginationClientProperties` enlazadas. Ajustas cada
+umbral — tasa de fallos, tiempo de espera, intentos máximos, tope de concurrencia — a
+través de propiedades, nunca de código, de modo que el SRE que opera la flota ajusta el
+cortacircuitos de una dependencia con intermitencias sin un redespliegue.
 
-!!! warning "Retry is only safe with idempotency"
-    Retrying a non-idempotent write is how you create two loans from one tap. The
-    reason Firefly's resilient client can retry a `POST` at all is that the experience
-    tier derives a *deterministic* idempotency key and the adapter sends it on every
-    call. Retry and idempotency are a pair — turn on one without the other and you have
-    either fragility or duplicates. Never enable retry on a write that does not carry a
-    stable idempotency key.
+!!! warning "El reintento solo es seguro con idempotencia"
+    Reintentar una escritura no idempotente es cómo creas dos préstamos a partir de un
+    solo toque. La razón por la que el cliente resiliente de Firefly puede reintentar un
+    `POST` siquiera es que la capa de experiencia deriva una clave de idempotencia
+    *determinista* y el adaptador la envía en cada llamada. El reintento y la
+    idempotencia van en pareja — activa uno sin el otro y tendrás o fragilidad o
+    duplicados. Nunca habilites el reintento en una escritura que no lleve una clave de
+    idempotencia estable.
 
 !!! spring "Spring parity"
-    Resilience4j ships first-class Reactor operators —
-    `CircuitBreakerOperator`, `RetryOperator`, `BulkheadOperator` — that you can apply
-    to any `Mono` or `Flux` in a vanilla Spring app. Firefly does not replace them; it
-    *pre-wires* them into the generated client with fleet-standard defaults and
-    `firefly.*`-tunable thresholds, so every outbound call across the fleet is
-    breakered, retried, and bulkheaded the same way instead of each team hand-rolling a
-    slightly different `WebClient`.
+    Resilience4j incluye operadores de Reactor de primera clase —
+    `CircuitBreakerOperator`, `RetryOperator`, `BulkheadOperator` — que puedes aplicar a
+    cualquier `Mono` o `Flux` en una app de Spring corriente. Firefly no los reemplaza;
+    los *precablea* en el cliente generado con valores por defecto estándar de la flota y
+    umbrales ajustables con `firefly.*`, de modo que cada llamada saliente de la flota
+    lleva cortacircuitos, reintentos y mamparos de la misma forma, en lugar de que cada
+    equipo escriba a mano un `WebClient` ligeramente distinto.
 
-## Beyond REST: one fluent client, many protocols
+## Más allá del REST: un cliente fluido, muchos protocolos
 
-So far every call has been JSON over HTTP, because the tiers Lumen owns all speak it.
-A real core-banking platform does not get that luxury. The system of record for
-accounts is a twenty-year-old **SOAP** service. The fraud engine exposes **gRPC**.
-The product catalog is behind a **GraphQL** gateway. A market-data feed is a
-**WebSocket** stream. Integrating each with its own bespoke client — a JAX-WS stub
-here, a gRPC channel there, an Apollo client somewhere else — is the enterprise tax
-from Chapter 1, wearing a protocol costume.
+Hasta ahora cada llamada ha sido JSON sobre HTTP, porque las capas que Lumen posee lo
+hablan todas. Una plataforma de core bancario de verdad no goza de ese lujo. El sistema
+de registro para las cuentas es un servicio **SOAP** de hace veinte años. El motor de
+fraude expone **gRPC**. El catálogo de productos está detrás de un gateway **GraphQL**.
+Un feed de datos de mercado es un stream **WebSocket**. Integrar cada uno con su propio
+cliente a medida — un stub JAX-WS aquí, un canal gRPC allá, un cliente Apollo por algún
+otro sitio — es el impuesto empresarial del Capítulo 1, disfrazado de protocolo.
 
-Firefly's answer is a single, unified `ServiceClient` whose *fluent grammar is the
-same* regardless of the wire protocol underneath. You select the protocol when you
-build the client; the call site reads the same, and — crucially — the same
-Resilience4j circuit breaker, retry, bulkhead, timeout, and `X-Transaction-Id`
-propagation apply no matter which protocol carries the bytes. Resilience is a property
-of the *client*, not of HTTP.
+La respuesta de Firefly es un único `ServiceClient` unificado cuya *gramática fluida es
+la misma* con independencia del protocolo de transporte que haya debajo. Eliges el
+protocolo al construir el cliente; el punto de llamada se lee igual y — crucialmente —
+se aplican el mismo cortacircuitos, reintento, mamparo y timeout de Resilience4j y la
+misma propagación de `X-Transaction-Id`, sin importar qué protocolo transporte los
+bytes. La resiliencia es una propiedad del *cliente*, no del HTTP.
 
-Picture the legacy core-banking SOAP call the domain tier must make to verify an
-account. Instead of generating JAX-WS stubs and bolting resilience on by hand, you
-reach for the same builder grammar:
+Imagina la llamada SOAP al core bancario heredado que la capa de dominio debe hacer
+para verificar una cuenta. En lugar de generar stubs JAX-WS y atornillar la resiliencia
+a mano, recurres a la misma gramática de builder:
 
 ```java
 // Illustrative — the same fluent ServiceClient, pointed at a legacy SOAP core-banking service.
@@ -377,12 +395,12 @@ Mono<AccountStatus> status = soap.operation("VerifyAccount")
         .execute(AccountStatus.class);
 ```
 
-Swap `ServiceClient.soap(...)` for `ServiceClient.grpc(...)`, `ServiceClient.graphql(...)`,
-or `ServiceClient.websocket(...)` and the *shape* is unchanged — base configuration,
-the same resilience knobs, an `execute` that returns a `Mono` (or a `Flux` for a
-streaming protocol). The fraud-engine gRPC call, the catalog GraphQL query, and the
-market-data WebSocket subscription all read like variations on one client, because
-they are:
+Cambia `ServiceClient.soap(...)` por `ServiceClient.grpc(...)`,
+`ServiceClient.graphql(...)` o `ServiceClient.websocket(...)` y la *forma* permanece sin
+cambios — configuración base, los mismos mandos de resiliencia, un `execute` que
+devuelve un `Mono` (o un `Flux` para un protocolo de streaming). La llamada gRPC al
+motor de fraude, la consulta GraphQL al catálogo y la suscripción WebSocket a los datos
+de mercado se leen todas como variaciones de un mismo cliente, porque lo son:
 
 ```java
 // Illustrative — gRPC and a WebSocket stream through the same grammar and resilience stack.
@@ -400,120 +418,127 @@ Flux<PriceTick> ticks = ServiceClient.websocket("market-data")
         .subscribe("rates/EURUSD", PriceTick.class);
 ```
 
-The win is the same one the whole book argues: a developer who learned the client for
-the domain REST call already knows the client for the SOAP core, the gRPC fraud
-engine, and the GraphQL catalog. One grammar, one resilience model, one place to tune
-thresholds — across every protocol the platform is forced to speak.
+La ventaja es la misma que defiende todo el libro: un desarrollador que aprendió el
+cliente para la llamada REST de dominio ya conoce el cliente para el core SOAP, el motor
+de fraude gRPC y el catálogo GraphQL. Una gramática, un modelo de resiliencia, un único
+sitio donde ajustar umbrales — a través de cada protocolo que la plataforma se ve
+obligada a hablar.
 
-!!! note "Key term — the unified ServiceClient"
-    Firefly's **`ServiceClient`** is a protocol-agnostic outbound client: a single
-    fluent builder and call grammar that targets REST, SOAP, gRPC, GraphQL, or
-    WebSocket, chosen at build time. Every variant shares the same resilience stack
-    (circuit breaker, retry, bulkhead, timeout) and the same context propagation
-    (`X-Transaction-Id`), so cross-cutting behavior is identical regardless of wire
-    format. It is the generalization of the REST seam you sliced in this chapter to
-    every protocol a banking platform integrates with.
+!!! note "Término clave — el ServiceClient unificado"
+    El **`ServiceClient`** de Firefly es un cliente saliente agnóstico al protocolo: un
+    único builder fluido y una gramática de llamada que apuntan a REST, SOAP, gRPC,
+    GraphQL o WebSocket, elegidos en tiempo de construcción. Cada variante comparte la
+    misma pila de resiliencia (cortacircuitos, reintento, mamparo, timeout) y la misma
+    propagación de contexto (`X-Transaction-Id`), de modo que el comportamiento
+    transversal es idéntico con independencia del formato de cable. Es la generalización
+    de la costura REST que diseccionaste en este capítulo a cada protocolo con el que se
+    integra una plataforma bancaria.
 
-!!! warning "The multi-protocol clients are illustrative here"
-    Lumen Lending's tiers integrate over REST, so the *verified* slices in this chapter
-    are the REST seam, its properties, its ClientFactory, and its `WebClient` adapter.
-    The SOAP, gRPC, GraphQL, and WebSocket snippets above are illustrative — they show
-    the shape of the unified `ServiceClient` and where it plugs in, not code this
-    chapter's build compiles. Read them as "this is how the same pattern extends beyond
-    REST," and reach for the framework's `ServiceClient` reference when you wire a real
-    non-HTTP dependency.
+!!! warning "Los clientes multiprotocolo aquí son ilustrativos"
+    Las capas de Lumen Lending se integran sobre REST, así que los fragmentos
+    *verificados* de este capítulo son la costura REST, sus propiedades, su ClientFactory
+    y su adaptador `WebClient`. Los fragmentos de SOAP, gRPC, GraphQL y WebSocket de
+    arriba son ilustrativos — muestran la forma del `ServiceClient` unificado y dónde se
+    enchufa, no código que compile el build de este capítulo. Léelos como "así es como el
+    mismo patrón se extiende más allá del REST", y recurre a la referencia del
+    `ServiceClient` del framework cuando cablees una dependencia no HTTP real.
 
-## Run it
+## Ejecútalo
 
-The experience tier boots and runs without a domain service, and that is precisely
-what the conditional client buys you. The test context never sets
-`lumen.exp.loan-origination.base-path`, so the production `WebClient` and adapter from
-Listing 16.3 never materialize; a `StubLoanOriginationDomainClient` is registered
-instead, and `@ConditionalOnMissingBean` guarantees it wins. The controller and
-service run their full reactive path against the stub — no HTTP, no Docker. From the
-`samples/lumen-lending` directory:
+La capa de experiencia arranca y funciona sin un servicio de dominio, y eso es
+precisamente lo que te compra el cliente condicional. El contexto de test nunca
+establece `lumen.exp.loan-origination.base-path`, así que el `WebClient` de producción y
+el adaptador del Listado 16.3 nunca se materializan; en su lugar se registra un
+`StubLoanOriginationDomainClient`, y `@ConditionalOnMissingBean` garantiza que gane. El
+controlador y el servicio ejecutan su ruta reactiva completa contra el stub — sin HTTP,
+sin Docker. Desde el directorio `samples/lumen-lending`:
 
 ```text
 mvn -q -pl exp-lending test
 ```
 
-The expected result:
+El resultado esperado:
 
 ```text
 Tests run: 9, Failures: 0, Errors: 0, Skipped: 0
 BUILD SUCCESS
 ```
 
-Nine green tests confirm the chapter's claims about the seam: the experience tier
-composes a create-and-read round trip through the port, derives a deterministic
-idempotency key the stub can observe, and surfaces a missing application as a `404`
-problem detail — all without the production client ever being built, because no base
-path is configured.
+Nueve tests en verde confirman las afirmaciones del capítulo sobre la costura: la capa
+de experiencia compone un ciclo completo de creación-y-lectura a través del puerto,
+deriva una clave de idempotencia determinista que el stub puede observar, y aflora una
+solicitud inexistente como un problem detail `404` — todo sin que el cliente de
+producción llegue a construirse nunca, porque no hay ninguna URL base configurada.
 
-!!! tip "Checkpoint"
-    Note *why* the suite is green without a running domain service: the two production
-    beans in `LoanOriginationClientConfig` are gated by
-    `@ConditionalOnProperty(name = "base-path")` and `@ConditionalOnMissingBean`. With
-    no `base-path` set and a test stub present, both conditions keep the prod client
-    out of the context. Set `lumen.exp.loan-origination.base-path` in a test profile
-    and the `WebClient` bean would try to build — proof that the condition, not luck,
-    is what keeps the test hermetic.
+!!! tip "Punto de control"
+    Fíjate en *por qué* la batería está en verde sin un servicio de dominio en
+    ejecución: los dos beans de producción en `LoanOriginationClientConfig` están
+    controlados por `@ConditionalOnProperty(name = "base-path")` y
+    `@ConditionalOnMissingBean`. Sin `base-path` establecido y con un stub de test
+    presente, ambas condiciones mantienen al cliente de producción fuera del contexto.
+    Establece `lumen.exp.loan-origination.base-path` en un perfil de test y el bean
+    `WebClient` intentaría construirse — la prueba de que es la condición, y no la
+    suerte, lo que mantiene el test hermético.
 
-## What you built {.recap}
+## Lo que has construido {.recap}
 
-- A reactive **port**, `LoanOriginationDomainClient`, that the experience tier depends
-  on to reach the domain origination service — two `Mono`-returning methods, each
-  carrying a deterministic idempotency key, with no HTTP detail leaking past the
-  interface.
-- A `@ConfigurationProperties` record, `LoanOriginationClientProperties`, that binds
-  the downstream **base URL and timeout** from configuration under the
-  `lumen.exp.loan-origination` prefix, so the same code promotes across environments by
-  property change.
-- A **ClientFactory** `@Configuration` that builds the production `WebClient` and
-  client bean only when `@ConditionalOnProperty(base-path)` is satisfied and
-  `@ConditionalOnMissingBean` confirms nothing overrides it — the back-off-to-your-bean
-  rule applied to an outbound client.
-- A `WebClient` **adapter** that does the actual HTTP behind the port and sets the
-  `Idempotency-Key` header on every call, plus the conceptual picture of the
-  **Resilience4j** circuit breaker, retry, and bulkhead applied through Reactor
-  operators, and `X-Transaction-Id` propagation across the hop.
-- The **unified `ServiceClient`** — the same fluent, resilient grammar over SOAP, gRPC,
-  GraphQL, and WebSocket — and an honest line between what this REST slice verifies and
-  what is illustrative.
-- A passing nine-test suite (`Tests run: 9, Failures: 0`) that runs the whole tier
-  against an in-memory stub, with the production client conditioned out — no domain
-  service, no Docker.
+- Un **puerto** reactivo, `LoanOriginationDomainClient`, del que depende la capa de
+  experiencia para alcanzar el servicio de originación del dominio — dos métodos que
+  devuelven `Mono`, cada uno portando una clave de idempotencia determinista, sin que
+  ningún detalle HTTP se filtre más allá de la interfaz.
+- Un record `@ConfigurationProperties`, `LoanOriginationClientProperties`, que enlaza la
+  **URL base y el timeout** aguas abajo desde la configuración bajo el prefijo
+  `lumen.exp.loan-origination`, de modo que el mismo código se promueve entre entornos
+  con un cambio de propiedad.
+- Una `@Configuration` **ClientFactory** que construye el `WebClient` de producción y el
+  bean de cliente solo cuando se satisface `@ConditionalOnProperty(base-path)` y
+  `@ConditionalOnMissingBean` confirma que nada lo sobrescribe — la regla de
+  cede-ante-tu-bean aplicada a un cliente saliente.
+- Un **adaptador** `WebClient` que hace el HTTP real detrás del puerto y fija la
+  cabecera `Idempotency-Key` en cada llamada, además de la imagen conceptual del
+  cortacircuitos, reintento y mamparo de **Resilience4j** aplicados mediante operadores
+  de Reactor, y la propagación de `X-Transaction-Id` a través del salto.
+- El **`ServiceClient` unificado** — la misma gramática fluida y resiliente sobre SOAP,
+  gRPC, GraphQL y WebSocket — y una línea honesta entre lo que verifica este fragmento
+  REST y lo que es ilustrativo.
+- Una batería de nueve tests que pasa (`Tests run: 9, Failures: 0`) y que ejecuta toda
+  la capa contra un stub en memoria, con el cliente de producción condicionado fuera —
+  sin servicio de dominio, sin Docker.
 
-## Try it yourself {.exercises}
+## Pruébalo tú mismo {.exercises}
 
-1. **Configure the prod client into existence.** In an `exp-lending` test, add a
-   property source that sets `lumen.exp.loan-origination.base-path` and *remove* the
-   stub registration. Observe that `LoanOriginationClientConfig` now builds the
-   `WebClient` bean (watch for the `Building Loan Origination WebClient` log line).
-   Explain, in one sentence, which condition flipped.
-2. **Override the client with your own bean.** Leave a `base-path` configured, then
-   define a second `LoanOriginationDomainClient` `@Bean` in a test configuration.
-   Confirm the production bean backs off and yours is injected — then name the single
-   annotation that made that possible.
-3. **Trace the idempotency key.** Open `StubLoanOriginationDomainClient` under
-   `src/test/java` and find `idempotencyKeys()`. Write a test that submits the *same*
-   logical request twice and asserts the recorded key is identical both times, proving
-   the experience tier derives it deterministically rather than minting a random one.
-4. **Change the default timeout.** The compact constructor of
-   `LoanOriginationClientProperties` defaults `timeout` to ten seconds. Add a test that
-   binds the properties with no `timeout` and asserts the default, then one that sets
-   `timeout: 3s` and asserts the override — proving configuration, not code, owns the
-   budget.
-5. **Sketch a SOAP seam.** Without running it, write the `ServiceClient.soap(...)`
-   builder you would use for the legacy core-banking account-verify call, including a
-   circuit breaker and a retry. Name which two cross-cutting behaviors you get *for
-   free* from the unified client that you would otherwise hand-wire into a JAX-WS stub.
+1. **Haz que el cliente de producción exista por configuración.** En un test de
+   `exp-lending`, añade una fuente de propiedades que establezca
+   `lumen.exp.loan-origination.base-path` y *elimina* el registro del stub. Observa que
+   `LoanOriginationClientConfig` ahora construye el bean `WebClient` (busca la línea de
+   log `Building Loan Origination WebClient`). Explica, en una frase, qué condición ha
+   cambiado.
+2. **Sobrescribe el cliente con tu propio bean.** Deja un `base-path` configurado, luego
+   define un segundo `@Bean` de `LoanOriginationDomainClient` en una configuración de
+   test. Confirma que el bean de producción se retira y se inyecta el tuyo — y luego
+   nombra la única anotación que lo hizo posible.
+3. **Traza la clave de idempotencia.** Abre `StubLoanOriginationDomainClient` en
+   `src/test/java` y encuentra `idempotencyKeys()`. Escribe un test que envíe la *misma*
+   petición lógica dos veces y afirme que la clave registrada es idéntica en ambas
+   ocasiones, demostrando que la capa de experiencia la deriva deterministicamente en
+   lugar de acuñar una aleatoria.
+4. **Cambia el timeout por defecto.** El constructor compacto de
+   `LoanOriginationClientProperties` establece `timeout` por defecto en diez segundos.
+   Añade un test que enlace las propiedades sin `timeout` y afirme el valor por defecto,
+   y luego otro que establezca `timeout: 3s` y afirme la sobrescritura — demostrando que
+   la configuración, no el código, es dueña del presupuesto.
+5. **Esboza una costura SOAP.** Sin ejecutarlo, escribe el builder
+   `ServiceClient.soap(...)` que usarías para la llamada de verificación de cuenta al
+   core bancario heredado, incluyendo un cortacircuitos y un reintento. Nombra qué dos
+   comportamientos transversales obtienes *gratis* del cliente unificado que de otro modo
+   tendrías que cablear a mano en un stub JAX-WS.
 
-## Where to go next
+## Adónde ir ahora
 
-You now have the caller's half of every tier boundary: a port, config-driven
-addressing, a conditional ClientFactory, a resilient adapter, and a unified client
-that reaches beyond REST. The next chapters put these calls under load and under
-watch — the observability that makes the `X-Transaction-Id` you propagated here
-actually traceable across the fleet, and the tests that exercise a full request from
-the experience tier down through the domain saga into the core system of record.
+Ahora tienes la mitad de cada límite de capa que corresponde a quien llama: un puerto,
+direccionamiento dirigido por configuración, un ClientFactory condicional, un adaptador
+resiliente y un cliente unificado que llega más allá del REST. Los próximos capítulos
+ponen estas llamadas bajo carga y bajo vigilancia — la observabilidad que hace que el
+`X-Transaction-Id` que propagaste aquí sea de verdad trazable a través de la flota, y
+los tests que ejercitan una petición completa desde la capa de experiencia, bajando por
+la saga de dominio hasta el sistema de registro del core.

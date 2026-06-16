@@ -1,20 +1,21 @@
-One of Firefly's quietest superpowers is that infrastructure choices are
-*properties*, not code. Each capability is defined by a port (an interface) and
-satisfied by an adapter chosen at runtime — so moving from one broker, cache, or
-identity provider to another is a dependency swap plus a line of YAML, with no
-change to your handlers, services, or controllers. This appendix collects the
-swaps you are most likely to make.
+Uno de los superpoderes más silenciosos de Firefly es que las decisiones de
+infraestructura son *propiedades*, no código. Cada capacidad se define mediante un
+puerto (una interfaz) y la satisface un adaptador elegido en tiempo de ejecución,
+de modo que pasar de un broker, una caché o un proveedor de identidad a otro es un
+intercambio de dependencias más una línea de YAML, sin cambio alguno en tus
+manejadores, servicios o controladores. Este apéndice recopila los intercambios
+que es más probable que necesites hacer.
 
-The pattern is always the same: the *core* module gives you the port and a default;
-an *adapter* module on the classpath registers an implementation; and a
-`firefly.*` property (or simply which adapter jar is present) selects it.
+El patrón es siempre el mismo: el módulo *core* te da el puerto y un valor por
+defecto; un módulo *adaptador* en el classpath registra una implementación; y una
+propiedad `firefly.*` (o simplemente qué adaptador jar está presente) lo selecciona.
 
-## Event transport (EDA)
+## Transporte de eventos (EDA)
 
-The EDA core (`fireflyframework-eda`) defines `EventPublisher` / `EventConsumer`.
-In Lumen Lending the domain emits events over the in-JVM transport
-(`PublisherType.APPLICATION_EVENT`). Moving to a real broker is a jar plus a
-property — your `@EventPublisher` and `@EventListener` code is untouched.
+El core de EDA (`fireflyframework-eda`) define `EventPublisher` / `EventConsumer`.
+En Lumen Lending el dominio emite eventos sobre el transporte dentro de la JVM
+(`PublisherType.APPLICATION_EVENT`). Pasar a un broker real es un jar más una
+propiedad: tu código `@EventPublisher` y `@EventListener` permanece intacto.
 
 ```yaml
 firefly:
@@ -23,21 +24,22 @@ firefly:
     default-publisher-type: KAFKA   # APPLICATION_EVENT | KAFKA | RABBITMQ | POSTGRES | AUTO
 ```
 
-| Transport | Adapter dependency | Character |
+| Transporte | Dependencia del adaptador | Carácter |
 |---|---|---|
-| In-JVM | (built in) | same-process, no infra — ideal for tests and a monolith |
-| Kafka | `fireflyframework-eda-kafka` | persistent, ordered, high-throughput |
-| RabbitMQ | `fireflyframework-eda-rabbitmq` | persistent, flexible routing |
-| Postgres | `fireflyframework-eda-postgres` | transactional outbox + LISTEN/NOTIFY, no extra broker |
+| Dentro de la JVM | (incorporado) | mismo proceso, sin infra: ideal para tests y un monolito |
+| Kafka | `fireflyframework-eda-kafka` | persistente, ordenado, alto rendimiento |
+| RabbitMQ | `fireflyframework-eda-rabbitmq` | persistente, enrutado flexible |
+| Postgres | `fireflyframework-eda-postgres` | outbox transaccional + LISTEN/NOTIFY, sin broker extra |
 
-With `default-publisher-type: AUTO`, Firefly resolves the best available transport
-in the order Kafka → RabbitMQ → Postgres → in-JVM.
+Con `default-publisher-type: AUTO`, Firefly resuelve el mejor transporte disponible
+en el orden Kafka → RabbitMQ → Postgres → dentro de la JVM.
 
-## Cache
+## Caché
 
-The cache core (`fireflyframework-cache`) defines the reactive `CacheAdapter` port
-with Caffeine built in as the L1. Registering a distributed provider gives you an
-L2 — a write-through `SmartCacheAdapter` keeps a local Caffeine layer in front of it.
+El core de caché (`fireflyframework-cache`) define el puerto reactivo `CacheAdapter`
+con Caffeine incorporado como L1. Registrar un proveedor distribuido te da una L2:
+un `SmartCacheAdapter` de escritura directa mantiene una capa local de Caffeine por
+delante de él.
 
 ```yaml
 firefly:
@@ -45,19 +47,19 @@ firefly:
     type: AUTO          # AUTO picks by provider priority: Redis > Hazelcast > JCache > Caffeine
 ```
 
-| Provider | Adapter dependency | Use |
+| Proveedor | Dependencia del adaptador | Uso |
 |---|---|---|
-| Caffeine | (built in) | in-process L1, zero infra |
-| Redis | `fireflyframework-cache-redis` | distributed L2 |
-| Hazelcast | `fireflyframework-cache-hazelcast` | distributed in-memory grid |
-| JCache | `fireflyframework-cache-jcache` | any JSR-107 provider |
-| Postgres | `fireflyframework-cache-postgres` | database-backed cache |
+| Caffeine | (incorporado) | L1 en proceso, infra cero |
+| Redis | `fireflyframework-cache-redis` | L2 distribuida |
+| Hazelcast | `fireflyframework-cache-hazelcast` | grid distribuido en memoria |
+| JCache | `fireflyframework-cache-jcache` | cualquier proveedor JSR-107 |
+| Postgres | `fireflyframework-cache-postgres` | caché respaldada por base de datos |
 
-## Identity (IDP)
+## Identidad (IDP)
 
-The IDP core defines one `IdpAdapter` port (login, refresh, introspection, user
-CRUD, MFA, sessions). The provider is one property; each adapter activates by
-`@ConditionalOnProperty`.
+El core de IDP define un único puerto `IdpAdapter` (login, refresco, introspección,
+CRUD de usuarios, MFA, sesiones). El proveedor es una sola propiedad; cada adaptador
+se activa mediante `@ConditionalOnProperty`.
 
 ```yaml
 firefly:
@@ -65,17 +67,17 @@ firefly:
     provider: keycloak   # keycloak | cognito | azure-ad | internal-db
 ```
 
-| Provider | Adapter dependency |
+| Proveedor | Dependencia del adaptador |
 |---|---|
 | Keycloak | `fireflyframework-idp-keycloak` |
 | AWS Cognito | `fireflyframework-idp-aws-cognito` |
 | Microsoft Entra ID | `fireflyframework-idp-azure-ad` |
-| Local DB | `fireflyframework-idp-internal-db` |
+| BD local | `fireflyframework-idp-internal-db` |
 
-## Notifications
+## Notificaciones
 
-Channel services (`EmailService`, `SMSService`, `PushService`) sit over provider
-ports, chosen per channel.
+Los servicios de canal (`EmailService`, `SMSService`, `PushService`) se apoyan sobre
+puertos de proveedor, elegidos por canal.
 
 ```yaml
 firefly:
@@ -85,16 +87,17 @@ firefly:
     push:  { provider: firebase }
 ```
 
-| Channel | Providers (adapter modules) |
+| Canal | Proveedores (modulos adaptadores) |
 |---|---|
 | Email | SendGrid, Resend |
 | SMS | Twilio |
 | Push | Firebase Cloud Messaging |
 
-## Content & e-signature (ECM)
+## Contenido y firma electrónica (ECM)
 
-The ECM core selects a storage adapter and an e-signature provider by property —
-the contract flow in Appendix C depends only on the ports.
+El core de ECM selecciona un adaptador de almacenamiento y un proveedor de firma
+electrónica por propiedad: el flujo de contratos del Apéndice C depende únicamente
+de los puertos.
 
 ```yaml
 firefly:
@@ -104,9 +107,10 @@ firefly:
       provider: docusign        # docusign | adobe-sign | logalty
 ```
 
-## The takeaway
+## La conclusión
 
-Because every one of these is a port with a property-selected adapter, you can
-develop against the in-process defaults (no Docker, fast tests — exactly how Lumen
-Lending's tests run) and switch to production infrastructure without editing a
-single line of business logic. Test what you ship; ship what you tested.
+Como cada una de estas capacidades es un puerto con un adaptador seleccionado por
+propiedad, puedes desarrollar contra los valores por defecto en proceso (sin Docker,
+tests rápidos: exactamente como se ejecutan los tests de Lumen Lending) y cambiar a
+infraestructura de producción sin editar una sola línea de lógica de negocio. Prueba
+lo que despliegas; despliega lo que probaste.

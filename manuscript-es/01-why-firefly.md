@@ -1,75 +1,89 @@
-Spring Boot solved a real problem, and solved it well. Before it, standing up a
-Java service meant hand-assembling a web container, a JSON mapper, a validation
-provider, a data layer, and a dozen other parts — every team a little differently.
-Spring Boot replaced that ceremony with *convention over configuration*: add a
-starter, get a working slice. A single service has never been easier to start.
+Spring Boot resolvió un problema real, y lo resolvió bien. Antes de su llegada,
+levantar un servicio Java significaba ensamblar a mano un contenedor web, un
+mapeador de JSON, un proveedor de validación, una capa de datos y una docena de
+piezas más — cada equipo de una forma un poco distinta. Spring Boot sustituyó esa
+ceremonia por *convención sobre configuración*: añades un starter y obtienes una
+porción funcional. Nunca ha sido tan fácil arrancar un único servicio.
 
-But a bank is not a single service. It is a *fleet* — dozens, then hundreds, of
-reactive microservices that must agree with one another and behave the same way in
-production. And about that, Spring Boot is deliberately silent. It gives you superb
-building blocks and no opinion about how to assemble them consistently across a
-fleet. That silence is where teams bleed time, and it is the problem this book — and
-the Firefly Framework — exists to solve.
+Pero un banco no es un único servicio. Es una *flota* — decenas, y luego cientos,
+de microservicios reactivos que deben coincidir entre sí y comportarse igual en
+producción. Y sobre eso Spring Boot guarda un silencio deliberado. Te ofrece unos
+bloques de construcción excelentes y ninguna opinión sobre cómo ensamblarlos de
+forma coherente en toda una flota. Ese silencio es donde los equipos pierden
+tiempo, y es el problema que este libro — y el Firefly Framework — existen para
+resolver.
 
-## The enterprise tax
+## El impuesto empresarial
 
-Watch what happens when the same organization builds its tenth Spring Boot service.
-Each one re-implements, slightly differently, the same cross-cutting plumbing:
+Observa lo que ocurre cuando la misma organización construye su décimo servicio
+Spring Boot. Cada uno reimplementa, de un modo ligeramente distinto, la misma
+fontanería transversal:
 
-- **Error responses.** One service returns a stack trace, another a bespoke JSON
-  blob, a third a bare 500. None agree on status codes or shape, so every client
-  writes per-service error handling.
-- **Idempotency.** Payment and write endpoints need to dedupe retries. Each team
-  rolls its own header and cache, or — more often — forgets.
-- **PII redaction.** Logs leak national IDs, card numbers, and tokens until an
-  auditor notices, and then every service patches its logging by hand.
-- **Correlation across reactive boundaries.** A request's trace and tenant context
-  must follow it through every `Mono`/`Flux` hop. On the reactive stack this is
-  notoriously broken, because `ThreadLocal` and the logging MDC do **not** follow
-  Reactor's operators. Teams discover this the hard way, in production, when a log
-  line shows the wrong customer's ID.
-- **Pagination and filtering.** Every list endpoint reinvents page/size/sort DTOs
-  and ad-hoc query parameters.
-- **Domain validation.** IBANs, BICs, tax IDs, card numbers — validated by
-  copy-pasted regexes that are subtly wrong in three places.
-- **Event publishing.** Code is welded to one broker's client, so moving from
-  RabbitMQ to Kafka means a rewrite.
-- **Distributed transactions.** Multi-step operations need compensation when a step
-  fails; each team hand-rolls a saga, usually without recovery or a dead-letter path.
-- **Resilient clients.** Every service grows its own slightly different `WebClient`
-  with its own retry and circuit-breaker settings.
+- **Respuestas de error.** Un servicio devuelve una traza de pila, otro un bloque
+  JSON a medida, un tercero un 500 a secas. Ninguno se pone de acuerdo en los
+  códigos de estado ni en la forma, así que cada cliente escribe su propio manejo
+  de errores por servicio.
+- **Idempotencia.** Los endpoints de pago y de escritura necesitan deduplicar los
+  reintentos. Cada equipo se inventa su propia cabecera y su propia caché o —más a
+  menudo— se olvida de ello.
+- **Redacción de PII.** Los logs filtran números de identificación nacional,
+  números de tarjeta y tokens hasta que un auditor lo detecta, y entonces cada
+  servicio parchea su logging a mano.
+- **Correlación a través de fronteras reactivas.** La traza y el contexto de
+  inquilino de una petición deben seguirla a través de cada salto `Mono`/`Flux`. En
+  la pila reactiva esto está notoriamente roto, porque `ThreadLocal` y el MDC del
+  logging **no** acompañan a los operadores de Reactor. Los equipos lo descubren por
+  las malas, en producción, cuando una línea de log muestra el ID del cliente
+  equivocado.
+- **Paginación y filtrado.** Cada endpoint de listado reinventa los DTO de
+  page/size/sort y parámetros de consulta improvisados.
+- **Validación de dominio.** IBAN, BIC, identificadores fiscales, números de
+  tarjeta — validados con expresiones regulares copiadas y pegadas que están
+  sutilmente mal en tres sitios distintos.
+- **Publicación de eventos.** El código está soldado al cliente de un único broker,
+  de modo que pasar de RabbitMQ a Kafka supone una reescritura.
+- **Transacciones distribuidas.** Las operaciones multipaso necesitan compensacion
+  cuando un paso falla; cada equipo improvisa su propia saga, normalmente sin
+  recuperación ni ruta a cola de mensajes muertos.
+- **Clientes resilientes.** Cada servicio desarrolla su propio `WebClient`
+  ligeramente distinto, con sus propios ajustes de reintento y cortacircuitos.
 
-Now multiply that by dependency drift: dozens of independently versioned libraries
-across dozens of services, no two quite aligned. The result is the **enterprise
-tax** — inconsistent APIs, copy-paste boilerplate, subtle production bugs, slow
-onboarding, and a fleet that is hard to reason about precisely because every member
-is a little different.
+Ahora multiplica eso por la deriva de dependencias: decenas de bibliotecas
+versionadas de forma independiente a lo largo de decenas de servicios, sin que dos
+estén del todo alineadas. El resultado es el **impuesto empresarial** — APIs
+inconsistentes, código repetitivo de copiar y pegar, errores sutiles en producción,
+incorporaciones lentas y una flota difícil de razonar precisamente porque cada
+miembro es un poco diferente.
 
-You can pay this tax forever, one service at a time. Or you can encode the answers
-*once*, in a layer every service inherits. That layer is a metaframework.
+Puedes pagar este impuesto para siempre, servicio a servicio. O puedes codificar
+las respuestas *una sola vez*, en una capa que cada servicio hereda. Esa capa es un
+metaframework.
 
-!!! note "Key term — framework vs. metaframework"
-    A **framework** gives you building blocks and a place to put your code (Spring
-    Boot is a framework). A **metaframework** is a framework built *on top of*
-    another, adding opinions, conventions, and pre-wired cross-cutting behavior so
-    that an entire fleet is consistent by default. Firefly is a metaframework on
-    Spring Boot: it does not replace Spring Boot, it concentrates a fleet's worth
-    of hard-won decisions into a layer you add in one line.
+!!! note "Termino clave — framework frente a metaframework"
+    Un **framework** te ofrece bloques de construcción y un sitio donde poner tu
+    código (Spring Boot es un framework). Un **metaframework** es un framework
+    construido *sobre* otro, que añade opiniones, convenciones y comportamiento
+    transversal precableado para que toda una flota sea coherente por defecto.
+    Firefly es un metaframework sobre Spring Boot: no reemplaza a Spring Boot, sino
+    que concentra el equivalente a las decisiones difíciles de toda una flota en una
+    capa que añades en una sola línea.
 
-## What Firefly adds
+## Lo que añade Firefly
 
-Firefly answers the enterprise tax with five moves. You will spend the rest of the
-book using each in anger; here is the shape of the whole.
+Firefly responde al impuesto empresarial con cinco movimientos. Dedicarás el resto
+del libro a usar cada uno a fondo; aquí tienes la forma del conjunto.
 
-**1 — Version coherence in one line.** A parent POM and a calendar-versioned BOM
-pin Spring Boot, Spring Cloud, and ~70 framework modules into one conflict-free
-set. Your services declare framework dependencies with *no version* and never
-fight a dependency-convergence error again. Chapter 3 is devoted to this.
+**1 — Coherencia de versiones en una línea.** Un POM padre y un BOM versionado por
+calendario fijan Spring Boot, Spring Cloud y unos 70 módulos del framework en un
+conjunto único sin conflictos. Tus servicios declaran las dependencias del
+framework *sin versión* y nunca vuelven a pelearse con un error de convergencia de
+dependencias. El capítulo 3 está dedicado a esto.
 
-**2 — One error model, everywhere.** A tiny kernel defines a single exception
-hierarchy with a typed error code and an immutable context. Every module throws
-into it, and the web layer turns it into a standard **RFC 7807** problem-detail
-response — automatically, identically, in every service. The contrast is stark:
+**2 — Un único modelo de error, en todas partes.** Un núcleo diminuto define una
+única jerarquía de excepciones con un código de error tipado y un contexto
+inmutable. Cada módulo lanza hacia ella, y la capa web la convierte en una
+respuesta de detalle de problema **RFC 7807** estándar — automáticamente, de forma
+idéntica, en cada servicio. El contraste es marcado:
 
 ```java
 // Vanilla Spring Boot: every service invents its own error shape, by hand.
@@ -85,129 +99,143 @@ public ResponseEntity<Map<String, Object>> handle(LoanNotFoundException ex) {
 throw new ResourceNotFoundException("LoanApplication", id);
 ```
 
-**3 — Capabilities as toggleable auto-configuration.** The hard cross-cutting
-concerns — CQRS command/query buses, transport-agnostic event publishing,
-Saga/TCC/Workflow orchestration, event sourcing, provider-agnostic caching,
-observability with *working* Reactor context propagation — ship as Spring Boot
-auto-configuration. Each capability activates when its jar is on the classpath,
-is tuned by `firefly.*` properties, and **backs off the instant you define your
-own bean**. You opt in by adding a dependency, and you override anything by
-declaring a bean — nothing is hidden, nothing is locked.
+**3 — Capacidades como autoconfiguración activable.** Las preocupaciones
+transversales difíciles — buses de comandos/consultas CQRS, publicación de eventos
+agnóstica al transporte, orquestación de Saga/TCC/Workflow, event sourcing, caché
+agnóstica al proveedor, observabilidad con propagación de contexto de Reactor *que
+funciona*— se entregan como autoconfiguración de Spring Boot. Cada capacidad se
+activa cuando su jar está en el classpath, se ajusta mediante propiedades
+`firefly.*` y **se retira en el instante en que defines tu propio bean**. Optas por
+ella añadiendo una dependencia, y la sobrescribes declarando un bean — nada está
+oculto, nada está bloqueado.
 
-**4 — Vendors behind ports.** Identity, content management, e-signature,
-notifications, and inbound/outbound webhooks are *hexagonal* cores: you depend on
-a port (an interface) and drop in a provider adapter chosen by a single property.
-Swapping Keycloak for Cognito, or DocuSign for Adobe Sign, is a one-line change
-instead of an SDK rewrite.
+**4 — Proveedores tras puertos.** Identidad, gestión de contenidos, firma
+electrónica, notificaciones y webhooks entrantes/salientes son núcleos
+*hexagonales*: dependes de un puerto (una interfaz) e insertas un adaptador de
+proveedor elegido mediante una única propiedad. Cambiar Keycloak por Cognito, o
+DocuSign por Adobe Sign, es un cambio de una línea en lugar de una reescritura del
+SDK.
 
-**5 — Correct services in one dependency.** Four tier-aligned **starters** —
-`core`, `domain`, `data`, and `application` — bundle the right capabilities and
-production-grade defaults (resilient clients, idempotency, PII masking,
-`X-Transaction-Id` propagation, JSON logging, a startup banner) for each kind of
-service. A companion CLI, `flywork`, scaffolds projects and bootstraps the whole
-framework build. "Stand up a correct microservice" becomes "add one starter."
+**5 — Servicios correctos en una dependencia.** Cuatro **starters** alineados con
+las capas — `core`, `domain`, `data` y `application`— agrupan las capacidades
+adecuadas y unos valores por defecto de nivel de producción (clientes resilientes,
+idempotencia, enmascaramiento de PII, propagación de `X-Transaction-Id`, logging en
+JSON, un banner de arranque) para cada tipo de servicio. Una CLI complementaria,
+`flywork`, genera proyectos andamiados y arranca toda la construcción del framework.
+«Levantar un microservicio correcto» se convierte en «añadir un starter».
 
-!!! note "Key term — reactive (Mono/Flux)"
-    Throughout, Firefly is reactive end to end: handlers, repositories, buses, and
-    clients all speak Project Reactor's `Mono` (zero-or-one) and `Flux`
-    (zero-to-many). The prelude introduced them; Chapter 5 teaches them in full.
-    The single most valuable thing Firefly does on the reactive stack is make trace
-    and tenant context survive across operator boundaries — the correlation problem
-    from the previous section — by enabling automatic context propagation for you.
+!!! note "Termino clave — reactivo (Mono/Flux)"
+    De principio a fin, Firefly es reactivo de extremo a extremo: manejadores,
+    repositorios, buses y clientes hablan todos el `Mono` (cero o uno) y el `Flux`
+    (cero o muchos) de Project Reactor. El preludio los presentó; el capítulo 5 los
+    enseña por completo. Lo más valioso que hace Firefly sobre la pila reactiva es
+    lograr que el contexto de traza y de inquilino sobreviva a través de las
+    fronteras de los operadores — el problema de correlación de la sección anterior —
+    habilitando por ti la propagación automática de contexto.
 
-## A superset, never a fork
+## Un superconjunto, nunca un fork
 
-It would be easy to misread all of this as "a new framework that hides Spring
-Boot." It is the opposite. Firefly is a strict **superset** that *depends on,
-configures, and exposes* Spring Boot — and never replaces or forks it.
+Sería fácil malinterpretar todo esto como «un nuevo framework que oculta Spring
+Boot». Es justo lo contrario. Firefly es un **superconjunto** estricto que
+*depende de, configura y expone* Spring Boot — y nunca lo reemplaza ni lo bifurca.
 
-- The parent POM imports the Spring Boot and Spring Cloud BOMs rather than
-  extending `spring-boot-starter-parent`, so Firefly coexists with a corporate
-  parent.
-- Every Firefly capability is a real Spring Boot auto-configuration, gated with
-  `@ConditionalOnProperty` and `@ConditionalOnMissingBean`. It activates by
-  classpath presence and yields to any bean you define.
-- You still write `@RestController`, `@SpringBootApplication`, `@Service`,
-  `@ConfigurationProperties`; you still use Actuator, Spring Security, Spring Cloud,
-  and Micrometer. Firefly's own annotations are meta-annotated Spring stereotypes
-  or processed by ordinary Spring beans.
-- Everything is overridable, and adoption is **additive and reversible**: add a
-  starter to gain behavior, declare a bean to change it, remove the dependency to
-  drop it.
+- El POM padre importa los BOM de Spring Boot y Spring Cloud en lugar de extender
+  `spring-boot-starter-parent`, de modo que Firefly coexiste con un POM padre
+  corporativo.
+- Cada capacidad de Firefly es una autoconfiguración real de Spring Boot, controlada
+  con `@ConditionalOnProperty` y `@ConditionalOnMissingBean`. Se activa por la
+  presencia en el classpath y cede ante cualquier bean que definas.
+- Sigues escribiendo `@RestController`, `@SpringBootApplication`, `@Service`,
+  `@ConfigurationProperties`; sigues usando Actuator, Spring Security, Spring Cloud
+  y Micrometer. Las propias anotaciones de Firefly son estereotipos de Spring
+  metaanotados o procesados por beans ordinarios de Spring.
+- Todo es sobrescribible, y la adopción es **aditiva y reversible**: añade un starter
+  para ganar comportamiento, declara un bean para cambiarlo, elimina la dependencia
+  para descartarlo.
 
-In short: Firefly depends on Spring Boot, auto-configures it opinionatedly, and
-exposes it transparently. You are always writing Spring Boot — just never the same
-boilerplate twice.
+En resumen: Firefly depende de Spring Boot, lo autoconfigura con opiniones y lo
+expone de forma transparente. Siempre estás escribiendo Spring Boot — solo que nunca
+el mismo código repetitivo dos veces.
 
-!!! spring "Spring parity"
-    Hold on to this lens for the whole book: for almost every Firefly feature there
-    is a plain-Spring answer to "how would I do this myself?" — and a **Spring
-    parity** callout that names it. Firefly's value is not novelty; it is that the
-    answer is already wired, identical across the fleet, and reactive-correct.
+!!! spring "Equivalente en Spring"
+    Aférrate a esta lente durante todo el libro: para casi cada característica de
+    Firefly existe una respuesta en Spring puro a «¿cómo lo haría yo mismo?» — y un
+    recuadro de **Equivalente en Spring** que la nombra. El valor de Firefly no es
+    la novedad; es que la respuesta ya está cableada, es idéntica en toda la flota y
+    es correcta desde el punto de vista reactivo.
 
-## The territory: four tiers
+## El territorio: cuatro capas
 
-The application you build, **Lumen Lending**, is a slice of a real core-banking
-platform, and like that platform it is organized into four tiers, each backed by
-one of Firefly's starters:
+La aplicación que construyes, **Lumen Lending**, es una porción de una plataforma
+de core bancario real y, como esa plataforma, está organizada en cuatro capas, cada
+una respaldada por uno de los starters de Firefly:
 
-- **Experience (`exp`)** — the channel-facing Backend-for-Frontend. Stateless
-  composition: shape requests for an app or web client, call downstream domain
-  services, return lightweight DTOs. Built on `starter-application`.
-- **Domain** — business orchestration. Translates coarse commands into CQRS
-  commands and queries, runs compensating sagas, and emits domain events. Owns no
-  database; calls core services over generated SDKs. Built on `starter-domain`.
-- **Core** — the system of record. Owns the schema and the data, exposes plain
-  reactive CRUD and business APIs over R2DBC. Built on `starter-core`.
-- **Data** — enrichment, data quality, and lineage (for example, credit-bureau
-  data). Built on `starter-data`. We meet it in Chapter 15.
+- **Experiencia (`exp`)** — el Backend-for-Frontend orientado al canal. Composición
+  sin estado: da forma a las peticiones para una app o un cliente web, llama a los
+  servicios de dominio aguas abajo y devuelve DTO ligeros. Construida sobre
+  `starter-application`.
+- **Dominio** — orquestación de negocio. Traduce comandos gruesos en comandos y
+  consultas CQRS, ejecuta sagas compensadoras y emite eventos de dominio. No posee
+  base de datos; llama a los servicios de core a través de SDK generados. Construida
+  sobre `starter-domain`.
+- **Core** — el sistema de registro. Posee el esquema y los datos, expone CRUD
+  reactivo simple y APIs de negocio sobre R2DBC. Construido sobre `starter-core`.
+- **Data** — enriquecimiento, calidad de datos y linaje (por ejemplo, datos de buró
+  de crédito). Construida sobre `starter-data`. La conoceremos en el capítulo 15.
 
-Tiers never share a database; they talk over HTTP through generated, reactive SDKs.
-That single rule — *integrate over contracts, not over a shared schema* — is what
-lets a fleet evolve without every change rippling everywhere.
+Las capas nunca comparten base de datos; se comunican por HTTP a través de SDK
+reactivos generados. Esa única regla — *integra sobre contratos, no sobre un esquema
+compartido*— es lo que permite que una flota evolucione sin que cada cambio se
+propague por todas partes.
 
-## What you will build
+## Lo que construirás
 
-By the last page, Lumen Lending lets a customer **apply** for a personal loan, get
-**scored**, receive a **decision**, review **offers**, and **accept** one — flowing
-from the experience tier, through a domain saga, into the core system of record,
-emitting events along the way. You will build it tier by tier, and every line you
-read is a verbatim slice of the companion reactor, verified by the build.
+Para cuando llegues a la última página, Lumen Lending permitirá a un cliente
+**solicitar** un préstamo personal, obtener una **puntuación**, recibir una
+**decisión**, revisar **ofertas** y **aceptar** una — fluyendo desde la capa de
+experiencia, a través de una saga de dominio, hasta el sistema de registro del core,
+emitiendo eventos por el camino. Lo construirás capa a capa, y cada línea que leas
+es una porción literal del reactor complementario, verificada por la construcción.
 
-But first you need it running. Chapter 2 takes you from an empty folder to a
-booting Firefly service in a few minutes — so the rest of the book has something to
-grow.
+Pero primero necesitas tenerlo en marcha. El capítulo 2 te lleva de una carpeta
+vacía a un servicio Firefly arrancando en unos minutos — para que el resto del libro
+tenga algo sobre lo que crecer.
 
-## What you learned {.recap}
+## Lo que has aprendido {.recap}
 
-- Spring Boot makes one service easy; a *fleet* of consistent reactive services is
-  a different, unsolved problem — the **enterprise tax** of re-implemented
-  cross-cutting plumbing and dependency drift.
-- Firefly answers it as a **metaframework**: version coherence via parent + BOM, one
-  RFC 7807 error model, capabilities as toggleable auto-configuration, vendors
-  behind one-property ports, and correct services from a single tier starter.
-- Firefly is a **strict superset** of Spring Boot — depends on it, configures it,
-  exposes it; every bean overridable; adoption additive and reversible.
-- The book builds **Lumen Lending** across four tiers — experience, domain, core,
-  data — that integrate over contracts, never a shared database.
+- Spring Boot hace fácil un servicio; una *flota* de servicios reactivos coherentes
+  es un problema distinto y sin resolver — el **impuesto empresarial** de la
+  fontanería transversal reimplementada y la deriva de dependencias.
+- Firefly lo responde como un **metaframework**: coherencia de versiones mediante
+  padre + BOM, un único modelo de error RFC 7807, capacidades como autoconfiguración
+  activable, proveedores tras puertos de una sola propiedad y servicios correctos a
+  partir de un único starter de capa.
+- Firefly es un **superconjunto estricto** de Spring Boot — depende de él, lo
+  configura, lo expone; cada bean es sobrescribible; la adopción es aditiva y
+  reversible.
+- El libro construye **Lumen Lending** a través de cuatro capas — experiencia,
+  dominio, core, data — que se integran sobre contratos, nunca sobre una base de
+  datos compartida.
 
-## Try it yourself {.exercises}
+## Pruebalo tu mismo {.exercises}
 
-1. **Audit your own tax.** List the cross-cutting concerns from "The enterprise
-   tax" that your current services each implement separately. For how many do all
-   your services agree on the exact behavior?
-2. **Find the disagreement.** Pick two services you work on and compare the JSON
-   shape of a 404 and a validation error. Are they identical? Would a client need
-   per-service handling?
-3. **Spot the leak.** Search a recent log file for anything that should have been
-   masked — an email, an ID, a token. How is masking enforced today?
-4. **Trace a request.** Does a correlation or trace ID in your services survive
-   across an async or reactive boundary into a downstream call's logs? Try to follow
-   one end to end.
+1. **Audita tu propio impuesto.** Enumera las preocupaciones transversales de «El
+   impuesto empresarial» que cada uno de tus servicios actuales implementa por
+   separado. ¿En cuántas de ellas todos tus servicios coinciden en el comportamiento
+   exacto?
+2. **Encuentra el desacuerdo.** Elige dos servicios en los que trabajes y compara la
+   forma JSON de un 404 y de un error de validación. ¿Son idénticas? ¿Necesitaría un
+   cliente un manejo por servicio?
+3. **Detecta la fuga.** Busca en un archivo de log reciente cualquier cosa que
+   debería haberse enmascarado — un correo electrónico, un ID, un token. ¿Cómo se
+   aplica hoy el enmascaramiento?
+4. **Traza una petición.** ¿Sobrevive un ID de correlación o de traza en tus
+   servicios al cruzar una frontera asíncrona o reactiva hasta los logs de una
+   llamada aguas abajo? Intenta seguir uno de extremo a extremo.
 
-## Where to go next
+## Adonde ir ahora
 
-Chapter 2 scaffolds and boots your first Firefly service. If the reactive `Mono`/
-`Flux` references above felt fast, that is by design — Chapter 5 is the keystone
-that teaches the reactive model in full, and the prelude has enough to carry you
-until then.
+El capítulo 2 genera el andamiaje y arranca tu primer servicio Firefly. Si las
+referencias reactivas a `Mono`/`Flux` de arriba te parecieron rápidas, es algo
+intencionado — el capítulo 5 es la piedra angular que enseña el modelo reactivo por
+completo, y el preludio tiene lo suficiente para sostenerte hasta entonces.

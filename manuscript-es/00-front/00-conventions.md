@@ -1,15 +1,15 @@
-## Conventions
+## Convenciones
 
-A few conventions recur throughout the book. This page demonstrates each one
-live, so you know exactly what you are looking at.
+A lo largo del libro se repiten unas cuantas convenciones. Esta página muestra
+cada una de ellas en directo, para que sepas exactamente qué estás viendo.
 
-### Code listings
+### Listados de código
 
-Code appears in **listings** with a file tab and a numbered caption. The file
-tab shows where the code lives in the companion reactor, so you can always open
-the real source:
+El código aparece en **listados** con una pestaña de archivo y un pie numerado. La
+pestaña de archivo indica dónde vive el código en el reactor de acompañamiento, de
+modo que siempre puedas abrir el código fuente real:
 
-::: listing Greeting | Listing C.1 — the shape of a listing
+::: listing Greeting | Listado C.1 — the shape of a listing
 public record Greeting(String message) {
     public static Greeting of(String name) {
         return new Greeting("Hello, " + name + "!");
@@ -17,49 +17,53 @@ public record Greeting(String message) {
 }
 :::
 
-In the chapters, that tab carries the file's full path inside the reactor — for
-example `core-lending-loan-origination/src/main/java/com/firefly/lumen/core/Money.java`.
-**Every such listing is a verbatim slice of that file**, checked by the build: if
-a listing ever drifts from the source it was copied from, continuous integration
-fails. When a listing shows only part of a file, an ellipsis (`...`) marks the
-omission.
+En los capítulos, esa pestaña lleva la ruta completa del archivo dentro del
+reactor — por ejemplo `core-lending-loan-origination/src/main/java/com/firefly/lumen/core/Money.java`.
+**Cada uno de estos listados es un fragmento literal de ese archivo**, comprobado
+por el build: si un listado alguna vez se desvía del código fuente del que se
+copió, la integración continua falla. Cuando un listado muestra solo una parte de
+un archivo, unos puntos suspensivos (`...`) marcan la omisión.
 
-Inline code — a class like `LoanApplication`, an annotation like
-`@CommandHandlerComponent`, or a property like `firefly.cqrs.enabled` — appears
-in `monospace`.
+El código en línea — una clase como `LoanApplication`, una anotación como
+`@CommandHandlerComponent` o una propiedad como `firefly.cqrs.enabled` — aparece
+en `monoespaciado`.
 
-### Callouts
+### Llamadas destacadas
 
-Four callout styles flag asides without breaking the flow.
+Cuatro estilos de llamadas destacadas señalan apartes sin romper el hilo de la
+lectura.
 
-!!! note "Key term — reactive (Mono/Flux)"
-    A **Note** introduces a definition or a piece of context you will need
-    shortly. Key terms are introduced this way the first time they appear.
+!!! note "Termino clave — reactivo (Mono/Flux)"
+    Una **Nota** introduce una definición o un poco de contexto que necesitarás
+    enseguida. Los términos clave se introducen así la primera vez que aparecen.
 
-!!! tip "Checkpoint"
-    A **Tip** is a shortcut, a good default, or a "run it now and watch it pass"
-    checkpoint. Most chapter steps end with one.
+!!! tip "Punto de control"
+    Un **Consejo** es un atajo, un buen valor por defecto o un punto de control
+    del tipo "ejecútalo ahora y míralo pasar". La mayoría de los pasos de cada
+    capítulo terminan con uno.
 
-!!! warning "Don't block the event loop"
-    A **Warning** flags a foot-gun — something that compiles but will bite you in
-    production, like a blocking call on a reactive thread.
+!!! warning "No bloquees el bucle de eventos"
+    Una **Advertencia** señala un peligro — algo que compila pero que te morderá
+    en producción, como una llamada bloqueante en un hilo reactivo.
 
-!!! spring "Spring parity"
-    A **Spring parity** callout maps a Firefly idea back to plain Spring Boot or
-    Project Reactor, so you build on what you already know. For example: a Firefly
-    `@CommandHandlerComponent` *is* a Spring stereotype — the bus discovers it the
-    same way Spring discovers an `@Service`.
+!!! spring "Equivalente en Spring"
+    Una llamada destacada de **Equivalente en Spring** relaciona una idea de
+    Firefly con Spring Boot puro o Project Reactor, de modo que construyas sobre
+    lo que ya conoces. Por ejemplo: un `@CommandHandlerComponent` de Firefly *es*
+    un estereotipo de Spring — el bus lo descubre del mismo modo que Spring
+    descubre un `@Service`.
 
-### Figures
+### Figuras
 
-Diagrams appear as numbered **figures**:
+Los diagramas aparecen como **figuras** numeradas:
 
-::: figure art/figures/C1-anatomy.svg | Figure C.1 — the anatomy of a listing: file tab, code, and caption
+::: figure art/figures/C1-anatomy.svg | Figura C.1 — la anatomía de un listado: pestaña de archivo, código y pie
 
-Figures are vector art, so they stay crisp in both the EPUB and the print PDF.
+Las figuras son arte vectorial, así que se mantienen nítidas tanto en el EPUB
+como en el PDF de impresión.
 
-### Recaps and exercises
+### Resúmenes y ejercicios
 
-Every chapter closes with two short sections: **What you built**, a recap of what
-changed in Lumen Lending, and **Try it yourself**, a handful of exercises that
-each extend a real file in the reactor.
+Cada capítulo se cierra con dos secciones breves: **Lo que has construido**, un
+resumen de lo que cambió en Lumen Lending, y **Pruebalo tu mismo**, un puñado de
+ejercicios que extienden cada uno un archivo real del reactor.

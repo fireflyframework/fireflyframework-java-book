@@ -1,36 +1,36 @@
-Chapter 10 dispatched a command through the CQRS bus and watched a handler write to
-the core system of record. That handler did its job and returned. But in a real
-platform, *registering a loan application* is never the end of the story — a fraud
-check wants to know, a notification service wants to greet the applicant, an
-analytics pipeline wants to count it, and an audit log wants to record it. The naive
-fix is to have the handler call all four. Do that and the handler now knows about
-fraud, notifications, analytics, and audit; add a fifth consumer and you edit the
-handler again. The write and everyone who cares about it are welded together.
+El capítulo 10 despachó un comando a través del bus CQRS y observó cómo un manejador
+escribía en el sistema central de registro. Ese manejador hizo su trabajo y retornó. Pero en una
+plataforma real, *registrar una solicitud de préstamo* nunca es el final de la historia: una
+verificación de fraude quiere saberlo, un servicio de notificaciones quiere saludar al solicitante, una
+canalización de analítica quiere contabilizarlo y un registro de auditoría quiere anotarlo. El arreglo ingenuo
+consiste en que el manejador llame a los cuatro. Hazlo y el manejador pasa a conocer
+el fraude, las notificaciones, la analítica y la auditoría; añade un quinto consumidor y editas el
+manejador de nuevo. La escritura y todos los que se interesan por ella quedan soldados entre sí.
 
-Event-driven architecture breaks that weld. The handler does one thing — write, then
-*announce* that it wrote, by publishing a **domain event**. It does not know or care
-who is listening. Consumers subscribe to the announcement and react on their own
-schedule, independently, and you add or remove them without touching the producer.
-This chapter builds that decoupling in Lumen's domain tier: a
-`LoanApplicationRegisteredEvent` published by the register handler, and an
-`@EventListener` that records every one it receives — wired through Firefly's EDA
-runtime, proven by a test, with **no Kafka and no Docker**.
+La arquitectura dirigida por eventos rompe esa soldadura. El manejador hace una sola cosa: escribir y luego
+*anunciar* que escribió, publicando un **evento de dominio**. No sabe ni le importa
+quién está escuchando. Los consumidores se suscriben al anuncio y reaccionan a su propio
+ritmo, de forma independiente, y los añades o eliminas sin tocar al productor.
+Este capítulo construye ese desacoplamiento en la capa de dominio de Lumen: un
+`LoanApplicationRegisteredEvent` publicado por el manejador de registro y un
+`@EventListener` que anota cada uno que recibe, conectado a través del entorno de ejecución EDA
+de Firefly, demostrado mediante un test, **sin Kafka y sin Docker**.
 
-The capability is `firefly-eda`. Like every Firefly capability it is transport-
-agnostic: the same `@EventPublisher`/`@EventListener` code runs over an in-JVM bus,
-Kafka, RabbitMQ, or Postgres, chosen by configuration rather than by rewriting your
-service. Lumen runs it in-JVM so the sample stays dependency-free, and along the way
-you will meet the one detail that trips up everyone the first time: how the runtime
-decides which listener a given event belongs to.
+La capacidad es `firefly-eda`. Como toda capacidad de Firefly es agnóstica del
+transporte: el mismo código `@EventPublisher`/`@EventListener` se ejecuta sobre un bus dentro de la JVM,
+Kafka, RabbitMQ o Postgres, elegido por configuración en lugar de reescribiendo tu
+servicio. Lumen lo ejecuta dentro de la JVM para que el ejemplo se mantenga libre de dependencias, y por el camino
+conocerás el detalle que hace tropezar a todo el mundo la primera vez: cómo decide el entorno de ejecución
+a qué oyente pertenece un evento dado.
 
-## The domain event is a plain record
+## El evento de dominio es un simple record
 
-A domain event is a *fact that already happened*, named in the past tense, carrying
-just enough data for a consumer to act without calling back. It is an immutable value
-object — in Java, a `record`. Lumen's event says "a loan application was registered,"
-and carries the server-assigned id, the applicant's name, and the amount:
+Un evento de dominio es un *hecho que ya ha ocurrido*, nombrado en pasado, que lleva
+justo los datos suficientes para que un consumidor actúe sin tener que volver a llamar. Es un objeto de valor
+inmutable: en Java, un `record`. El evento de Lumen dice «se ha registrado una solicitud de préstamo»
+y lleva el id asignado por el servidor, el nombre del solicitante y el importe:
 
-::: listing domain-lending-loan-origination/src/main/java/com/firefly/lumen/domain/event/LoanApplicationRegisteredEvent.java | Listing 11.1 — the domain event is an immutable record
+::: listing domain-lending-loan-origination/src/main/java/com/firefly/lumen/domain/event/LoanApplicationRegisteredEvent.java | Listado 11.1 — el evento de dominio es un record inmutable
 package com.firefly.lumen.domain.event;
 
 import java.util.UUID;
@@ -57,33 +57,33 @@ public record LoanApplicationRegisteredEvent(UUID loanApplicationId, String appl
 }
 :::
 
-There is nothing Firefly-specific in this file, and that is deliberate. A domain
-event is part of your *domain*, not part of any broker. It holds no Kafka headers, no
-acknowledgement callback, no transport types — just the facts. The framework wraps it
-in transport metadata at the edge, which keeps your event clean enough to unit-test
-with a plain `assertEquals`.
+No hay nada específico de Firefly en este fichero, y eso es deliberado. Un evento de
+dominio forma parte de tu *dominio*, no de ningún broker. No contiene cabeceras de Kafka, ni
+callback de confirmación, ni tipos de transporte: solo los hechos. El framework lo envuelve
+en metadatos de transporte en el borde, lo que mantiene tu evento lo bastante limpio como para hacerle pruebas unitarias
+con un simple `assertEquals`.
 
-Note the `EVENT_TYPE` constant. The producer will pass it as a *logical topic name*
-when it publishes — a stable string you can route on. Hold that thought; the
-matching rule between producer and consumer is the subtle part of this chapter, and
-the constant alone does not tell the whole story.
+Fíjate en la constante `EVENT_TYPE`. El productor la pasará como *nombre de topic lógico*
+cuando publique: una cadena estable sobre la que puedes enrutar. Guarda esa idea; la
+regla de coincidencia entre productor y consumidor es la parte sutil de este capítulo, y
+la constante por sí sola no cuenta toda la historia.
 
-!!! note "Key term — domain event"
-    A **domain event** is an immutable record of something that has already occurred
-    in the business domain, named in the past tense (`LoanApplicationRegistered`,
-    `OfferAccepted`). It is published by the component that caused the change and
-    consumed by anyone who needs to react. Because it is a fact, not a request, the
-    producer never waits for a reply and never learns who consumed it — which is
-    exactly what lets consumers come and go freely.
+!!! note "Termino clave — evento de dominio"
+    Un **evento de dominio** es un registro inmutable de algo que ya ha ocurrido
+    en el dominio de negocio, nombrado en pasado (`LoanApplicationRegistered`,
+    `OfferAccepted`). Lo publica el componente que provocó el cambio y
+    lo consume cualquiera que necesite reaccionar. Como es un hecho, no una petición, el
+    productor nunca espera una respuesta y nunca se entera de quién lo consumió, que es
+    exactamente lo que permite que los consumidores entren y salgan libremente.
 
-## The producer publishes through EventPublisher
+## El productor publica a través de EventPublisher
 
-Now the producer. The register handler from Chapter 10 already calls the core to
-create the application; the EDA addition is one step at the end of the chain. After
-the core call succeeds and yields an id, the handler publishes the event — and only
-then returns the id. Here is the whole handler, with the publish on the success path:
+Ahora el productor. El manejador de registro del capítulo 10 ya llama al core para
+crear la solicitud; la incorporación de EDA es un paso al final de la cadena. Después de
+que la llamada al core tiene éxito y produce un id, el manejador publica el evento, y solo
+entonces retorna el id. Aquí está el manejador completo, con la publicación en la ruta de éxito:
 
-::: listing domain-lending-loan-origination/src/main/java/com/firefly/lumen/domain/handler/RegisterLoanApplicationHandler.java | Listing 11.2 — the handler writes, then announces
+::: listing domain-lending-loan-origination/src/main/java/com/firefly/lumen/domain/handler/RegisterLoanApplicationHandler.java | Listado 11.2 — el manejador escribe y luego anuncia
 @CommandHandlerComponent
 public class RegisterLoanApplicationHandler extends CommandHandler<RegisterLoanApplicationCommand, UUID> {
 
@@ -108,38 +108,38 @@ public class RegisterLoanApplicationHandler extends CommandHandler<RegisterLoanA
 }
 :::
 
-Read the reactive shape carefully, because the ordering is a guarantee, not an
-accident. `createLoanApplication(...)` returns a `Mono<UUID>`; `flatMap` chains the
-publish *after* it and only on success — if the core call fails with `onError`, the
-chain short-circuits and nothing is ever published. `publishRegistered` builds the
-event and hands it to `EventPublisher.publish(event, eventType)`, which returns
-`Mono<Void>`. The `.thenReturn(id)` then yields the id back as the handler's result,
-so the publish is sequenced *into* the response: the handler does not complete until
-the event has been accepted by the transport.
+Lee con atención la forma reactiva, porque el orden es una garantía, no una
+casualidad. `createLoanApplication(...)` retorna un `Mono<UUID>`; `flatMap` encadena la
+publicación *después* de él y solo en caso de éxito: si la llamada al core falla con `onError`, la
+cadena se corta y nunca se publica nada. `publishRegistered` construye el
+evento y se lo entrega a `EventPublisher.publish(event, eventType)`, que retorna
+`Mono<Void>`. Después, `.thenReturn(id)` devuelve el id como resultado del manejador,
+de modo que la publicación queda secuenciada *dentro* de la respuesta: el manejador no completa hasta
+que el evento ha sido aceptado por el transporte.
 
-`EventPublisher` is the framework's transport-agnostic seam — a single interface
-whose `publish` you call the same way no matter what sits behind it. You inject it
-like any bean; the auto-configuration provides the implementation that matches your
-configured transport. In Lumen that implementation delivers in-JVM, but the handler
-code would not change one character to run over Kafka.
+`EventPublisher` es la costura agnóstica del transporte del framework: una única interfaz
+cuyo `publish` invocas de la misma manera sea lo que sea lo que esté detrás. Lo inyectas
+como cualquier bean; la autoconfiguración proporciona la implementación que coincide con tu
+transporte configurado. En Lumen esa implementación entrega dentro de la JVM, pero el código del manejador
+no cambiaría ni un carácter para ejecutarse sobre Kafka.
 
-!!! note "Key term — EventEnvelope"
-    Your record is the *payload*. Before it crosses a transport the runtime wraps it
-    in an `EventEnvelope` — a framework record that adds the routing metadata a broker
-    needs: the `destination` (topic), the `eventType`, a `transactionId` for
-    correlation, a `headers` map, a `timestamp`, and the publisher/consumer transport
-    type. On the consume side the envelope can also carry an acknowledgement callback.
-    You rarely touch it directly; `publish(payload, eventType)` builds it for you, and
-    your `@EventListener` method receives the unwrapped payload. The envelope is why
-    the same clean record can travel over four different brokers unchanged.
+!!! note "Termino clave — EventEnvelope"
+    Tu record es el *payload*. Antes de cruzar un transporte, el entorno de ejecución lo envuelve
+    en un `EventEnvelope`: un record del framework que añade los metadatos de enrutamiento que un broker
+    necesita: el `destination` (topic), el `eventType`, un `transactionId` para
+    correlación, un mapa de `headers`, un `timestamp` y el tipo de transporte del
+    publicador/consumidor. En el lado de consumo, el envelope también puede llevar un callback de confirmación.
+    Rara vez lo tocas directamente; `publish(payload, eventType)` lo construye por ti, y
+    tu método `@EventListener` recibe el payload ya desenvuelto. El envelope es la razón por la que
+    el mismo record limpio puede viajar sin cambios sobre cuatro brokers diferentes.
 
-### Publishing declaratively, with an annotation
+### Publicar de forma declarativa, con una anotación
 
-Calling `EventPublisher.publish` by hand, as the handler does, is the explicit form —
-and the clearest one to learn on, because the publish is right there in the reactive
-chain. Firefly also offers a *declarative* form for the common case "publish the
-result of this method." You annotate the method and the framework publishes its
-return value for you, after it completes successfully:
+Llamar a `EventPublisher.publish` a mano, como hace el manejador, es la forma explícita,
+y la más clara para aprender, porque la publicación está ahí mismo en la cadena reactiva.
+Firefly ofrece además una forma *declarativa* para el caso común «publica el
+resultado de este método». Anotas el método y el framework publica su
+valor de retorno por ti, después de que completa con éxito:
 
 ```java
 // Illustrative: publish a method's result automatically, no EventPublisher injection.
@@ -153,22 +153,22 @@ public Mono<LoanApplicationRegisteredEvent> register(RegisterLoanApplicationComm
 }
 ```
 
-There is also `@EventPublisher` for publishing a chosen *argument* rather than the
-return value. Both are aspect-driven sugar over the same `EventPublisher` seam: the
-explicit call and the annotation produce the identical envelope on the identical
-transport. Lumen uses the explicit call so the publish is visible in the slice you
-just read; reach for the annotations when the publish is purely "emit what I just
-produced" and you would rather not thread `EventPublisher` through the method body.
+También existe `@EventPublisher` para publicar un *argumento* elegido en lugar del
+valor de retorno. Ambos son azúcar guiado por aspectos sobre la misma costura `EventPublisher`: la
+llamada explícita y la anotación producen el mismo envelope sobre el mismo
+transporte. Lumen usa la llamada explícita para que la publicación sea visible en la porción que
+acabas de leer; recurre a las anotaciones cuando la publicación sea puramente «emite lo que acabo de
+producir» y prefieras no hilvanar `EventPublisher` por todo el cuerpo del método.
 
-## The consumer is an @EventListener bean
+## El consumidor es un bean @EventListener
 
-A consumer is any Spring bean with a method annotated `@EventListener`. The framework
-discovers it at startup, registers it with the EDA runtime, and invokes it whenever a
-matching event is delivered. Lumen's consumer records every event it sees into a
-thread-safe list — small enough to assert against in a test, real enough to prove the
-wiring:
+Un consumidor es cualquier bean de Spring con un método anotado con `@EventListener`. El framework
+lo descubre al arrancar, lo registra en el entorno de ejecución EDA e lo invoca siempre que se
+entrega un evento coincidente. El consumidor de Lumen anota cada evento que ve en una
+lista segura para hilos: lo bastante pequeña como para comprobarla en un test, lo bastante real como para demostrar el
+cableado:
 
-::: listing domain-lending-loan-origination/src/main/java/com/firefly/lumen/domain/event/LoanApplicationEventRecorder.java | Listing 11.3 — the consumer: an @EventListener bean
+::: listing domain-lending-loan-origination/src/main/java/com/firefly/lumen/domain/event/LoanApplicationEventRecorder.java | Listado 11.3 — el consumidor: un bean @EventListener
 @Component
 public class LoanApplicationEventRecorder {
 
@@ -189,60 +189,60 @@ public class LoanApplicationEventRecorder {
 }
 :::
 
-The method signature carries the contract: `on(LoanApplicationRegisteredEvent event)`
-takes the unwrapped payload, so you work with your own type, not an envelope. The
-`@EventListener` annotation says *which* events this method wants. `consumerType =
-PublisherType.APPLICATION_EVENT` binds it to the in-JVM transport — Spring's
-`ApplicationEventPublisher` — which is why the sample needs no broker. `destinations`
-and `eventTypes` are the routing filters.
+La firma del método lleva el contrato: `on(LoanApplicationRegisteredEvent event)`
+toma el payload ya desenvuelto, así que trabajas con tu propio tipo, no con un envelope. La
+anotación `@EventListener` indica *qué* eventos quiere este método. `consumerType =
+PublisherType.APPLICATION_EVENT` lo enlaza al transporte dentro de la JVM —el
+`ApplicationEventPublisher` de Spring—, que es la razón por la que el ejemplo no necesita broker. `destinations`
+y `eventTypes` son los filtros de enrutamiento.
 
-And here is the detail that surprises everyone. Look at `eventTypes`: it is
-`"LoanApplicationRegisteredEvent"` — the payload's **simple class name** — not the
-`"loanApplication.registered"` logical string the producer passes to `publish`. That
-is not a typo in the sample; it is how the EDA runtime matches. Read the warning
-before you write your first listener.
+Y aquí está el detalle que sorprende a todo el mundo. Mira `eventTypes`: es
+`"LoanApplicationRegisteredEvent"` —el **nombre simple de la clase** del payload— no la
+cadena lógica `"loanApplication.registered"` que el productor pasa a `publish`. Eso
+no es una errata en el ejemplo; es como hace coincidir el entorno de ejecución EDA. Lee la advertencia
+antes de escribir tu primer oyente.
 
-!!! warning "eventTypes is the payload's simple class name, not a dotted logical string"
-    The EDA runtime matches a listener's `eventTypes` against the **simple class name
-    of the published payload** — here `LoanApplicationRegisteredEvent`. It does *not*
-    match against the `eventType` string you hand to `publish(...)` (the producer's
-    `"loanApplication.registered"`). So a listener that sets `eventTypes =
-    "loanApplication.registered"` to "match the producer" will silently receive
-    nothing: the runtime is comparing it to `LoanApplicationRegisteredEvent` and never
-    finding a match. The fix is to set `eventTypes` to the class name. This is the
-    single most common EDA wiring bug, and it fails *quietly* — the producer succeeds,
-    the consumer just never fires — so commit the rule to memory now: **`eventTypes` is
-    the class name.**
+!!! warning "eventTypes es el nombre simple de la clase del payload, no una cadena lógica con puntos"
+    El entorno de ejecución EDA compara los `eventTypes` de un oyente con el **nombre simple de la clase
+    del payload publicado** —aquí `LoanApplicationRegisteredEvent`—. *No* lo compara
+    con la cadena `eventType` que entregas a `publish(...)` (el `"loanApplication.registered"`
+    del productor). Así que un oyente que ponga `eventTypes =
+    "loanApplication.registered"` para «coincidir con el productor» no recibirá nada en silencio:
+    el entorno de ejecución lo está comparando con `LoanApplicationRegisteredEvent` y nunca
+    encuentra coincidencia. El arreglo es poner `eventTypes` al nombre de la clase. Este es el
+    error de cableado de EDA más común con diferencia, y falla *silenciosamente* —el productor tiene éxito,
+    el consumidor sencillamente nunca se dispara—, así que graba la regla en tu memoria ahora: **`eventTypes` es
+    el nombre de la clase.**
 
-!!! note "Key term — PublisherType"
-    `PublisherType` selects the transport for a producer (`publisherType`) or consumer
-    (`consumerType`). The values are `APPLICATION_EVENT` (in-JVM, over Spring's event
-    bus — the default Lumen uses), `KAFKA`, `RABBITMQ`, `POSTGRES`, `NOOP` (drops
-    events, useful in tests), and `AUTO` (let the framework pick by what is on the
-    classpath). Switching Lumen from in-JVM to Kafka is a `PublisherType` change plus a
-    dependency and a few `firefly.eda.*` properties — the `@EventPublisher`/
-    `@EventListener` code is untouched. That portability is the whole reason to publish
-    through the framework rather than a broker client directly.
+!!! note "Termino clave — PublisherType"
+    `PublisherType` selecciona el transporte para un productor (`publisherType`) o consumidor
+    (`consumerType`). Los valores son `APPLICATION_EVENT` (dentro de la JVM, sobre el bus de eventos
+    de Spring —el predeterminado que usa Lumen—), `KAFKA`, `RABBITMQ`, `POSTGRES`, `NOOP` (descarta
+    eventos, útil en tests) y `AUTO` (deja que el framework elija según lo que haya en el
+    classpath). Cambiar Lumen de dentro de la JVM a Kafka es un cambio de `PublisherType` más una
+    dependencia y unas pocas propiedades `firefly.eda.*`: el código `@EventPublisher`/
+    `@EventListener` no se toca. Esa portabilidad es toda la razón para publicar
+    a través del framework en lugar de directamente con un cliente de broker.
 
-!!! spring "Spring parity"
-    Firefly's `@EventListener` is deliberately *not* Spring's
-    `org.springframework.context.event.EventListener` — it is
-    `org.fireflyframework.eda.annotation.EventListener`, a transport-aware superset.
-    Spring's version only ever delivers in-process; Firefly's runs the same listener
-    over Kafka, RabbitMQ, or Postgres by changing `consumerType`. When you bind it to
-    `APPLICATION_EVENT`, it *uses* Spring's `ApplicationEventPublisher` underneath — so
-    you get Spring's in-JVM mechanics for free, plus a single annotation that scales out
-    to a real broker without a rewrite. Check the import when you copy a listener; the
-    two annotations look identical and behave very differently.
+!!! spring "Equivalente en Spring"
+    El `@EventListener` de Firefly *no* es deliberadamente el
+    `org.springframework.context.event.EventListener` de Spring: es
+    `org.fireflyframework.eda.annotation.EventListener`, un superconjunto consciente del transporte.
+    La versión de Spring solo entrega siempre en proceso; la de Firefly ejecuta el mismo oyente
+    sobre Kafka, RabbitMQ o Postgres cambiando `consumerType`. Cuando lo enlazas a
+    `APPLICATION_EVENT`, *usa* por debajo el `ApplicationEventPublisher` de Spring, de modo que
+    obtienes gratis la mecánica dentro de la JVM de Spring, más una única anotación que escala
+    a un broker real sin reescritura. Comprueba el import cuando copies un oyente; las
+    dos anotaciones parecen idénticas y se comportan de forma muy distinta.
 
-## Run it
+## Ejecútalo
 
-The EDA listener test proves the wiring end to end without a broker. It drives the
-framework's `EventListenerProcessor` directly — the same component every transport
-funnels delivered messages into — so the annotation discovery and method invocation
-are entirely real; only the external network hop is elided:
+El test del oyente EDA demuestra el cableado de extremo a extremo sin un broker. Acciona
+el `EventListenerProcessor` del framework directamente —el mismo componente al que todo transporte
+canaliza los mensajes entregados—, de modo que el descubrimiento de la anotación y la invocación del método
+son enteramente reales; solo se omite el salto de red externo:
 
-::: listing domain-lending-loan-origination/src/test/java/com/firefly/lumen/domain/saga/LoanApplicationEventListenerTest.java | Listing 11.4 — proving the listener fires, with no broker
+::: listing domain-lending-loan-origination/src/test/java/com/firefly/lumen/domain/saga/LoanApplicationEventListenerTest.java | Listado 11.4 — demostrar que el oyente se dispara, sin broker
     @Test
     void annotatedListener_receivesDispatchedEvent() {
         var event = new LoanApplicationRegisteredEvent(UUID.randomUUID(), "Ada Lovelace", 250_000L);
@@ -255,51 +255,51 @@ are entirely real; only the external network hop is elided:
     }
 :::
 
-The test builds a real event, asks the processor to dispatch it, and asserts two
-things: the dispatch completes cleanly (`verifyComplete()`), and the recorder
-actually received exactly that event (`containsExactly(event)`). The second assertion
-is the one that matters — it proves the runtime matched the payload's class name
-`LoanApplicationRegisteredEvent` to the listener's `eventTypes` and invoked `on(...)`.
-Producer and consumer share no reference to each other; the only link is the event
-type, resolved by the framework.
+El test construye un evento real, pide al procesador que lo despache y comprueba dos
+cosas: que el despacho completa limpiamente (`verifyComplete()`) y que el grabador
+recibió de verdad exactamente ese evento (`containsExactly(event)`). La segunda afirmación
+es la que importa: demuestra que el entorno de ejecución hizo coincidir el nombre de clase del payload
+`LoanApplicationRegisteredEvent` con los `eventTypes` del oyente e invocó `on(...)`.
+Productor y consumidor no comparten ninguna referencia el uno al otro; el único enlace es el tipo de
+evento, resuelto por el framework.
 
-Run the domain module's tests from the sample root:
+Ejecuta los tests del módulo de dominio desde la raíz del ejemplo:
 
 ```text
 mvn -q -pl domain-lending-loan-origination test
 ```
 
-You should see all six pass:
+Deberías ver pasar los seis:
 
 ```text
 Tests run: 6, Failures: 0, Errors: 0, Skipped: 0
 BUILD SUCCESS
 ```
 
-The EDA listener test is one of those six, alongside the register handler and the
-saga tests from earlier chapters. Six green tests means the producer publishes, the
-runtime routes by class name, and the `@EventListener` fires — the entire decoupled
-loop, verified in-process in under a second.
+El test del oyente EDA es uno de esos seis, junto con el manejador de registro y los
+tests de saga de capítulos anteriores. Seis tests en verde significan que el productor publica, el
+entorno de ejecución enruta por nombre de clase y el `@EventListener` se dispara: el bucle desacoplado
+completo, verificado en proceso en menos de un segundo.
 
-!!! tip "Checkpoint"
-    Open `LoanApplicationEventRecorder` and change `eventTypes` from
-    `"LoanApplicationRegisteredEvent"` to `"loanApplication.registered"` — the
-    producer's logical string. Rerun `-Dtest=LoanApplicationEventListenerTest`. It now
-    fails: the recorder receives nothing, because the runtime matched the payload's
-    *class name* and found no listener registered under it. Read the assertion failure
-    — `containsExactly` reports an empty list — then restore the class name and watch it
-    pass. You just reproduced the most common EDA bug on purpose, which is the surest
-    way never to ship it.
+!!! tip "Punto de control"
+    Abre `LoanApplicationEventRecorder` y cambia `eventTypes` de
+    `"LoanApplicationRegisteredEvent"` a `"loanApplication.registered"` —la
+    cadena lógica del productor—. Vuelve a ejecutar `-Dtest=LoanApplicationEventListenerTest`. Ahora
+    falla: el grabador no recibe nada, porque el entorno de ejecución hizo coincidir el *nombre de clase*
+    del payload y no encontró ningún oyente registrado bajo él. Lee el fallo de la afirmación
+    —`containsExactly` reporta una lista vacía— y después restaura el nombre de clase y míralo
+    pasar. Acabas de reproducir a propósito el error de EDA más común, que es la forma más segura
+    de no llevarlo nunca a producción.
 
-## The CQRS/EDA bridge
+## El puente CQRS/EDA
 
-You have seen the explicit path: a CQRS handler injects `EventPublisher` and publishes
-in its reactive chain. Firefly closes the loop between the two capabilities with two
-declarative bridges, so a command handler can emit a domain event — and a query side
-can react to one — without hand-wiring.
+Has visto la ruta explícita: un manejador CQRS inyecta `EventPublisher` y publica
+en su cadena reactiva. Firefly cierra el círculo entre ambas capacidades con dos
+puentes declarativos, de modo que un manejador de comandos puede emitir un evento de dominio —y un lado de
+consulta puede reaccionar a uno— sin cableado manual.
 
-On the *write* side, `@PublishDomainEvent` lets a CQRS handler announce its result as
-a domain event automatically, the same shape Listing 11.2 wrote by hand:
+En el lado de *escritura*, `@PublishDomainEvent` permite a un manejador CQRS anunciar su resultado como
+un evento de dominio automáticamente, con la misma forma que el Listado 11.2 escribió a mano:
 
 ```java
 // Illustrative: a CQRS handler that publishes its result as a domain event.
@@ -313,10 +313,10 @@ public class RegisterLoanApplicationHandler
 }
 ```
 
-On the *read* side, `@InvalidateCacheOn` ties a cached query to the events that make
-it stale, so a registration event automatically evicts the cached application list —
-the read model self-heals instead of serving a snapshot the write side already
-obsoleted:
+En el lado de *lectura*, `@InvalidateCacheOn` ata una consulta cacheada a los eventos que la
+dejan obsoleta, de modo que un evento de registro invalida automáticamente la lista de solicitudes cacheada:
+el modelo de lectura se autorrepara en lugar de servir una instantánea que el lado de escritura ya
+dejó obsoleta:
 
 ```java
 // Illustrative: evict a query's cache when matching events arrive.
@@ -328,66 +328,66 @@ public class GetApplicationStatusHandler
 }
 ```
 
-Both annotations live in the CQRS module and route through the same EDA runtime you
-just exercised — and both key on `eventTypes` by the **same simple-class-name rule**,
-so the warning above applies here verbatim. Lumen uses the explicit `EventPublisher`
-call rather than `@PublishDomainEvent` so the publish is visible in the slice; in a
-larger service the declarative bridge removes that boilerplate while keeping the exact
-same producer/consumer decoupling. The two capabilities — CQRS for the command/query
-split, EDA for the announcement — are designed to meet here: a command changes state,
-publishes a fact, and the read side adjusts, all without either half naming the other.
+Ambas anotaciones viven en el módulo CQRS y enrutan a través del mismo entorno de ejecución EDA que
+acabas de ejercitar, y ambas se basan en `eventTypes` según la **misma regla del nombre simple de clase**,
+de modo que la advertencia de arriba se aplica aquí literalmente. Lumen usa la llamada explícita a `EventPublisher`
+en lugar de `@PublishDomainEvent` para que la publicación sea visible en la porción; en un
+servicio más grande, el puente declarativo elimina ese código repetitivo manteniendo exactamente el
+mismo desacoplamiento productor/consumidor. Las dos capacidades —CQRS para la separación comando/consulta,
+EDA para el anuncio— están diseñadas para encontrarse aquí: un comando cambia el estado,
+publica un hecho y el lado de lectura se ajusta, todo sin que ninguna mitad nombre a la otra.
 
-## What you built {.recap}
+## Lo que has construido {.recap}
 
-- A **`LoanApplicationRegisteredEvent`** — an immutable `record` domain event,
-  past-tense and broker-free, carrying just the facts a consumer needs and a stable
-  `EVENT_TYPE` logical name.
-- A **producer** in `RegisterLoanApplicationHandler` that writes to the core and then
-  publishes the event through the transport-agnostic `EventPublisher`, sequenced into
-  the reactive chain with `flatMap` so it fires only on success.
-- A **consumer**, `LoanApplicationEventRecorder`, an `@EventListener` bean bound to the
-  in-JVM `PublisherType.APPLICATION_EVENT` transport — so the whole loop runs with no
-  Kafka and no Docker.
-- The decisive runtime rule: the EDA runtime matches a listener's `eventTypes` by the
-  payload's **simple class name** (`LoanApplicationRegisteredEvent`), not by the dotted
-  logical string the producer publishes with — a mismatch fails *silently*.
-- A **broker-free integration test** that dispatches a real event through the
-  framework's `EventListenerProcessor` and asserts the listener received it — one of
-  the module's six passing tests.
+- Un **`LoanApplicationRegisteredEvent`**: un evento de dominio `record` inmutable,
+  en pasado y libre de broker, que lleva justo los hechos que un consumidor necesita y un nombre lógico
+  `EVENT_TYPE` estable.
+- Un **productor** en `RegisterLoanApplicationHandler` que escribe en el core y luego
+  publica el evento a través del `EventPublisher` agnóstico del transporte, secuenciado dentro de la
+  cadena reactiva con `flatMap` para que se dispare solo en caso de éxito.
+- Un **consumidor**, `LoanApplicationEventRecorder`, un bean `@EventListener` enlazado al
+  transporte `PublisherType.APPLICATION_EVENT` dentro de la JVM, de modo que todo el bucle se ejecuta sin
+  Kafka y sin Docker.
+- La regla decisiva del entorno de ejecución: el entorno de ejecución EDA hace coincidir los `eventTypes` de un oyente por el
+  **nombre simple de la clase** del payload (`LoanApplicationRegisteredEvent`), no por la cadena
+  lógica con puntos con la que publica el productor —un desajuste falla *silenciosamente*—.
+- Un **test de integración libre de broker** que despacha un evento real a través del
+  `EventListenerProcessor` del framework y comprueba que el oyente lo recibió: uno de
+  los seis tests que pasan en el módulo.
 
-## Try it yourself {.exercises}
+## Pruebalo tu mismo {.exercises}
 
-1. **Add a second listener.** Create a new `@Component` with an `@EventListener`
-   method on `LoanApplicationRegisteredEvent` (same `consumerType` and `eventTypes` as
-   the recorder) that increments a counter. Add a test asserting that one dispatched
-   event reaches *both* listeners. This is the payoff of EDA: the producer did not
-   change, yet a new consumer reacts.
-2. **Reproduce the silent-failure bug, then prove it.** Change the recorder's
-   `eventTypes` to `LoanApplicationRegisteredEvent.EVENT_TYPE` (the
-   `"loanApplication.registered"` string), run `-Dtest=LoanApplicationEventListenerTest`,
-   and confirm it fails with an empty `received()` list. Write a one-sentence comment
-   explaining why, then restore the class name.
-3. **Publish through the handler.** In `RegisterLoanApplicationHandlerTest`, register a
-   real `LoanApplicationEventRecorder` bean and assert that handling a
-   `RegisterLoanApplicationCommand` causes the recorder to receive exactly one event
-   with the id the handler returned — proving the publish in Listing 11.2 is sequenced
-   correctly.
-4. **Make publishing conditional.** Re-read the explicit `publishRegistered` method,
-   then sketch (no need to run it) how you would only publish when the amount exceeds a
-   threshold. Where does the guard go — in the handler, or could `@PublishResult`'s
-   `condition` attribute express it declaratively instead?
-5. **Trace a transport swap.** Without changing any `@EventPublisher` or
-   `@EventListener` code, list exactly what you would change to move Lumen's events
-   onto Kafka: which `PublisherType` values, which dependency, which `firefly.eda.*`
-   properties. The fact that the listener and producer *code* stay untouched is the
-   point of the seam.
+1. **Añade un segundo oyente.** Crea un nuevo `@Component` con un método `@EventListener`
+   sobre `LoanApplicationRegisteredEvent` (con el mismo `consumerType` y los mismos `eventTypes` que
+   el grabador) que incremente un contador. Añade un test que compruebe que un evento despachado
+   llega a *ambos* oyentes. Esta es la recompensa de EDA: el productor no
+   cambió, y aun así un nuevo consumidor reacciona.
+2. **Reproduce el error de fallo silencioso y luego demuéstralo.** Cambia los `eventTypes` del grabador
+   a `LoanApplicationRegisteredEvent.EVENT_TYPE` (la cadena
+   `"loanApplication.registered"`), ejecuta `-Dtest=LoanApplicationEventListenerTest`
+   y confirma que falla con una lista `received()` vacía. Escribe un comentario de una frase
+   explicando por qué y luego restaura el nombre de clase.
+3. **Publica a través del manejador.** En `RegisterLoanApplicationHandlerTest`, registra un
+   bean `LoanApplicationEventRecorder` real y comprueba que manejar un
+   `RegisterLoanApplicationCommand` hace que el grabador reciba exactamente un evento
+   con el id que el manejador retornó —demostrando que la publicación del Listado 11.2 está secuenciada
+   correctamente—.
+4. **Haz la publicación condicional.** Vuelve a leer el método explícito `publishRegistered` y
+   luego esboza (sin necesidad de ejecutarlo) cómo publicarías solo cuando el importe supere un
+   umbral. ¿Dónde va la guarda —en el manejador, o podría el atributo `condition` de `@PublishResult`
+   expresarla declarativamente en su lugar?
+5. **Traza un cambio de transporte.** Sin cambiar ningún código `@EventPublisher` ni
+   `@EventListener`, enumera exactamente qué cambiarías para mover los eventos de Lumen
+   a Kafka: qué valores de `PublisherType`, qué dependencia, qué propiedades `firefly.eda.*`.
+   El hecho de que el *código* del oyente y del productor permanezca intacto es la
+   razón de ser de la costura.
 
-## Where to go next
+## Adonde ir ahora
 
-The event you published here is a *notification* — a fact other components react to,
-after which it is gone. Chapter 12 takes the next step: instead of storing the current
-state and announcing changes, what if the sequence of events *is* the state? **Event
-sourcing** treats the append-only log of domain events as the source of truth, and the
-current state as a fold over that log. The `LoanApplicationRegisteredEvent` you just
-built is exactly the kind of event that, persisted rather than discarded, becomes a
-complete and replayable history of every application.
+El evento que has publicado aquí es una *notificación*: un hecho al que reaccionan otros componentes,
+tras lo cual desaparece. El capítulo 12 da el siguiente paso: en lugar de almacenar el estado
+actual y anunciar los cambios, ¿y si la secuencia de eventos *es* el estado? El **event
+sourcing** trata el log de solo anexar de eventos de dominio como la fuente de verdad, y el
+estado actual como un pliegue sobre ese log. El `LoanApplicationRegisteredEvent` que acabas de
+construir es exactamente el tipo de evento que, persistido en lugar de descartado, se convierte en un
+historial completo y reproducible de cada solicitud.

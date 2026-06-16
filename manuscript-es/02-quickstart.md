@@ -1,30 +1,32 @@
-Chapter 1 made the case; this chapter makes it move. In the next few minutes you
-go from an empty folder to a Firefly service that boots, reports its own health,
-serves an OpenAPI document, and answers a real request — a loan application that
-comes back stamped `SUBMITTED`. You will not understand every line yet, and that
-is the point. The goal here is to see the *whole shape* once, fast, so the deep
-chapters that follow have something concrete to deepen.
+El capítulo 1 expuso los argumentos; este capítulo los pone en marcha. En los
+próximos minutos pasarás de una carpeta vacía a un servicio Firefly que arranca,
+informa de su propia salud, sirve un documento OpenAPI y responde a una petición
+real: una solicitud de préstamo que vuelve sellada como `SUBMITTED`. Todavía no
+entenderás cada línea, y ese es precisamente el objetivo. Aquí la meta es ver la
+*forma completa* una vez, rápido, para que los capítulos en profundidad que vienen
+a continuación tengan algo concreto que profundizar.
 
-Everything you run in this chapter lives in the companion reactor under
-`core-lending-loan-origination` — the **core** tier service, the system of record
-for loan origination. It is the same module the rest of Part II grows organically.
-Here we treat it as a finished thing and take it for a spin.
+Todo lo que ejecutas en este capítulo vive en el reactor de acompañamiento, bajo
+`core-lending-loan-origination`: el servicio de la capa **core**, el sistema de
+registro para la originación de préstamos. Es el mismo módulo que el resto de la
+Parte II hace crecer orgánicamente. Aquí lo tratamos como algo terminado y lo
+sacamos a dar una vuelta.
 
-A word on honesty before we start. Some commands below — the ones that *scaffold*
-a brand-new project with the `flywork` CLI — are shown illustratively, because the
-reactor you are reading was generated once and then committed. The commands that
-*boot and exercise* the service are real, and the test that proves it passes is
-the one you will run at the end. Illustrative blocks use plain code fences; the
-verified, verbatim slices use the file-tabbed listings you met in the conventions
-page.
+Una nota de honestidad antes de empezar. Algunos de los comandos de más abajo —los
+que *generan el andamiaje* de un proyecto nuevo con la CLI `flywork`— se muestran a
+título ilustrativo, porque el reactor que estás leyendo se generó una vez y luego
+se confirmó. Los comandos que *arrancan y ejercitan* el servicio son reales, y la
+prueba que lo demuestra es la que ejecutarás al final. Los bloques ilustrativos
+usan vallas de código simples; los fragmentos verificados y literales usan los
+listados con pestañas de fichero que conociste en la página de convenciones.
 
-## Step 1 — Scaffold a service with flywork
+## Paso 1 — Generar el andamiaje de un servicio con flywork
 
-Firefly ships a companion CLI, `flywork`, that scaffolds a project from a tier
-archetype and bootstraps the framework build. You pick the tier — `core`,
-`domain`, `data`, or `application` — and `flywork` lays down a Maven module wired
-to the matching starter, a `@SpringBootApplication` entry point, and the
-conventional package layout.
+Firefly incluye una CLI de acompañamiento, `flywork`, que genera el andamiaje de un
+proyecto a partir de un arquetipo de capa y arranca la compilación del framework.
+Eliges la capa —`core`, `domain`, `data` o `application`— y `flywork` despliega un
+módulo Maven cableado al starter correspondiente, un punto de entrada
+`@SpringBootApplication` y la distribución de paquetes convencional.
 
 ```text
 $ flywork create \
@@ -46,32 +48,33 @@ $ flywork create \
     mvn spring-boot:run
 ```
 
-Notice what `flywork` did *not* write: a list of pinned dependency versions, a
-hand-rolled error handler, a JSON-logging config, a health endpoint. Those come
-from the tier starter, version-coherent and pre-wired. The scaffold is
-deliberately thin — a real entry point and a real `pom.xml`, and almost nothing
-else for you to maintain.
+Fíjate en lo que `flywork` *no* escribió: una lista de versiones de dependencias
+fijadas, un manejador de errores hecho a mano, una configuración de logging en
+JSON, un endpoint de salud. Todo eso viene del starter de la capa, coherente en
+versiones y precableado. El andamiaje es deliberadamente fino: un punto de entrada
+real y un `pom.xml` real, y casi nada más que tengas que mantener.
 
-!!! note "Key term — tier archetype"
-    A **tier archetype** is the `flywork` template for one of Firefly's four
-    service tiers. Choosing `core` selects `starter-core` and a system-of-record
-    layout; choosing `application` selects `starter-application` and a stateless
-    BFF layout. The archetype decides which starter you inherit and which defaults
-    you boot with. Chapter 1's four tiers map one-to-one onto four archetypes.
+!!! note "Termino clave — arquetipo de capa"
+    Un **arquetipo de capa** es la plantilla de `flywork` para una de las cuatro
+    capas de servicio de Firefly. Elegir `core` selecciona `starter-core` y una
+    distribución de sistema de registro; elegir `application` selecciona
+    `starter-application` y una distribución BFF sin estado. El arquetipo decide qué
+    starter heredas y con qué valores por defecto arrancas. Las cuatro capas del
+    capítulo 1 se corresponden una a una con cuatro arquetipos.
 
-!!! spring "Spring parity"
-    `flywork create` is the Firefly counterpart to Spring Initializr (`start.spring.io`).
-    Initializr asks you to tick individual starters; `flywork` asks you to pick a
-    *tier*, then selects the right Firefly starter and the parent POM for you — so a
-    fleet of services starts from the same opinionated baseline instead of a hundred
-    slightly different checkboxes.
+!!! spring "Equivalente en Spring"
+    `flywork create` es la contrapartida en Firefly de Spring Initializr
+    (`start.spring.io`). Initializr te pide marcar starters individuales; `flywork`
+    te pide elegir una *capa* y luego selecciona por ti el starter de Firefly
+    correcto y el POM padre, de modo que una flota de servicios parte de la misma
+    base con criterio en lugar de cien casillas ligeramente distintas.
 
-## Step 2 — One entry point
+## Paso 2 — Un único punto de entrada
 
-Open the class `flywork` generated. It is an ordinary Spring Boot application —
-one annotation, one `main` method, no Firefly-specific code at all.
+Abre la clase que generó `flywork`. Es una aplicación Spring Boot corriente: una
+anotación, un método `main`, nada de código específico de Firefly.
 
-::: listing core-lending-loan-origination/src/main/java/com/firefly/lumen/core/CoreLendingApplication.java | Listing 2.1 — the entire entry point
+::: listing core-lending-loan-origination/src/main/java/com/firefly/lumen/core/CoreLendingApplication.java | Listado 2.1 — el punto de entrada completo
 package com.firefly.lumen.core;
 
 import org.springframework.boot.SpringApplication;
@@ -92,20 +95,20 @@ public class CoreLendingApplication {
 }
 :::
 
-This is worth pausing on, because it is the whole thesis of Chapter 1 made
-concrete. There is no `@EnableFirefly`, no custom bootstrap, no framework class to
-extend. `@SpringBootApplication` and `SpringApplication.run(...)` are exactly what
-you would write for any Spring Boot service. Everything Firefly adds arrives
-through *auto-configuration* on the classpath, activated by the starter you are
-about to read — not through code you write here.
+Merece la pena detenerse aquí, porque es toda la tesis del capítulo 1 hecha
+concreta. No hay `@EnableFirefly`, ni bootstrap personalizado, ni ninguna clase del
+framework que extender. `@SpringBootApplication` y `SpringApplication.run(...)` son
+exactamente lo que escribirías para cualquier servicio Spring Boot. Todo lo que
+Firefly añade llega a través de la *autoconfiguración* en el classpath, activada por
+el starter que estás a punto de leer, no a través de código que escribas aquí.
 
-## Step 3 — Add one tier starter
+## Paso 3 — Añadir un único starter de capa
 
-The behavior all lives in one place: the dependencies. Here is a contiguous slice
-of the service's `pom.xml`, from the inherited parent through the framework
-dependencies it pulls in.
+Todo el comportamiento vive en un solo sitio: las dependencias. Aquí tienes un
+fragmento contiguo del `pom.xml` del servicio, desde el padre heredado hasta las
+dependencias del framework que arrastra.
 
-::: listing core-lending-loan-origination/pom.xml | Listing 2.2 — the parent and the tier starter
+::: listing core-lending-loan-origination/pom.xml | Listado 2.2 — el padre y el starter de capa
     <parent>
         <groupId>com.firefly.lumen</groupId>
         <artifactId>lumen-lending</artifactId>
@@ -141,30 +144,32 @@ dependencies it pulls in.
         </dependency>
 :::
 
-Three things to read off this slice. First, the `<dependency>` entries carry **no
-`<version>`** — the inherited parent (which imports Firefly's BOM) pins every
-version centrally, the version-coherence story Chapter 3 unpacks in full. Second,
-the headline line is `fireflyframework-starter-core`: that single starter is what
-turns this from "a Spring Boot app" into "a Firefly core service," bundling
-WebFlux, the CQRS buses, event-driven plumbing, resilience, JSON logging, and the
-startup banner. Third, the companion modules — `r2dbc`, `web`, `validators` —
-layer on reactive persistence, the web error model, and finance-aware validation
-constraints (`@ValidAmount`, `@ValidCurrencyCode`) that the later chapters use.
+Tres cosas que leer en este fragmento. Primera: las entradas `<dependency>` no
+llevan **ningún `<version>`**: el padre heredado (que importa el BOM de Firefly)
+fija centralmente cada versión, la historia de coherencia de versiones que el
+capítulo 3 desgrana por completo. Segunda: la línea protagonista es
+`fireflyframework-starter-core`; ese único starter es lo que convierte esto de «una
+app Spring Boot» en «un servicio core de Firefly», empaquetando WebFlux, los buses
+CQRS, la fontanería orientada a eventos, la resiliencia, el logging en JSON y el
+banner de arranque. Tercera: los módulos de acompañamiento —`r2dbc`, `web`,
+`validators`— añaden persistencia reactiva, el modelo de errores web y restricciones
+de validación con criterio financiero (`@ValidAmount`, `@ValidCurrencyCode`) que los
+capítulos posteriores usan.
 
-You added behavior by adding a dependency. You will change behavior, when you need
-to, by declaring a bean. Nothing here is locked.
+Añadiste comportamiento añadiendo una dependencia. Cambiarás el comportamiento,
+cuando lo necesites, declarando un bean. Aquí no hay nada bloqueado.
 
-!!! spring "Spring parity"
-    `fireflyframework-starter-core` is a Spring Boot starter like
-    `spring-boot-starter-webflux` — a curated dependency that pulls in a coherent
-    set and triggers auto-configuration. The difference is altitude: a vanilla
-    starter wires *one* capability (the web stack); a Firefly tier starter wires the
-    *whole* opinionated baseline for a kind of service. Same mechanism, more in the
-    box.
+!!! spring "Equivalente en Spring"
+    `fireflyframework-starter-core` es un starter de Spring Boot como
+    `spring-boot-starter-webflux`: una dependencia curada que arrastra un conjunto
+    coherente y dispara la autoconfiguración. La diferencia es la altitud: un starter
+    corriente cablea *una* capacidad (la pila web); un starter de capa de Firefly
+    cablea *toda* la base con criterio para un tipo de servicio. Mismo mecanismo, más
+    cosas en la caja.
 
-## Step 4 — Boot it
+## Paso 4 — Arrancarlo
 
-With the parent installed, boot the service the ordinary Spring Boot way.
+Con el padre instalado, arranca el servicio de la forma habitual de Spring Boot.
 
 ```text
 $ mvn spring-boot:run
@@ -184,38 +189,40 @@ INFO  o.f.cqrs.command.DefaultCommandBus       : DefaultCommandBus ready with 0 
 INFO  c.f.l.core.CoreLendingApplication        : Started CoreLendingApplication in 2.5 seconds
 ```
 
-That banner is not cosmetic — it is the starter announcing which tier baseline
-booted, and the `DefaultCommandBus` line is the CQRS infrastructure
-auto-configuring itself, ready for the handlers later chapters register. The
-service is now listening on Netty's event loop.
+Ese banner no es cosmético: es el starter anunciando qué base de capa arrancó, y la
+línea de `DefaultCommandBus` es la infraestructura CQRS autoconfigurándose, lista
+para los manejadores que los capítulos posteriores registran. El servicio está ahora
+escuchando en el bucle de eventos de Netty.
 
-Two endpoints come for free with the starter. **Actuator health** reports whether
-the service and its dependencies are up:
+Dos endpoints vienen gratis con el starter. La **salud de Actuator** informa de si
+el servicio y sus dependencias están en marcha:
 
 ```text
 $ curl -s http://localhost:8080/actuator/health
 {"status":"UP"}
 ```
 
-And the **OpenAPI document** describes the HTTP API — generated, not hand-written —
-with a Swagger UI served alongside it:
+Y el **documento OpenAPI** describe la API HTTP —generado, no escrito a mano— con una
+Swagger UI servida junto a él:
 
 ```text
 $ curl -s http://localhost:8080/v3/api-docs
 {"openapi":"3.0.1","info":{"title":"core-lending-loan-origination", ... }}
 ```
 
-!!! note "Key term — Actuator health"
-    **Actuator** is Spring Boot's set of production endpoints — `/actuator/health`,
-    `/actuator/info`, metrics, and more. Firefly's starter turns the right ones on
-    by default so every service in the fleet is observable the same way. A green
-    `{"status":"UP"}` is your first proof of life.
+!!! note "Termino clave — salud de Actuator"
+    **Actuator** es el conjunto de endpoints de producción de Spring Boot:
+    `/actuator/health`, `/actuator/info`, métricas y más. El starter de Firefly
+    activa los adecuados por defecto, de modo que cada servicio de la flota es
+    observable de la misma manera. Un `{"status":"UP"}` en verde es tu primera prueba
+    de vida.
 
-## Step 5 — Exercise it: apply for a loan
+## Paso 5 — Ejercitarlo: solicitar un préstamo
 
-A booting service that does nothing is not very convincing. The core service
-exposes a loan-origination API; let's create an application and read it back. POST
-a request body with the borrower, the amount, the term, and the purpose:
+Un servicio que arranca pero no hace nada no resulta muy convincente. El servicio
+core expone una API de originación de préstamos; vamos a crear una solicitud y a
+leerla de vuelta. Envía con POST un cuerpo de petición con el prestatario, el
+importe, el plazo y la finalidad:
 
 ```text
 $ curl -s -X POST http://localhost:8080/api/v1/loan-applications \
@@ -229,9 +236,9 @@ $ curl -s -X POST http://localhost:8080/api/v1/loan-applications \
         }'
 ```
 
-The service validates the payload, persists the application, and submits it in one
-step. It answers `201 Created` with the stored resource — note the generated
-`loanApplicationId` and the `SUBMITTED` status:
+El servicio valida el payload, persiste la solicitud y la envía en un solo paso.
+Responde `201 Created` con el recurso almacenado; fíjate en el `loanApplicationId`
+generado y en el estado `SUBMITTED`:
 
 ```json
 {
@@ -245,7 +252,7 @@ step. It answers `201 Created` with the stored resource — note the generated
 }
 ```
 
-Now read it back by its id with a `GET`:
+Ahora léela de vuelta por su id con un `GET`:
 
 ```text
 $ curl -s http://localhost:8080/api/v1/loan-applications/55ccb890-e344-4bcb-ba5c-0dfbdec05a95
@@ -260,10 +267,10 @@ $ curl -s http://localhost:8080/api/v1/loan-applications/55ccb890-e344-4bcb-ba5c
 }
 ```
 
-That round trip — POST creates and submits, GET reads back — is the spine of the
-core service. Ask for something that does not exist and you do not get a stack
-trace or a bespoke blob; you get a standard **RFC 7807** problem detail, the same
-shape in every Firefly service:
+Ese viaje de ida y vuelta —POST crea y envía, GET lee de vuelta— es la columna
+vertebral del servicio core. Pide algo que no existe y no obtienes una traza de pila
+ni un mazacote a medida; obtienes un problem detail estándar **RFC 7807**, con la
+misma forma en cada servicio Firefly:
 
 ```text
 $ curl -s http://localhost:8080/api/v1/loan-applications/00000000-0000-0000-0000-000000000000
@@ -278,70 +285,73 @@ $ curl -s http://localhost:8080/api/v1/loan-applications/00000000-0000-0000-0000
 }
 ```
 
-You did not write that error handler. The starter did, once, for the whole fleet.
+Tú no escribiste ese manejador de errores. Lo escribió el starter, una vez, para
+toda la flota.
 
-## Run it
+## Ejecútalo
 
-You do not need a running server or Docker to prove all of this — the reactor ships
-a slice test that boots the full reactive context against in-memory H2, drives the
-real API with `WebTestClient`, and asserts the create-then-read round trip, the
-404 problem detail, and validation rejection. From `samples/lumen-lending`, run:
+No necesitas un servidor en marcha ni Docker para demostrar todo esto: el reactor
+incluye una prueba de corte que arranca el contexto reactivo completo contra una H2
+en memoria, ejercita la API real con `WebTestClient` y comprueba el viaje de ida y
+vuelta crear-luego-leer, el problem detail 404 y el rechazo de validación. Desde
+`samples/lumen-lending`, ejecuta:
 
 ```text
 $ mvn -q -pl core-lending-loan-origination test
 ```
 
-The module's tests pass, including the three web-layer cases you just exercised by
-hand:
+Las pruebas del módulo pasan, incluidos los tres casos de la capa web que acabas de
+ejercitar a mano:
 
 ```text
 Tests run: 3, Failures: 0, Errors: 0, Skipped: 0 -- in com.firefly.lumen.core.web.LoanApplicationControllerTest
 ```
 
-!!! tip "Checkpoint"
-    Run `mvn -q -pl core-lending-loan-origination test` from
-    `samples/lumen-lending`. A green `Tests run: 3, Failures: 0` on
-    `LoanApplicationControllerTest` means the whole shape — boot, validate,
-    persist, submit, read back, and RFC 7807 errors — works on your machine. That
-    green line is the contract every listing in this book is checked against.
+!!! tip "Punto de control"
+    Ejecuta `mvn -q -pl core-lending-loan-origination test` desde
+    `samples/lumen-lending`. Un `Tests run: 3, Failures: 0` en verde sobre
+    `LoanApplicationControllerTest` significa que toda la forma —arrancar, validar,
+    persistir, enviar, leer de vuelta y errores RFC 7807— funciona en tu máquina. Esa
+    línea verde es el contrato contra el que se comprueba cada listado de este libro.
 
-## What you built {.recap}
+## Lo que has construido {.recap}
 
-- You scaffolded a **core** service with `flywork` (illustratively), saw that the
-  generated entry point is a plain `@SpringBootApplication` with a `main` method,
-  and that all the behavior arrives through one **tier starter** on the classpath.
-- You read the `pom.xml` slice and saw the move from Chapter 1 in practice:
-  **inherit a parent, add `fireflyframework-starter-core`, omit versions.**
-- You booted the service — banner, Actuator health, generated OpenAPI — and
-  exercised its loan-origination API: a POST that creates and **submits** an
-  application (status `SUBMITTED`), a GET that reads it back, and a consistent
-  **RFC 7807** 404.
-- You ran the reactor's slice test and watched `Tests run: 3, Failures: 0` —
-  the same round trip, verified end to end against in-memory H2.
+- Generaste el andamiaje de un servicio **core** con `flywork` (a título
+  ilustrativo), viste que el punto de entrada generado es un `@SpringBootApplication`
+  simple con un método `main`, y que todo el comportamiento llega a través de un
+  único **starter de capa** en el classpath.
+- Leíste el fragmento del `pom.xml` y viste en la práctica el movimiento del capítulo
+  1: **hereda un padre, añade `fireflyframework-starter-core`, omite las versiones.**
+- Arrancaste el servicio —banner, salud de Actuator, OpenAPI generado— y ejercitaste
+  su API de originación de préstamos: un POST que crea y **envía** una solicitud
+  (estado `SUBMITTED`), un GET que la lee de vuelta y un 404 **RFC 7807** coherente.
+- Ejecutaste la prueba de corte del reactor y viste `Tests run: 3, Failures: 0`: el
+  mismo viaje de ida y vuelta, verificado de extremo a extremo contra una H2 en
+  memoria.
 
-## Try it yourself {.exercises}
+## Pruebalo tu mismo {.exercises}
 
-1. **Read the real test.** Open
+1. **Lee la prueba real.** Abre
    `core-lending-loan-origination/src/test/java/com/firefly/lumen/core/web/LoanApplicationControllerTest.java`
-   and match each `@Test` to a `curl` from this chapter. Which assertion proves the
-   `SUBMITTED` status? Which one proves the RFC 7807 shape?
-2. **Break the payload.** That test's `rejectsAnInvalidPayload` case sends a
-   `requestedAmount` of `-5.00` and expects `400 Bad Request`. Change it to a
-   positive amount and rerun `mvn -q -pl core-lending-loan-origination test` — what
-   fails, and what does that tell you about `@ValidAmount`?
-3. **Count the free behavior.** Re-read the `pom.xml` slice in
-   `core-lending-loan-origination/pom.xml`. List every capability you got *without
-   writing code* — error handling, validation, logging, health, OpenAPI — and note
-   which dependency each one rides in on.
-4. **Trace the entry point.** Open
+   y empareja cada `@Test` con un `curl` de este capítulo. ¿Qué aserción demuestra el
+   estado `SUBMITTED`? ¿Cuál demuestra la forma RFC 7807?
+2. **Rompe el payload.** El caso `rejectsAnInvalidPayload` de esa prueba envía un
+   `requestedAmount` de `-5.00` y espera `400 Bad Request`. Cámbialo por un importe
+   positivo y vuelve a ejecutar `mvn -q -pl core-lending-loan-origination test`: ¿qué
+   falla, y qué te dice eso sobre `@ValidAmount`?
+3. **Cuenta el comportamiento gratuito.** Vuelve a leer el fragmento del `pom.xml` en
+   `core-lending-loan-origination/pom.xml`. Enumera cada capacidad que conseguiste
+   *sin escribir código* —manejo de errores, validación, logging, salud, OpenAPI— y
+   anota en qué dependencia llega cada una.
+4. **Rastrea el punto de entrada.** Abre
    `core-lending-loan-origination/src/main/java/com/firefly/lumen/core/CoreLendingApplication.java`
-   and confirm there is nothing Firefly-specific in it. Where, then, does the
-   framework hook in? (Hint: the answer is on the classpath, not in the class.)
+   y confirma que no hay nada específico de Firefly en él. Entonces, ¿dónde se
+   engancha el framework? (Pista: la respuesta está en el classpath, no en la clase.)
 
-## Where to go next
+## Adonde ir ahora
 
-You have seen the whole shape; now the rest of the book slows down and builds it
-properly. Chapter 3 explains the parent POM and BOM that made Listing 2.2's
-version-free dependencies possible — the version-coherence story underneath this
-quickstart. From there, Part II reconstructs this very service tier by tier, the
-honest way, one verified slice at a time.
+Has visto la forma completa; ahora el resto del libro baja el ritmo y la construye
+como es debido. El capítulo 3 explica el POM padre y el BOM que hicieron posibles las
+dependencias sin versión del Listado 2.2: la historia de coherencia de versiones que
+hay debajo de este quickstart. A partir de ahí, la Parte II reconstruye este mismo
+servicio capa por capa, de la forma honesta, un fragmento verificado cada vez.
