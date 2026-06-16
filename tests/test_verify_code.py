@@ -94,6 +94,33 @@ def test_verify_missing_reactor_dir_is_success(tmp_path):
     assert verify(str(man), str(tmp_path / "does-not-exist")) == []
 
 
+def test_extract_handles_indented_close_without_swallowing_next():
+    # md.py closes a listing on the first line whose .strip() == ':::', so an
+    # INDENTED close is valid. The verifier must agree: the first listing must
+    # end at its indented close, and the following listing must be extracted
+    # independently (not swallowed into the first body).
+    md = (
+        "::: listing First.java | a\n"
+        "class First {}\n"
+        "    :::\n"                      # indented close
+        "::: listing Second.java | b\n"
+        "class Second {}\n"
+        ":::\n"
+    )
+    listings = extract_listings(md)
+    assert [l.label for l in listings] == ["First.java", "Second.java"]
+    assert listings[0].body == "class First {}"
+    assert "Second" not in listings[0].body
+    assert listings[1].body == "class Second {}"
+
+
+def test_is_verbatim_slice_tolerates_trailing_whitespace():
+    # Manuscripts and editors routinely add/strip trailing spaces; a slice must
+    # still match across that difference (the body has none, the file has some).
+    file_text = "public record Account(String id) {}   \n"   # trailing spaces
+    assert is_verbatim_slice("public record Account(String id) {}", file_text)
+
+
 def test_verify_allows_elided_body(tmp_path):
     # bodies containing '...' are excerpts, not exact slices -> not checked
     reactor = tmp_path / "reactor"
