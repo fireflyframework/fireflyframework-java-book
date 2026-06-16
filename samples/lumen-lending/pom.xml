@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <!--
+      Lumen Lending — trimmed reactor mirroring the firefly-oss lending vertical.
+
+      We inherit the Firefly Framework parent directly (the real firefly-oss services
+      sit on a thin internal `firefly-parent` that in turn inherits this one). The parent
+      brings the Spring Boot/Cloud BOMs, the compiler/enforcer/surefire plugin config,
+      the Java 25 baseline, and the `java21` profile.
+    -->
+    <parent>
+        <groupId>org.fireflyframework</groupId>
+        <artifactId>fireflyframework-parent</artifactId>
+        <version>26.06.01</version>
+        <relativePath/>
+    </parent>
+
+    <groupId>com.firefly.lumen</groupId>
+    <artifactId>lumen-lending</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+    <packaging>pom</packaging>
+
+    <name>Lumen Lending</name>
+    <description>Book sample reactor: experience -&gt; domain -&gt; core lending tiers on the Firefly Framework.</description>
+
+    <modules>
+        <module>core-lending-loan-origination</module>
+        <module>domain-lending-loan-origination</module>
+        <module>exp-lending</module>
+    </modules>
+
+    <properties>
+        <firefly.version>26.06.01</firefly.version>
+    </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <!-- Firefly Framework BOM: pins all org.fireflyframework module versions. -->
+            <dependency>
+                <groupId>org.fireflyframework</groupId>
+                <artifactId>fireflyframework-bom</artifactId>
+                <version>${firefly.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+</project>

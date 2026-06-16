@@ -1,0 +1,3 @@
+spring:
+  application:
+    name: domain-lending-loan-origination
