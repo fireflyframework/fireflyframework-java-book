@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1500" height="2100" viewBox="0 0 1500 2100">
-<defs><radialGradient id="hubglow" cx="0.5000" cy="0.2762" r="0.30" fx="0.5000" fy="0.2762" gradientUnits="objectBoundingBox"><stop offset="0" stop-color="#43b02a" stop-opacity="0.20"/><stop offset="1" stop-color="#43b02a" stop-opacity="0"/></radialGradient></defs>
-<rect width="1500" height="2100" fill="#16331a"/>
-<g opacity="0.035" fill="none" stroke="#43b02a" stroke-width="0.8">
+<defs><radialGradient id="hubglow" cx="0.5000" cy="0.2762" r="0.30" fx="0.5000" fy="0.2762" gradientUnits="objectBoundingBox"><stop offset="0" stop-color="#E8A23A" stop-opacity="0.22"/><stop offset="1" stop-color="#E8A23A" stop-opacity="0"/></radialGradient></defs>
+<rect width="1500" height="2100" fill="#1B1610"/>
+<g opacity="0.04" fill="none" stroke="#E8A23A" stroke-width="0.8">
 <polygon points="7.55,9.00 -60.00,48.00 -127.55,9.00 -127.55,-69.00 -60.00,-108.00 7.55,-69.00"/>
 <polygon points="192.55,89.00 125.00,128.00 57.45,89.00 57.45,11.00 125.00,-28.00 192.55,11.00"/>
 <polygon points="377.55,9.00 310.00,48.00 242.45,9.00 242.45,-69.00 310.00,-108.00 377.55,-69.00"/>
@@ -154,7 +154,7 @@
 <polygon points="1672.55,2399.00 1605.00,2438.00 1537.45,2399.00 1537.45,2321.00 1605.00,2282.00 1672.55,2321.00"/>
 </g>
 <rect width="1500" height="2100" fill="url(#hubglow)"/>
-<g fill="none" stroke="#255e17" stroke-width="1.5" opacity="0.45">
+<g fill="none" stroke="#2C8A1C" stroke-width="1.5" opacity="0.42">
 <path d="M260.0,210.0 Q459.5,267.7 650.0,185.0"/>
 <path d="M650.0,185.0 Q855.1,289.9 1080.0,240.0"/>
 <path d="M1080.0,240.0 Q1096.0,415.2 1220.0,540.0"/>
@@ -163,7 +163,7 @@
 <path d="M390.0,930.0 Q327.6,726.8 150.0,610.0"/>
 <path d="M150.0,610.0 Q277.0,429.8 260.0,210.0"/>
 </g>
-<g fill="none" stroke="#43b02a" stroke-width="2.5" opacity="0.55">
+<g fill="none" stroke="#E8A23A" stroke-width="2.5" opacity="0.60">
 <path d="M750.0,580.0 Q571.6,306.8 260.0,210.0"/>
 <path d="M750.0,580.0 Q771.1,364.5 650.0,185.0"/>
 <path d="M750.0,580.0 Q976.2,469.4 1080.0,240.0"/>
@@ -172,63 +172,63 @@
 <path d="M750.0,580.0 Q507.0,690.2 390.0,930.0"/>
 <path d="M750.0,580.0 Q444.6,487.0 150.0,610.0"/>
 </g>
-<circle cx="593.2" cy="461.6" r="6" fill="#ffc24b" opacity="0.9"/>
-<circle cx="431.5" cy="339.5" r="4" fill="#ffc24b" opacity="0.55"/>
-<circle cx="718.0" cy="453.6" r="6" fill="#43b02a" opacity="0.9"/>
-<circle cx="685.0" cy="323.2" r="4" fill="#43b02a" opacity="0.55"/>
-<circle cx="855.6" cy="471.2" r="6" fill="#ffc24b" opacity="0.9"/>
-<circle cx="964.5" cy="359.0" r="4" fill="#ffc24b" opacity="0.55"/>
-<circle cx="900.4" cy="567.2" r="6" fill="#43b02a" opacity="0.9"/>
-<circle cx="1055.5" cy="554.0" r="4" fill="#43b02a" opacity="0.55"/>
-<circle cx="865.2" cy="672.8" r="6" fill="#ffc24b" opacity="0.9"/>
-<circle cx="984.0" cy="768.5" r="4" fill="#ffc24b" opacity="0.55"/>
-<circle cx="634.8" cy="692.0" r="6" fill="#43b02a" opacity="0.9"/>
-<circle cx="516.0" cy="807.5" r="4" fill="#43b02a" opacity="0.55"/>
-<circle cx="558.0" cy="589.6" r="6" fill="#ffc24b" opacity="0.9"/>
-<circle cx="360.0" cy="599.5" r="4" fill="#ffc24b" opacity="0.55"/>
-<polygon points="519.05,111.00 500.00,122.00 480.95,111.00 480.95,89.00 500.00,78.00 519.05,89.00" fill="#1e4620" stroke="#255e17" stroke-width="1.4" opacity="0.65"/>
-<polygon points="945.59,139.00 930.00,148.00 914.41,139.00 914.41,121.00 930.00,112.00 945.59,121.00" fill="#1e4620" stroke="#255e17" stroke-width="1.4" opacity="0.65"/>
-<polygon points="1367.32,370.00 1350.00,380.00 1332.68,370.00 1332.68,350.00 1350.00,340.00 1367.32,350.00" fill="#1e4620" stroke="#255e17" stroke-width="1.4" opacity="0.65"/>
-<polygon points="1384.72,768.50 1370.00,777.00 1355.28,768.50 1355.28,751.50 1370.00,743.00 1384.72,751.50" fill="#1e4620" stroke="#255e17" stroke-width="1.4" opacity="0.65"/>
-<polygon points="996.45,1029.50 980.00,1039.00 963.55,1029.50 963.55,1010.50 980.00,1001.00 996.45,1010.50" fill="#1e4620" stroke="#255e17" stroke-width="1.4" opacity="0.65"/>
-<polygon points="213.86,998.00 200.00,1006.00 186.14,998.00 186.14,982.00 200.00,974.00 213.86,982.00" fill="#1e4620" stroke="#255e17" stroke-width="1.4" opacity="0.65"/>
-<polygon points="95.59,409.00 80.00,418.00 64.41,409.00 64.41,391.00 80.00,382.00 95.59,391.00" fill="#1e4620" stroke="#255e17" stroke-width="1.4" opacity="0.65"/>
-<polygon points="305.90,236.50 260.00,263.00 214.10,236.50 214.10,183.50 260.00,157.00 305.90,183.50" fill="none" stroke="#43b02a" stroke-width="1.2" opacity="0.28"/>
-<polygon points="298.11,232.00 260.00,254.00 221.89,232.00 221.89,188.00 260.00,166.00 298.11,188.00" fill="#2c8a1c" stroke="#43b02a" stroke-width="2.2"/>
-<text x="260" y="211" text-anchor="middle" dominant-baseline="middle" fill="#eaf6df" font-size="23" font-weight="700" font-family="Avenir Next,Avenir,Helvetica Neue,Helvetica,Arial,sans-serif" letter-spacing="1">CMD</text>
-<polygon points="692.44,209.50 650.00,234.00 607.56,209.50 607.56,160.50 650.00,136.00 692.44,160.50" fill="none" stroke="#43b02a" stroke-width="1.2" opacity="0.28"/>
-<polygon points="684.64,205.00 650.00,225.00 615.36,205.00 615.36,165.00 650.00,145.00 684.64,165.00" fill="#2c8a1c" stroke="#43b02a" stroke-width="2.2"/>
-<text x="650" y="186" text-anchor="middle" dominant-baseline="middle" fill="#eaf6df" font-size="23" font-weight="700" font-family="Avenir Next,Avenir,Helvetica Neue,Helvetica,Arial,sans-serif" letter-spacing="1">EVT</text>
-<polygon points="1125.90,266.50 1080.00,293.00 1034.10,266.50 1034.10,213.50 1080.00,187.00 1125.90,213.50" fill="none" stroke="#43b02a" stroke-width="1.2" opacity="0.28"/>
-<polygon points="1118.11,262.00 1080.00,284.00 1041.89,262.00 1041.89,218.00 1080.00,196.00 1118.11,218.00" fill="#2c8a1c" stroke="#43b02a" stroke-width="2.2"/>
-<text x="1080" y="241" text-anchor="middle" dominant-baseline="middle" fill="#eaf6df" font-size="19" font-weight="700" font-family="Avenir Next,Avenir,Helvetica Neue,Helvetica,Arial,sans-serif" letter-spacing="1">SAGA</text>
-<polygon points="1260.70,563.50 1220.00,587.00 1179.30,563.50 1179.30,516.50 1220.00,493.00 1260.70,516.50" fill="none" stroke="#43b02a" stroke-width="1.2" opacity="0.28"/>
-<polygon points="1252.91,559.00 1220.00,578.00 1187.09,559.00 1187.09,521.00 1220.00,502.00 1252.91,521.00" fill="#2c8a1c" stroke="#43b02a" stroke-width="2.2"/>
-<text x="1220" y="541" text-anchor="middle" dominant-baseline="middle" fill="#eaf6df" font-size="23" font-weight="700" font-family="Avenir Next,Avenir,Helvetica Neue,Helvetica,Arial,sans-serif" letter-spacing="1">Q</text>
-<polygon points="1155.90,896.50 1110.00,923.00 1064.10,896.50 1064.10,843.50 1110.00,817.00 1155.90,843.50" fill="none" stroke="#43b02a" stroke-width="1.2" opacity="0.28"/>
-<polygon points="1148.11,892.00 1110.00,914.00 1071.89,892.00 1071.89,848.00 1110.00,826.00 1148.11,848.00" fill="#2c8a1c" stroke="#43b02a" stroke-width="2.2"/>
-<text x="1110" y="871" text-anchor="middle" dominant-baseline="middle" fill="#eaf6df" font-size="19" font-weight="700" font-family="Avenir Next,Avenir,Helvetica Neue,Helvetica,Arial,sans-serif" letter-spacing="1">HTTP</text>
-<polygon points="432.44,954.50 390.00,979.00 347.56,954.50 347.56,905.50 390.00,881.00 432.44,905.50" fill="none" stroke="#43b02a" stroke-width="1.2" opacity="0.28"/>
-<polygon points="424.64,950.00 390.00,970.00 355.36,950.00 355.36,910.00 390.00,890.00 424.64,910.00" fill="#2c8a1c" stroke="#43b02a" stroke-width="2.2"/>
-<text x="390" y="931" text-anchor="middle" dominant-baseline="middle" fill="#eaf6df" font-size="19" font-weight="700" font-family="Avenir Next,Avenir,Helvetica Neue,Helvetica,Arial,sans-serif" letter-spacing="1">DATA</text>
-<polygon points="190.70,633.50 150.00,657.00 109.30,633.50 109.30,586.50 150.00,563.00 190.70,586.50" fill="none" stroke="#43b02a" stroke-width="1.2" opacity="0.28"/>
-<polygon points="182.91,629.00 150.00,648.00 117.09,629.00 117.09,591.00 150.00,572.00 182.91,591.00" fill="#2c8a1c" stroke="#43b02a" stroke-width="2.2"/>
-<text x="150" y="611" text-anchor="middle" dominant-baseline="middle" fill="#eaf6df" font-size="23" font-weight="700" font-family="Avenir Next,Avenir,Helvetica Neue,Helvetica,Arial,sans-serif" letter-spacing="1">MSG</text>
-<polygon points="826.21,624.00 750.00,668.00 673.79,624.00 673.79,536.00 750.00,492.00 826.21,536.00" fill="none" stroke="#43b02a" stroke-width="1.8" opacity="0.4"/>
-<polygon points="815.82,618.00 750.00,656.00 684.18,618.00 684.18,542.00 750.00,504.00 815.82,542.00" fill="none" stroke="#43b02a" stroke-width="2.8" opacity="0.75"/>
-<polygon points="812.35,616.00 750.00,652.00 687.65,616.00 687.65,544.00 750.00,508.00 812.35,544.00" fill="#2c8a1c" stroke="#ffc24b" stroke-width="3.8"/>
-<g transform="translate(750,580) scale(0.62)"><circle r="118" fill="#ffc24b" opacity="0.06"/><circle r="78" fill="#ffc24b" opacity="0.09"/><circle r="46" fill="#ffc24b" opacity="0.16"/><path d="M-150,150 C-86,80 -44,32 -14,-4" fill="none" stroke="#ffc24b" stroke-width="4" opacity="0.14" stroke-linecap="round"/><path d="M-150,150 C-86,80 -44,32 -14,-4" fill="none" stroke="#ffd980" stroke-width="1.6" opacity="0.30" stroke-linecap="round"/><g transform="rotate(-16)"><circle cx="0" cy="52" r="42" fill="#ffc24b" opacity="0.18"/><circle cx="0" cy="52" r="25" fill="#ffd980" opacity="0.45"/><path d="M-5,-10 C-72,-54 -94,-2 -28,14 Z" fill="#ddf0c4" opacity="0.22"/><path d="M5,-10 C72,-54 94,-2 28,14 Z" fill="#ddf0c4" opacity="0.22"/><ellipse cx="0" cy="46" rx="20" ry="29" fill="#ffc24b"/><ellipse cx="0" cy="49" rx="11" ry="18" fill="#fff2cf"/><ellipse cx="0" cy="4" rx="16" ry="23" fill="#16331a" stroke="#43b02a" stroke-width="2.8"/><ellipse cx="0" cy="-23" rx="10" ry="12" fill="#16331a" stroke="#43b02a" stroke-width="2.4"/><path d="M-5,-32 C-16,-50 -23,-54 -30,-60" fill="none" stroke="#43b02a" stroke-width="2.6" stroke-linecap="round"/><path d="M5,-32 C16,-50 23,-54 30,-60" fill="none" stroke="#43b02a" stroke-width="2.6" stroke-linecap="round"/></g><circle cx="92" cy="-82" r="3.4" fill="#ffd980" opacity="0.75"/><circle cx="110" cy="50" r="2.8" fill="#43b02a" opacity="0.80"/><circle cx="-96" cy="-72" r="2.8" fill="#ffd980" opacity="0.65"/></g>
-<text x="500" y="76" text-anchor="middle" fill="#43b02a" font-size="18" font-weight="400" opacity="0.50" font-family="Avenir Next,Avenir,Helvetica Neue,Helvetica,Arial,sans-serif" letter-spacing="3.5">EVENTS</text>
-<text x="1320" y="315" text-anchor="middle" fill="#43b02a" font-size="18" font-weight="400" opacity="0.50" font-family="Avenir Next,Avenir,Helvetica Neue,Helvetica,Arial,sans-serif" letter-spacing="3.5">ASYNC</text>
-<text x="160" y="375" text-anchor="middle" fill="#43b02a" font-size="18" font-weight="400" opacity="0.50" font-family="Avenir Next,Avenir,Helvetica Neue,Helvetica,Arial,sans-serif" letter-spacing="3.5">REACTIVE</text>
-<text x="960" y="1050" text-anchor="middle" fill="#43b02a" font-size="18" font-weight="400" opacity="0.50" font-family="Avenir Next,Avenir,Helvetica Neue,Helvetica,Arial,sans-serif" letter-spacing="3.5">CQRS</text>
-<rect x="100" y="1110" width="1300" height="6" fill="#ffc24b" rx="3"/>
-<rect x="100" y="1124" width="1300" height="1.5" fill="#43b02a" opacity="0.45" rx="1"/>
-<text x="750" y="68" text-anchor="middle" fill="#8dbd7a" font-size="26" font-weight="500" letter-spacing="9" font-family="Avenir Next,Avenir,Helvetica Neue,Helvetica,Arial,sans-serif">FIREFLY SOFTWARE FOUNDATION</text>
-<text x="108" y="1298" fill="#ffffff" font-size="150" font-weight="800" font-family="Avenir Next,Avenir,Helvetica Neue,Helvetica,Arial,sans-serif" letter-spacing="-4">Firefly for</text>
-<text x="108" y="1478" fill="#43b02a" font-size="220" font-weight="800" font-family="Avenir Next,Avenir,Helvetica Neue,Helvetica,Arial,sans-serif" letter-spacing="-6">Java</text>
-<rect x="112" y="1504" width="700" height="3" fill="#ffc24b" opacity="0.60" rx="1.5"/>
-<text x="112" y="1614" fill="#eaf6df" font-size="100" font-weight="600" font-family="Avenir Next,Avenir,Helvetica Neue,Helvetica,Arial,sans-serif" letter-spacing="-1">by Example</text>
-<text x="112" y="1692" fill="#b5d9a0" font-size="37" font-weight="400" font-family="Avenir Next,Avenir,Helvetica Neue,Helvetica,Arial,sans-serif" letter-spacing="0.5">Reactive Microservices with Spring Boot,</text>
-<text x="112" y="1742" fill="#b5d9a0" font-size="37" font-weight="400" font-family="Avenir Next,Avenir,Helvetica Neue,Helvetica,Arial,sans-serif" letter-spacing="0.5">WebFlux &amp; the Firefly Framework</text>
+<circle cx="593.2" cy="461.6" r="6" fill="#E8A23A" opacity="0.9"/>
+<circle cx="431.5" cy="339.5" r="4" fill="#E8A23A" opacity="0.55"/>
+<circle cx="718.0" cy="453.6" r="6" fill="#43B02A" opacity="0.9"/>
+<circle cx="685.0" cy="323.2" r="4" fill="#43B02A" opacity="0.55"/>
+<circle cx="855.6" cy="471.2" r="6" fill="#E8A23A" opacity="0.9"/>
+<circle cx="964.5" cy="359.0" r="4" fill="#E8A23A" opacity="0.55"/>
+<circle cx="900.4" cy="567.2" r="6" fill="#43B02A" opacity="0.9"/>
+<circle cx="1055.5" cy="554.0" r="4" fill="#43B02A" opacity="0.55"/>
+<circle cx="865.2" cy="672.8" r="6" fill="#E8A23A" opacity="0.9"/>
+<circle cx="984.0" cy="768.5" r="4" fill="#E8A23A" opacity="0.55"/>
+<circle cx="634.8" cy="692.0" r="6" fill="#43B02A" opacity="0.9"/>
+<circle cx="516.0" cy="807.5" r="4" fill="#43B02A" opacity="0.55"/>
+<circle cx="558.0" cy="589.6" r="6" fill="#E8A23A" opacity="0.9"/>
+<circle cx="360.0" cy="599.5" r="4" fill="#E8A23A" opacity="0.55"/>
+<polygon points="519.05,111.00 500.00,122.00 480.95,111.00 480.95,89.00 500.00,78.00 519.05,89.00" fill="#2A2014" stroke="#2C8A1C" stroke-width="1.4" opacity="0.55"/>
+<polygon points="945.59,139.00 930.00,148.00 914.41,139.00 914.41,121.00 930.00,112.00 945.59,121.00" fill="#2A2014" stroke="#2C8A1C" stroke-width="1.4" opacity="0.55"/>
+<polygon points="1367.32,370.00 1350.00,380.00 1332.68,370.00 1332.68,350.00 1350.00,340.00 1367.32,350.00" fill="#2A2014" stroke="#2C8A1C" stroke-width="1.4" opacity="0.55"/>
+<polygon points="1384.72,768.50 1370.00,777.00 1355.28,768.50 1355.28,751.50 1370.00,743.00 1384.72,751.50" fill="#2A2014" stroke="#2C8A1C" stroke-width="1.4" opacity="0.55"/>
+<polygon points="996.45,1029.50 980.00,1039.00 963.55,1029.50 963.55,1010.50 980.00,1001.00 996.45,1010.50" fill="#2A2014" stroke="#2C8A1C" stroke-width="1.4" opacity="0.55"/>
+<polygon points="213.86,998.00 200.00,1006.00 186.14,998.00 186.14,982.00 200.00,974.00 213.86,982.00" fill="#2A2014" stroke="#2C8A1C" stroke-width="1.4" opacity="0.55"/>
+<polygon points="95.59,409.00 80.00,418.00 64.41,409.00 64.41,391.00 80.00,382.00 95.59,391.00" fill="#2A2014" stroke="#2C8A1C" stroke-width="1.4" opacity="0.55"/>
+<polygon points="305.90,236.50 260.00,263.00 214.10,236.50 214.10,183.50 260.00,157.00 305.90,183.50" fill="none" stroke="#43B02A" stroke-width="1.2" opacity="0.3"/>
+<polygon points="298.11,232.00 260.00,254.00 221.89,232.00 221.89,188.00 260.00,166.00 298.11,188.00" fill="#2C8A1C" stroke="#43B02A" stroke-width="2.2"/>
+<text x="260" y="211" text-anchor="middle" dominant-baseline="middle" fill="#F3ECDD" font-size="23" font-weight="700" font-family="Avenir Next,Avenir,Helvetica Neue,Helvetica,Arial,sans-serif" letter-spacing="1">CMD</text>
+<polygon points="692.44,209.50 650.00,234.00 607.56,209.50 607.56,160.50 650.00,136.00 692.44,160.50" fill="none" stroke="#43B02A" stroke-width="1.2" opacity="0.3"/>
+<polygon points="684.64,205.00 650.00,225.00 615.36,205.00 615.36,165.00 650.00,145.00 684.64,165.00" fill="#2C8A1C" stroke="#43B02A" stroke-width="2.2"/>
+<text x="650" y="186" text-anchor="middle" dominant-baseline="middle" fill="#F3ECDD" font-size="23" font-weight="700" font-family="Avenir Next,Avenir,Helvetica Neue,Helvetica,Arial,sans-serif" letter-spacing="1">EVT</text>
+<polygon points="1125.90,266.50 1080.00,293.00 1034.10,266.50 1034.10,213.50 1080.00,187.00 1125.90,213.50" fill="none" stroke="#43B02A" stroke-width="1.2" opacity="0.3"/>
+<polygon points="1118.11,262.00 1080.00,284.00 1041.89,262.00 1041.89,218.00 1080.00,196.00 1118.11,218.00" fill="#2C8A1C" stroke="#43B02A" stroke-width="2.2"/>
+<text x="1080" y="241" text-anchor="middle" dominant-baseline="middle" fill="#F3ECDD" font-size="19" font-weight="700" font-family="Avenir Next,Avenir,Helvetica Neue,Helvetica,Arial,sans-serif" letter-spacing="1">SAGA</text>
+<polygon points="1260.70,563.50 1220.00,587.00 1179.30,563.50 1179.30,516.50 1220.00,493.00 1260.70,516.50" fill="none" stroke="#43B02A" stroke-width="1.2" opacity="0.3"/>
+<polygon points="1252.91,559.00 1220.00,578.00 1187.09,559.00 1187.09,521.00 1220.00,502.00 1252.91,521.00" fill="#2C8A1C" stroke="#43B02A" stroke-width="2.2"/>
+<text x="1220" y="541" text-anchor="middle" dominant-baseline="middle" fill="#F3ECDD" font-size="23" font-weight="700" font-family="Avenir Next,Avenir,Helvetica Neue,Helvetica,Arial,sans-serif" letter-spacing="1">Q</text>
+<polygon points="1155.90,896.50 1110.00,923.00 1064.10,896.50 1064.10,843.50 1110.00,817.00 1155.90,843.50" fill="none" stroke="#43B02A" stroke-width="1.2" opacity="0.3"/>
+<polygon points="1148.11,892.00 1110.00,914.00 1071.89,892.00 1071.89,848.00 1110.00,826.00 1148.11,848.00" fill="#2C8A1C" stroke="#43B02A" stroke-width="2.2"/>
+<text x="1110" y="871" text-anchor="middle" dominant-baseline="middle" fill="#F3ECDD" font-size="19" font-weight="700" font-family="Avenir Next,Avenir,Helvetica Neue,Helvetica,Arial,sans-serif" letter-spacing="1">HTTP</text>
+<polygon points="432.44,954.50 390.00,979.00 347.56,954.50 347.56,905.50 390.00,881.00 432.44,905.50" fill="none" stroke="#43B02A" stroke-width="1.2" opacity="0.3"/>
+<polygon points="424.64,950.00 390.00,970.00 355.36,950.00 355.36,910.00 390.00,890.00 424.64,910.00" fill="#2C8A1C" stroke="#43B02A" stroke-width="2.2"/>
+<text x="390" y="931" text-anchor="middle" dominant-baseline="middle" fill="#F3ECDD" font-size="19" font-weight="700" font-family="Avenir Next,Avenir,Helvetica Neue,Helvetica,Arial,sans-serif" letter-spacing="1">DATA</text>
+<polygon points="190.70,633.50 150.00,657.00 109.30,633.50 109.30,586.50 150.00,563.00 190.70,586.50" fill="none" stroke="#43B02A" stroke-width="1.2" opacity="0.3"/>
+<polygon points="182.91,629.00 150.00,648.00 117.09,629.00 117.09,591.00 150.00,572.00 182.91,591.00" fill="#2C8A1C" stroke="#43B02A" stroke-width="2.2"/>
+<text x="150" y="611" text-anchor="middle" dominant-baseline="middle" fill="#F3ECDD" font-size="23" font-weight="700" font-family="Avenir Next,Avenir,Helvetica Neue,Helvetica,Arial,sans-serif" letter-spacing="1">MSG</text>
+<polygon points="826.21,624.00 750.00,668.00 673.79,624.00 673.79,536.00 750.00,492.00 826.21,536.00" fill="none" stroke="#43B02A" stroke-width="1.8" opacity="0.42"/>
+<polygon points="815.82,618.00 750.00,656.00 684.18,618.00 684.18,542.00 750.00,504.00 815.82,542.00" fill="none" stroke="#43B02A" stroke-width="2.8" opacity="0.78"/>
+<polygon points="812.35,616.00 750.00,652.00 687.65,616.00 687.65,544.00 750.00,508.00 812.35,544.00" fill="#2C8A1C" stroke="#E8A23A" stroke-width="3.8"/>
+<g transform="translate(750,580) scale(0.62)"><circle r="118" fill="#E8A23A" opacity="0.06"/><circle r="78" fill="#E8A23A" opacity="0.09"/><circle r="46" fill="#E8A23A" opacity="0.16"/><path d="M-150,150 C-86,80 -44,32 -14,-4" fill="none" stroke="#E8A23A" stroke-width="4" opacity="0.16" stroke-linecap="round"/><path d="M-150,150 C-86,80 -44,32 -14,-4" fill="none" stroke="#F4C24E" stroke-width="1.6" opacity="0.34" stroke-linecap="round"/><g transform="rotate(-16)"><circle cx="0" cy="52" r="42" fill="#E8A23A" opacity="0.20"/><circle cx="0" cy="52" r="25" fill="#F4C24E" opacity="0.48"/><path d="M-5,-10 C-72,-54 -94,-2 -28,14 Z" fill="#F3ECDD" opacity="0.20"/><path d="M5,-10 C72,-54 94,-2 28,14 Z" fill="#F3ECDD" opacity="0.20"/><ellipse cx="0" cy="46" rx="20" ry="29" fill="#E8A23A"/><ellipse cx="0" cy="49" rx="11" ry="18" fill="#FFF1D2"/><ellipse cx="0" cy="4" rx="16" ry="23" fill="#1B1610" stroke="#43B02A" stroke-width="2.8"/><ellipse cx="0" cy="-23" rx="10" ry="12" fill="#1B1610" stroke="#43B02A" stroke-width="2.4"/><path d="M-5,-32 C-16,-50 -23,-54 -30,-60" fill="none" stroke="#43B02A" stroke-width="2.6" stroke-linecap="round"/><path d="M5,-32 C16,-50 23,-54 30,-60" fill="none" stroke="#43B02A" stroke-width="2.6" stroke-linecap="round"/></g><circle cx="92" cy="-82" r="3.4" fill="#F4C24E" opacity="0.78"/><circle cx="110" cy="50" r="2.8" fill="#43B02A" opacity="0.85"/><circle cx="-96" cy="-72" r="2.8" fill="#F4C24E" opacity="0.68"/></g>
+<text x="500" y="76" text-anchor="middle" fill="#E8A23A" font-size="18" font-weight="400" opacity="0.45" font-family="Avenir Next,Avenir,Helvetica Neue,Helvetica,Arial,sans-serif" letter-spacing="3.5">EVENTS</text>
+<text x="1320" y="315" text-anchor="middle" fill="#E8A23A" font-size="18" font-weight="400" opacity="0.45" font-family="Avenir Next,Avenir,Helvetica Neue,Helvetica,Arial,sans-serif" letter-spacing="3.5">ASYNC</text>
+<text x="160" y="375" text-anchor="middle" fill="#E8A23A" font-size="18" font-weight="400" opacity="0.45" font-family="Avenir Next,Avenir,Helvetica Neue,Helvetica,Arial,sans-serif" letter-spacing="3.5">REACTIVE</text>
+<text x="960" y="1050" text-anchor="middle" fill="#E8A23A" font-size="18" font-weight="400" opacity="0.45" font-family="Avenir Next,Avenir,Helvetica Neue,Helvetica,Arial,sans-serif" letter-spacing="3.5">CQRS</text>
+<rect x="100" y="1110" width="1300" height="6" fill="#E8A23A" rx="3"/>
+<rect x="100" y="1124" width="1300" height="1.5" fill="#43B02A" opacity="0.45" rx="1"/>
+<text x="750" y="68" text-anchor="middle" fill="#C9B896" font-size="26" font-weight="500" letter-spacing="9" font-family="Avenir Next,Avenir,Helvetica Neue,Helvetica,Arial,sans-serif">FIREFLY SOFTWARE FOUNDATION</text>
+<text x="108" y="1298" fill="#F3ECDD" font-size="150" font-weight="800" font-family="Avenir Next,Avenir,Helvetica Neue,Helvetica,Arial,sans-serif" letter-spacing="-4">Firefly for</text>
+<text x="108" y="1478" fill="#E8A23A" font-size="220" font-weight="800" font-family="Avenir Next,Avenir,Helvetica Neue,Helvetica,Arial,sans-serif" letter-spacing="-6">Java</text>
+<rect x="112" y="1504" width="700" height="3" fill="#43B02A" opacity="0.65" rx="1.5"/>
+<text x="112" y="1614" fill="#43B02A" font-size="100" font-weight="600" font-family="Avenir Next,Avenir,Helvetica Neue,Helvetica,Arial,sans-serif" letter-spacing="-1">by Example</text>
+<text x="112" y="1692" fill="#C9B896" font-size="37" font-weight="400" font-family="Avenir Next,Avenir,Helvetica Neue,Helvetica,Arial,sans-serif" letter-spacing="0.5">Reactive Microservices with Spring Boot,</text>
+<text x="112" y="1742" fill="#C9B896" font-size="37" font-weight="400" font-family="Avenir Next,Avenir,Helvetica Neue,Helvetica,Arial,sans-serif" letter-spacing="0.5">WebFlux &amp; the Firefly Framework</text>
 </svg>
