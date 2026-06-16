@@ -1,0 +1,20 @@
+spring:
+  application:
+    name: exp-lending-test
+
+# Firefly application-tier switches for the slice test.
+#
+# The controllers keep their real @Secure annotations; we disable *enforcement* here so the
+# SecurityAspect short-circuits ("Security is disabled, allowing access") and the WebTestClient
+# slice exercises the BFF without minting tokens or wiring a SecurityCenter. This is the test
+# profile knob, not a code change — production keeps firefly.application.security.enabled=true.
+firefly:
+  application:
+    security:
+      enabled: false
+  cqrs:
+    enabled: false
+
+logging:
+  level:
+    org.fireflyframework: WARN
