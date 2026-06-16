@@ -1,58 +1,97 @@
-"""Extract python code listings from manuscript and verify they parse.
+"""Verify that every ``::: listing <label>`` whose label ends in .java / .xml is
+a verbatim slice of the file ``<reactor>/<label>`` in the built Maven reactor.
 
-Used by build.py (warn-only) and runnable standalone:
-    book/.venv/bin/python book/build/verify_code.py book/manuscript
+This is the load-bearing guarantee of *Firefly for Java by Example*: the code on
+the page is exactly the code that compiles and runs in the sample reactor, never
+a hand-edited paraphrase that has silently drifted.
+
+NOTE on the directive syntax: the manuscript's custom listing directive (see
+build/md.py) is the fenced form
+
+    ::: listing src/main/java/com/firefly/Account.java | Listing 1.1 — caption
+    <code lines...>
+    :::
+
+i.e. an opening ``::: listing <label> [| caption]`` line, the body, then a lone
+``:::`` terminator -- NOT a triple-backtick fence. The regex below matches that
+real form.
+
+Run standalone:
+    build/.venv/bin/python build/verify_code.py manuscript samples/lumen-lending
+Exits 0 when every checkable listing is a verbatim slice (and 0 when there are no
+listings or the reactor dir is missing -- nothing to verify is success).
 """
 from __future__ import annotations
-import ast, re, sys
+import re
+import pathlib
 from dataclasses import dataclass
-from pathlib import Path
 
-_START = re.compile(r'^:::\s*listing\s+(?P<file>[^|]+?)\s*(?:\|\s*(?P<cap>.+?))?\s*$')
+# Opening directive line, the body (lazily), and the lone ':::' close.
+_LISTING = re.compile(
+    r"^:::[ \t]*listing[ \t]+(?P<label>[^|\n]+?)[ \t]*(?:\|[^\n]*)?\n"
+    r"(?P<body>.*?)\n:::[ \t]*$",
+    re.S | re.M,
+)
+
 
 @dataclass
 class Listing:
     label: str
-    code: str
-    source: Path
+    body: str
     line: int
 
-def extract_python_listings(md_file: Path) -> list[Listing]:
-    out: list[Listing] = []
-    lines = Path(md_file).read_text(encoding="utf-8").splitlines()
-    i = 0
-    while i < len(lines):
-        m = _START.match(lines[i])
-        if not m:
-            i += 1; continue
-        label, start = m["file"].strip(), i + 1
-        body, i = [], i + 1
-        while i < len(lines) and lines[i].strip() != ":::":
-            body.append(lines[i]); i += 1
-        i += 1
-        if label.endswith(".py"):
-            out.append(Listing(label, "\n".join(body), Path(md_file), start))
+
+def extract_listings(md_text, exts=(".java", ".xml")):
+    """Return the ``::: listing`` blocks whose label ends in one of ``exts``."""
+    out = []
+    for m in _LISTING.finditer(md_text):
+        label = m.group("label").strip()
+        if label.endswith(tuple(exts)):
+            line = md_text[: m.start()].count("\n") + 1
+            out.append(Listing(label, m.group("body"), line))
     return out
 
-def check_syntax(code: str) -> tuple[bool, str | None]:
-    # allow elided bodies written as '...'; reject real syntax errors
-    try:
-        ast.parse(code)
-        return True, None
-    except SyntaxError as e:
-        return False, f"SyntaxError: {e.msg} (line {e.lineno})"
 
-def main(root: str) -> int:
-    files = sorted(Path(root).rglob("*.md"))
-    failures = 0
-    for f in files:
-        for lst in extract_python_listings(f):
-            ok, err = check_syntax(lst.code)
-            if not ok:
-                failures += 1
-                print(f"FAIL {f}:{lst.line} [{lst.label}] {err}")
-    print(f"verify_code: {failures} failing listing(s) across {len(files)} file(s)")
-    return 1 if failures else 0
+def _norm(s):
+    """Normalize for comparison: strip leading/trailing blank lines and trailing
+    whitespace on each line (manuscripts routinely lose trailing spaces)."""
+    lines = [ln.rstrip() for ln in s.strip("\n").splitlines()]
+    return "\n".join(lines)
+
+
+def is_verbatim_slice(body, file_text):
+    return _norm(body) in _norm(file_text)
+
+
+def verify(manuscript_dir, reactor_dir):
+    """Return a list of (md_file, line, label, reason) failures (empty == OK).
+
+    A missing reactor dir is not itself an error: only listings that reference a
+    file count, and each such reference fails with 'file not found in reactor'.
+    With no listings at all the result is an empty list (trivially passing)."""
+    failures = []
+    reactor = pathlib.Path(reactor_dir)
+    man = pathlib.Path(manuscript_dir)
+    if not man.exists():
+        return failures
+    for md_file in sorted(man.rglob("*.md")):
+        for lst in extract_listings(md_file.read_text(encoding="utf-8")):
+            target = reactor / lst.label
+            if not target.exists():
+                failures.append((str(md_file), lst.line, lst.label, "file not found in reactor"))
+                continue
+            # An elided body ('...') is an excerpt, not an exact slice -- skip it.
+            if "..." not in lst.body and not is_verbatim_slice(lst.body, target.read_text(encoding="utf-8")):
+                failures.append((str(md_file), lst.line, lst.label, "not a verbatim slice"))
+    return failures
+
 
 if __name__ == "__main__":
-    raise SystemExit(main(sys.argv[1] if len(sys.argv) > 1 else "book/manuscript"))
+    import sys
+    manuscript = sys.argv[1] if len(sys.argv) > 1 else "manuscript"
+    reactor = sys.argv[2] if len(sys.argv) > 2 else "samples/lumen-lending"
+    fails = verify(manuscript, reactor)
+    for f in fails:
+        print("FAIL %s:%d [%s] %s" % f)
+    print(f"verify_code: {len(fails)} failing listing(s)")
+    sys.exit(1 if fails else 0)
