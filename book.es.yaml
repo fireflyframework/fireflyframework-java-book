@@ -1,0 +1,65 @@
+title: "Firefly para Java con ejemplos"
+subtitle: "Microservicios reactivos con Spring Boot, WebFlux y el Firefly Framework"
+author: "Firefly Software Foundation"
+publisher: "Firefly Software Foundation"
+language: "es"
+identifier: "urn:uuid:7b2f3d51-8c4f-4a2b-8d3e-1b2c3d4e5a6b"
+rights: "Copyright (c) 2026 Firefly Software Foundation. Bajo licencia Apache-2.0."
+cover_svg: "art/cover.svg"
+cover_png: "art/cover.png"
+trim_width: "7.5in"
+trim_height: "9.25in"
+manuscript_dir: "manuscript-es"
+output_basename: "firefly-java-by-example-es"
+labels:
+  contents: "Contenido"
+front:
+  - {id: title,       file: 00-front/00-title.md,       nav: false}
+  - {id: copyright,   file: 00-front/00-copyright.md,   nav: false}
+  - {id: dedication,  file: 00-front/00-dedication.md,  nav: false}
+  - {id: preface,     file: 00-front/00-preface.md,     title: "Prefacio"}
+  - {id: conventions, file: 00-front/00-conventions.md, title: "Convenciones"}
+  - {id: prelude,     file: 00-prelude.md,              title: "Preludio — Spring Boot, WebFlux, Reactor y R2DBC a toda prisa"}
+parts:
+  - title: "Parte I — Fundamentos"
+    chapters:
+      - {id: ch01, file: 01-why-firefly.md,        num: 1, title: "¿Por qué un metaframework sobre Spring Boot?",  opener: art/openers/ch01.svg}
+      - {id: ch02, file: 02-quickstart.md,         num: 2, title: "Arranque rápido: de cero a un servicio en marcha", opener: art/openers/ch02.svg}
+      - {id: ch03, file: 03-parent-bom.md,         num: 3, title: "Parent, BOM y coherencia de versiones",         opener: art/openers/ch03.svg}
+      - {id: ch04, file: 04-configuration.md,      num: 4, title: "Configuración, perfiles y secretos",            opener: art/openers/ch04.svg}
+      - {id: ch05, file: 05-reactive-model.md,     num: 5, title: "El modelo reactivo: Mono y Flux",                opener: art/openers/ch05.svg}
+  - title: "Parte II — Modelar y persistir el dominio"
+    chapters:
+      - {id: ch06, file: 06-first-http-api.md,     num: 6, title: "Tu primera API HTTP y el módulo web",            opener: art/openers/ch06.svg}
+      - {id: ch07, file: 07-openapi-sdk.md,        num: 7, title: "OpenAPI, SDKs y el cliente generado",            opener: art/openers/ch07.svg}
+      - {id: ch08, file: 08-persistence-r2dbc.md,  num: 8, title: "Persistencia con R2DBC",                         opener: art/openers/ch08.svg}
+      - {id: ch09, file: 09-domain-driven-design.md, num: 9, title: "Diseño guiado por el dominio (DDD)",           opener: art/openers/ch09.svg}
+  - title: "Parte III — CQRS, EDA y decisión"
+    chapters:
+      - {id: ch10, file: 10-cqrs.md,               num: 10, title: "CQRS: comandos y consultas",                   opener: art/openers/ch10.svg}
+      - {id: ch11, file: 11-eda.md,                num: 11, title: "Eventos de dominio y arquitectura dirigida por eventos", opener: art/openers/ch11.svg}
+      - {id: ch12, file: 12-event-sourcing.md,     num: 12, title: "Event sourcing del libro mayor",               opener: art/openers/ch12.svg}
+      - {id: ch13, file: 13-rule-engine.md,        num: 13, title: "Decisión automática con el motor de reglas",   opener: art/openers/ch13.svg}
+  - title: "Parte IV — Hacia los microservicios: las cuatro capas"
+    chapters:
+      - {id: ch14, file: 14-tiers.md,              num: 14, title: "Dividir en capas: exp / domain / core / data", opener: art/openers/ch14.svg}
+      - {id: ch15, file: 15-data-tier.md,          num: 15, title: "La capa de datos: enriquecimiento, calidad y linaje", opener: art/openers/ch15.svg}
+      - {id: ch16, file: 16-service-clients.md,    num: 16, title: "Clientes de servicio resilientes y multiprotocolo", opener: art/openers/ch16.svg}
+      - {id: ch17, file: 17-experience-tier.md,    num: 17, title: "La capa de experiencia / BFF",                 opener: art/openers/ch17.svg}
+      - {id: ch18, file: 18-sagas.md,              num: 18, title: "Sagas, workflows y TCC",                       opener: art/openers/ch18.svg}
+  - title: "Parte V — Asegurar, observar y desplegar"
+    chapters:
+      - {id: ch19, file: 19-security.md,           num: 19, title: "Seguridad, sesiones e identidad",              opener: art/openers/ch19.svg}
+      - {id: ch20, file: 20-caching.md,            num: 20, title: "Caché y resiliencia",                         opener: art/openers/ch20.svg}
+      - {id: ch21, file: 21-observability.md,      num: 21, title: "Observabilidad",                              opener: art/openers/ch21.svg}
+      - {id: ch22, file: 22-docs-scheduling-notifications.md, num: 22, title: "Documentos, planificación, notificaciones, webhooks y callbacks", opener: art/openers/ch22.svg}
+      - {id: ch23, file: 23-testing.md,            num: 23, title: "Probar aplicaciones Firefly",                  opener: art/openers/ch23.svg}
+      - {id: ch24, file: 24-production.md,         num: 24, title: "Extender Firefly y llevarlo a producción",     opener: art/openers/ch24.svg}
+  - title: "Apéndices"
+    chapters:
+      - {id: appa, file: 90-appendix-a-spring.md,   num: "A", title: "Spring Boot → Firefly: chuleta"}
+      - {id: appb, file: 91-appendix-b-adapters.md, num: "B", title: "Cambiar de adaptador con una propiedad"}
+      - {id: appc, file: 92-appendix-c-ecm.md,      num: "C", title: "ECM, firma electrónica y el contrato de préstamo"}
+      - {id: appd, file: 93-appendix-d-cli.md,      num: "D", title: "CLI flywork y resolución de problemas"}
+      - {id: glossary, file: 94-glossary.md,        num: "",  title: "Glosario"}
+back: []
