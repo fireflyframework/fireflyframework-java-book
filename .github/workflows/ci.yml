@@ -1,0 +1,84 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  reactor:
+    name: lumen-lending reactor (JDK ${{ matrix.java }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        java: [21, 25]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK ${{ matrix.java }}
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ matrix.java }}
+          cache: maven
+
+      - name: Build & verify the sample reactor
+        run: mvn -B -ntp -f samples/lumen-lending/pom.xml verify
+
+  book:
+    name: Build the book (EN + ES)
+    needs: reactor
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: maven
+
+      - name: Install WeasyPrint system libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libpango-1.0-0 libpangocairo-1.0-0 libcairo2 \
+            libgdk-pixbuf-2.0-0 libffi-dev fonts-dejavu-core
+
+      - name: Set up Python toolchain
+        run: |
+          python3 -m venv build/.venv
+          ./build/.venv/bin/python -m pip install --upgrade pip
+          ./build/.venv/bin/pip install "weasyprint>=60" markdown pygments pyyaml cairosvg
+
+      - name: Build the English edition
+        run: ./build/build-book.sh --config book.yaml
+
+      - name: Build the Spanish edition
+        run: ./build/build-book.sh --config book.es.yaml
+
+      - name: Run the book-tooling tests
+        run: ./build/.venv/bin/python -m pytest tests -q
+
+      - name: Verify code listings against the sample reactor
+        run: ./build/.venv/bin/python build/verify_code.py manuscript samples/lumen-lending
+
+      - name: Guard that all four artifacts exist
+        run: |
+          test -f dist/firefly-java-by-example.epub
+          test -f dist/firefly-java-by-example.pdf
+          test -f dist/firefly-java-by-example-es.epub
+          test -f dist/firefly-java-by-example-es.pdf
+
+      - name: Upload the built artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: firefly-java-by-example
+          path: |
+            dist/firefly-java-by-example.epub
+            dist/firefly-java-by-example.pdf
+            dist/firefly-java-by-example-es.epub
+            dist/firefly-java-by-example-es.pdf
