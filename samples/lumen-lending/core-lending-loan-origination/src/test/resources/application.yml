@@ -1,0 +1,8 @@
+# Test configuration: in-memory H2 over R2DBC so context-load tests need no Docker.
+spring:
+  application:
+    name: core-lending-loan-origination
+  r2dbc:
+    url: r2dbc:h2:mem:///lumen;DB_CLOSE_DELAY=-1
+    username: sa
+    password: ""
