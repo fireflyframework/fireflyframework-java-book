@@ -1,13 +1,9 @@
-# Python book toolchain
+# Python build environment
 build/.venv/
-__pycache__/
+**/__pycache__/
 *.pyc
+.pytest_cache/
 
-# Java / Maven
-samples/**/target/
-
-# OS
-.DS_Store
-
-# NOTE: dist/ is intentionally tracked — built EPUB/PDF artifacts are
-# committed and attached to GitHub Releases.
+# Build outputs
+dist/*.pdf
+dist/*.epub
