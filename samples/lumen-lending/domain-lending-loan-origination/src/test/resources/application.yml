@@ -1,0 +1,26 @@
+spring:
+  application:
+    name: domain-lending-loan-origination-test
+  main:
+    # The saga + handlers are wired by the framework auto-config; no web server needed.
+    web-application-type: none
+
+# Firefly framework switches. Everything runs in-JVM: the saga engine uses the
+# in-memory execution-persistence provider (no Redis/DB) and EDA uses the in-process
+# APPLICATION_EVENT transport (no Kafka/RabbitMQ/Docker).
+firefly:
+  cqrs:
+    enabled: true
+  orchestration:
+    enabled: true
+  eda:
+    enabled: true
+    default-publisher-type: APPLICATION_EVENT
+    consumer:
+      enabled: true
+      application-event:
+        enabled: true
+
+logging:
+  level:
+    org.fireflyframework: WARN
