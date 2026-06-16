@@ -1,9 +1,10 @@
 """Generate on-brand chapter-opener SVGs for *Firefly for Java by Example*.
 
 Each opener is a 720x300 banner sharing one visual language with the cover:
-a deep forest-green field with a faint event-mesh, and a darker panel on the
-right holding a glowing **firefly** emblem (the same bioluminescent motif as the
-cover). The emblem + firefly-green palette are constant so the set reads as a
+a warm espresso field with a faint event-mesh, an amber accent bar, and a darker
+espresso panel on the right holding a glowing **firefly** emblem (the same
+bioluminescent motif as the cover). The "Reactive Java at dusk" palette — espresso
+base, amber-gold hero, firefly-green spark — is constant so the set reads as a
 family; a per-chapter abstract "constellation" varies the left-hand field so no
 two openers look identical — no chapter-specific text is required.
 
@@ -31,19 +32,20 @@ def esc(s: str) -> str:
     return _xml_escape(str(s))
 
 
-# ---- palette (firefly-green; shared with the cover) ------------------------
-FIELD1  = "#16331a"   # deep forest — field, cool top
-FIELD2  = "#1e4620"   # slightly lighter ink for layering
-PANEL1  = "#0f2613"   # darker panel, top
-PANEL2  = "#0a1c0d"   # darker panel, bottom
-GREEN   = "#43b02a"   # brand green
-GREEN_B = "#6fd34a"   # bright green accent
-GREEN_D = "#255e17"   # dim green — mesh lines
-AMBER   = "#ffc24b"   # firefly glow
-AMBER_B = "#ffd980"   # bright amber
-AMBER_D = "#c97e10"
-LIGHT   = "#eaf6df"   # very light green — text on the field
-MUTED   = "#8dbd7a"   # muted green — secondary text
+# ---- palette ("Reactive Java at dusk"; shared with the cover) --------------
+FIELD1  = "#1B1610"   # espresso base — field, top
+FIELD2  = "#2A2014"   # deeper espresso — layering / node fills
+PANEL1  = "#211A12"   # darker espresso panel, top
+PANEL2  = "#14100A"   # darker espresso panel, bottom
+GREEN   = "#43b02a"   # firefly green — node rims / spark
+GREEN_B = "#5fd13a"   # bright green accent
+GREEN_D = "#2c8a1c"   # deep green — peer-ring mesh lines
+AMBER   = "#e8a23a"   # amber hero — spokes / firefly glow
+AMBER_B = "#f4c24e"   # bright amber
+AMBER_D = "#c8801f"   # deep amber
+CREAM   = "#f3ecdd"   # cream — text on the field
+LIGHT   = "#f3ecdd"   # cream — hub glyph (kept name for callers)
+MUTED   = "#c9b896"   # warm muted — secondary text
 
 W, H = 720, 300
 # the night-sky panel on the right
@@ -74,10 +76,10 @@ def defs() -> str:
         f'<linearGradient id="pnl" x1="{PX}" y1="{PY}" x2="{PX+PW}" y2="{PY+PH}" gradientUnits="userSpaceOnUse">'
         f'<stop offset="0" stop-color="{PANEL1}"/>'
         f'<stop offset="1" stop-color="{PANEL2}"/></linearGradient>'
-        # root-space horizontal green gradient for the accent bar:
-        f'<linearGradient id="grh" x1="0" y1="0" x2="{W}" y2="0" gradientUnits="userSpaceOnUse">'
-        f'<stop offset="0" stop-color="{GREEN_B}"/>'
-        f'<stop offset="1" stop-color="{GREEN}"/></linearGradient>'
+        # root-space vertical amber gradient for the accent bar (the hero spark):
+        f'<linearGradient id="grh" x1="0" y1="0" x2="0" y2="{H}" gradientUnits="userSpaceOnUse">'
+        f'<stop offset="0" stop-color="{AMBER_B}"/>'
+        f'<stop offset="1" stop-color="{AMBER_D}"/></linearGradient>'
         '</defs>'
     )
 
@@ -100,12 +102,12 @@ def emblem() -> str:
         '<g transform="rotate(-16)">'
         f'<circle cx="0" cy="30" r="24" fill="{AMBER}" opacity="0.18"/>'
         f'<circle cx="0" cy="30" r="14" fill="{AMBER_B}" opacity="0.45"/>'
-        # wings, swept back and translucent
-        f'<path d="M-3,-6 C-40,-30 -52,-2 -16,8 Z" fill="#ddf0c4" opacity="0.22"/>'
-        f'<path d="M3,-6 C40,-30 52,-2 16,8 Z" fill="#ddf0c4" opacity="0.22"/>'
+        # wings, swept back and translucent (warm cream)
+        f'<path d="M-3,-6 C-40,-30 -52,-2 -16,8 Z" fill="{CREAM}" opacity="0.20"/>'
+        f'<path d="M3,-6 C40,-30 52,-2 16,8 Z" fill="{CREAM}" opacity="0.20"/>'
         # glowing abdomen
         f'<ellipse cx="0" cy="26" rx="11" ry="16" fill="{AMBER}"/>'
-        f'<ellipse cx="0" cy="28" rx="6" ry="10" fill="#fff2cf"/>'
+        f'<ellipse cx="0" cy="28" rx="6" ry="10" fill="#fff1d2"/>'
         # dark thorax + head with a green rim (brand)
         f'<ellipse cx="0" cy="2" rx="9" ry="13" fill="{PANEL2}" stroke="{GREEN}" stroke-width="1.6"/>'
         f'<ellipse cx="0" cy="-13" rx="5.5" ry="6.5" fill="{PANEL2}" stroke="{GREEN}" stroke-width="1.3"/>'
@@ -137,9 +139,9 @@ def frame(num: str) -> str:
         f'<circle cx="512" cy="210" r="1.1" opacity="0.45"/></g>'
         f'<circle cx="552" cy="246" r="1.3" fill="{GREEN_B}" opacity="0.6"/>'
         # chapter number — a TOP-left kicker, clear of the scene below it
-        f'<text x="40" y="40" fill="{GREEN_B}" font-size="15" font-weight="800" '
+        f'<text x="40" y="40" fill="{AMBER_B}" font-size="15" font-weight="800" '
         f'letter-spacing="2.5">{esc(num)}</text>'
-        f'<rect x="40" y="49" width="46" height="4" rx="2" fill="{GREEN}"/>'
+        f'<rect x="40" y="49" width="46" height="4" rx="2" fill="{AMBER}"/>'
     )
 
 
@@ -181,8 +183,8 @@ def constellation(seed: int) -> str:
     for _ in range(rng.randint(3, 5)):
         ax, ay = rng.uniform(60, 450), rng.uniform(60, 240)
         parts.append(hexagon(ax, ay, rng.uniform(7, 12), FIELD2, GREEN_D, 1.2, op=0.6))
-    # spokes from hub to each satellite
-    parts.append(f'<g fill="none" stroke="{GREEN}" stroke-width="2" opacity="0.45">')
+    # spokes from hub to each satellite — amber (echoes the cover's hero spokes)
+    parts.append(f'<g fill="none" stroke="{AMBER}" stroke-width="2" opacity="0.50">')
     for (sx, sy, _) in sats:
         parts.append(f'<path d="{quad(hub[0], hub[1], sx, sy)}"/>')
     parts.append('</g>')
