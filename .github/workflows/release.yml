@@ -1,0 +1,83 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build & publish the book
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: maven
+
+      - name: Release gate — verify the sample reactor
+        run: mvn -B -ntp -f samples/lumen-lending/pom.xml verify
+
+      - name: Install WeasyPrint system libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libpango-1.0-0 libpangocairo-1.0-0 libcairo2 \
+            libgdk-pixbuf-2.0-0 libffi-dev fonts-dejavu-core
+
+      - name: Set up Python toolchain
+        run: |
+          python3 -m venv build/.venv
+          ./build/.venv/bin/python -m pip install --upgrade pip
+          ./build/.venv/bin/pip install "weasyprint>=60" markdown pygments pyyaml cairosvg
+
+      - name: Build the English edition
+        run: ./build/build-book.sh --config book.yaml
+
+      - name: Build the Spanish edition
+        run: ./build/build-book.sh --config book.es.yaml
+
+      - name: Extract release notes from the changelog
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          # Strip the leading 'v' to match the "## [X.Y.Z]" changelog headings.
+          VERSION="${TAG_NAME#v}"
+          # Pull the section between "## [VERSION]" and the next "## [" heading.
+          awk -v ver="$VERSION" '
+            $0 ~ ("^## \\[" ver "\\]") { grab = 1; next }
+            grab && /^## \[/           { exit }
+            grab                       { print }
+          ' CHANGELOG.md > release-notes.md
+          # Fall back to a generic line if the changelog had no matching section.
+          if [ ! -s release-notes.md ]; then
+            echo "Firefly for Java by Example — release ${TAG_NAME}." > release-notes.md
+          fi
+          echo "----- release-notes.md -----"
+          cat release-notes.md
+
+      - name: Guard that all four artifacts exist
+        run: |
+          test -f dist/firefly-java-by-example.epub
+          test -f dist/firefly-java-by-example.pdf
+          test -f dist/firefly-java-by-example-es.epub
+          test -f dist/firefly-java-by-example-es.pdf
+
+      - name: Publish the GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          body_path: release-notes.md
+          files: |
+            dist/firefly-java-by-example.epub
+            dist/firefly-java-by-example.pdf
+            dist/firefly-java-by-example-es.epub
+            dist/firefly-java-by-example-es.pdf
