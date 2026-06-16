@@ -1,78 +1,86 @@
-Every chapter so far has ended the same way: a `mvn` command and a line of green
-output. That was not a flourish. It is the central claim of this book made
-operational — that a Firefly service, for all its reactive plumbing and saga
-orchestration and event routing, can be *tested like ordinary code*, fast and
-without a single container. This chapter steps back from building features and
-looks squarely at the tests themselves: what kinds Lumen Lending ships, how they
-form a pyramid, and why the whole suite runs in seconds on a laptop with no Docker
-daemon in sight.
+Todos los capítulos hasta ahora han terminado de la misma forma: un comando `mvn` y
+una línea de salida en verde. No era un adorno. Es la afirmación central de este
+libro hecha operativa: que un servicio Firefly, con toda su fontanería reactiva, su
+orquestación de sagas y su enrutamiento de eventos, puede *probarse como código
+ordinario*, rápido y sin un solo contenedor. Este capítulo da un paso atrás respecto
+a la construcción de funcionalidades y mira de frente a las pruebas en sí: qué tipos
+incluye Lumen Lending, cómo forman una pirámide y por qué la suite completa se
+ejecuta en segundos en un portátil sin un demonio de Docker a la vista.
 
-You already have the vocabulary. You met `StepVerifier` in Chapter 5, the
-`WebTestClient` slice in Chapter 6, and the broker-free EDA test in Chapter 11.
-Here you assemble them into a deliberate strategy. The reactor's two
-loan-origination modules carry twenty-four tests across four levels — plain unit,
-reactive `StepVerifier`, full-context web slice, and a saga compensation
-integration test — and we will read one representative test at each level, in order,
-from the cheapest to the most thorough. By the end you will know exactly which kind
-of test to reach for, and why the most demanding one in the suite still needs no
-network.
+Ya tienes el vocabulario. Conociste `StepVerifier` en el Capítulo 5, el corte
+(*slice*) con `WebTestClient` en el Capítulo 6 y la prueba de EDA sin broker en el
+Capítulo 11. Aquí los ensamblas en una estrategia deliberada. Los dos módulos de
+originación de préstamos del reactor llevan veinticuatro pruebas repartidas en cuatro
+niveles —unitaria pura, reactiva con `StepVerifier`, corte web con contexto completo
+y una prueba de integración de compensación de saga— y leeremos una prueba
+representativa de cada nivel, en orden, de la más barata a la más exhaustiva. Al
+final sabrás exactamente a qué tipo de prueba recurrir, y por qué la más exigente de
+la suite sigue sin necesitar red.
 
-The tests live in two directories. The core module's tests are under
-`core-lending-loan-origination/src/test/java/com/firefly/lumen/core/` (with `domain/`
-and `web/` subpackages); the domain module's are under
-`domain-lending-loan-origination/src/test/java/com/firefly/lumen/domain/` (with a
-`saga/` subpackage). We will draw one slice from each level and finish by running
-both modules green together.
+Las pruebas viven en dos directorios. Las del módulo core están bajo
+`core-lending-loan-origination/src/test/java/com/firefly/lumen/core/` (con los
+subpaquetes `domain/` y `web/`); las del módulo de dominio están bajo
+`domain-lending-loan-origination/src/test/java/com/firefly/lumen/domain/` (con un
+subpaquete `saga/`). Tomaremos un corte de cada nivel y terminaremos ejecutando ambos
+módulos en verde juntos.
 
-## The test pyramid, Firefly edition
+## La pirámide de pruebas, edición Firefly
 
-The test pyramid is an old idea: have many fast, narrow tests at the base, fewer
-medium-scope tests in the middle, and a small number of broad, slow tests at the
-top. The shape matters because the cheap tests at the base catch most regressions in
-milliseconds, while the expensive ones at the top — the ones that boot a context or
-talk to a broker — are reserved for the wiring that unit tests cannot reach.
+La pirámide de pruebas es una idea antigua: tener muchas pruebas rápidas y estrechas
+en la base, menos pruebas de alcance medio en el centro y un número reducido de
+pruebas amplias y lentas en la cima. La forma importa porque las pruebas baratas de la
+base detectan la mayoría de las regresiones en milisegundos, mientras que las caras de
+la cima —las que arrancan un contexto o hablan con un broker— se reservan para el
+cableado que las pruebas unitarias no pueden alcanzar.
 
-Lumen Lending's suite maps cleanly onto four tiers:
+La suite de Lumen Lending encaja limpiamente en cuatro capas:
 
-- **Plain unit tests** — a pure object under test, no Spring, no reactive types, no
-  I/O. `MoneyTest` and `LoanApplicationTest` live here. Microseconds each.
-- **Reactive unit tests** — still no Spring, but the unit under test returns a `Mono`
-  or `Flux`, so you assert signals with `StepVerifier`. `ReactiveModelTest` is the
-  pure tour; the saga tests use the same tool with real beans.
-- **Web slice tests** — `@SpringBootTest` boots the full reactive context against
-  in-memory H2 and drives the HTTP surface with `WebTestClient`. One per service edge.
-  `LoanApplicationControllerTest` is the example.
-- **Orchestration / integration tests** — `@SpringBootTest` again, but exercising a
-  whole saga or EDA flow end to end through the framework runtime. The
-  `RegisterApplicationSagaCompensationTest` is the headline here.
+- **Pruebas unitarias puras** — un objeto puro bajo prueba, sin Spring, sin tipos
+  reactivos, sin E/S. `MoneyTest` y `LoanApplicationTest` viven aquí. Microsegundos
+  cada una.
+- **Pruebas unitarias reactivas** — todavía sin Spring, pero la unidad bajo prueba
+  devuelve un `Mono` o `Flux`, así que afirmas las señales con `StepVerifier`.
+  `ReactiveModelTest` es el recorrido puro; las pruebas de saga usan la misma
+  herramienta con beans reales.
+- **Pruebas de corte web** — `@SpringBootTest` arranca el contexto reactivo completo
+  contra una H2 en memoria y dirige la superficie HTTP con `WebTestClient`. Una por
+  borde de servicio. `LoanApplicationControllerTest` es el ejemplo.
+- **Pruebas de orquestación / integración** — `@SpringBootTest` de nuevo, pero
+  ejercitando una saga o un flujo EDA completos de extremo a extremo a través del
+  runtime del framework. La `RegisterApplicationSagaCompensationTest` es el titular
+  aquí.
 
-!!! note "Key term — test pyramid"
-    A **test pyramid** describes the healthy *proportion* of tests by scope: a wide
-    base of fast, isolated unit tests, a narrower band of integration tests, and a
-    thin cap of end-to-end tests. Inverting it — leaning on slow, broad tests to catch
-    bugs a unit test should have caught — gives you a suite that is slow to run and
-    slow to diagnose. Firefly's design keeps the base cheap on purpose: the domain
-    logic is plain Java, so most of your tests never start a context.
+!!! note "Termino clave — pirámide de pruebas"
+    Una **pirámide de pruebas** describe la *proporción* saludable de pruebas por
+    alcance: una base ancha de pruebas unitarias rápidas y aisladas, una banda más
+    estrecha de pruebas de integración y una fina cúspide de pruebas de extremo a
+    extremo. Invertirla —apoyarse en pruebas lentas y amplias para detectar errores que
+    una prueba unitaria debería haber detectado— te deja una suite lenta de ejecutar y
+    lenta de diagnosticar. El diseño de Firefly mantiene la base barata a propósito: la
+    lógica de dominio es Java puro, así que la mayoría de tus pruebas nunca arrancan un
+    contexto.
 
-The thing that makes this pyramid unusual is the **top**. In most enterprise stacks
-the upper tiers demand infrastructure — a Postgres container, a Kafka broker, a
-docker-compose file you babysit. Firefly's upper tiers do not. The web slice runs
-against H2 speaking R2DBC; the saga and EDA tests run the orchestration and event
-runtimes in-process. The entire suite is `mvn test` and nothing else. We will see
-exactly how at each level, and then name where real containers *do* belong.
+Lo que hace inusual esta pirámide es la **cima**. En la mayoría de las pilas
+empresariales, las capas superiores exigen infraestructura: un contenedor de Postgres,
+un broker de Kafka, un fichero docker-compose que vigilas. Las capas superiores de
+Firefly no lo hacen. El corte web se ejecuta contra H2 hablando R2DBC; las pruebas de
+saga y de EDA ejecutan los runtimes de orquestación y de eventos en el proceso. La
+suite entera es `mvn test` y nada más. Veremos exactamente cómo en cada nivel, y
+luego nombraremos dónde sí *pertenecen* los contenedores reales.
 
-## Level 1 — Plain unit tests
+## Nivel 1 — Pruebas unitarias puras
 
-The base of the pyramid is the domain model tested as plain Java. No annotations
-that start a context, no publishers, no mocks of framework types — just construct an
-object, call a method, assert the result. These tests cost nothing to run and pin
-down the rules that matter most: the ones inside your aggregates and value objects.
+La base de la pirámide es el modelo de dominio probado como Java puro. Sin
+anotaciones que arranquen un contexto, sin publicadores, sin mocks de tipos del
+framework: solo construyes un objeto, llamas a un método y afirmas el resultado. Estas
+pruebas no cuestan nada de ejecutar y fijan las reglas que más importan: las que viven
+dentro de tus agregados y objetos de valor.
 
-`MoneyTest` is the smallest example in the reactor. `Money` is the core's
-minor-units value object, and the test states three invariants as three one-line
-facts:
+`MoneyTest` es el ejemplo más pequeño del reactor. `Money` es el objeto de valor de
+unidades menores del core, y la prueba enuncia tres invariantes como tres hechos de
+una línea:
 
-::: listing core-lending-loan-origination/src/test/java/com/firefly/lumen/core/MoneyTest.java | Listing 23.1 — a plain unit test: no Spring, no reactive types
+::: listing core-lending-loan-origination/src/test/java/com/firefly/lumen/core/MoneyTest.java | Listado 23.1 — una prueba unitaria pura: sin Spring, sin tipos reactivos
 class MoneyTest {
 
     @Test
@@ -93,18 +101,19 @@ class MoneyTest {
 }
 :::
 
-This is JUnit 5 and nothing else. `assertThrows` pins the guard clauses — `Money`
-refuses to exist as a negative amount, and a subtraction that would go below zero
-fails loudly rather than silently producing a bad balance. `assertEquals` checks the
-happy arithmetic. There is no `@SpringBootTest`, no `@Autowired`, no `Mono`. A test
-like this runs in microseconds and never flakes, because there is nothing
-asynchronous or external to flake.
+Esto es JUnit 5 y nada más. `assertThrows` fija las cláusulas de guarda: `Money` se
+niega a existir como una cantidad negativa, y una resta que iría por debajo de cero
+falla ruidosamente en lugar de producir silenciosamente un saldo erróneo.
+`assertEquals` comprueba la aritmética del caso feliz. No hay `@SpringBootTest`, ni
+`@Autowired`, ni `Mono`. Una prueba como esta se ejecuta en microsegundos y nunca es
+inestable, porque no hay nada asíncrono ni externo que pueda fallar de forma
+intermitente.
 
-The same level reaches up into the aggregate. `LoanApplicationTest` constructs a
-`LoanApplication` with its builder and walks it through its legal status
-transitions — entirely in memory, with no persistence:
+El mismo nivel asciende hasta el agregado. `LoanApplicationTest` construye una
+`LoanApplication` con su builder y la recorre por sus transiciones de estado legales
+—enteramente en memoria, sin persistencia:
 
-::: listing core-lending-loan-origination/src/test/java/com/firefly/lumen/core/domain/LoanApplicationTest.java | Listing 23.2 — unit-testing an aggregate's state machine in memory
+::: listing core-lending-loan-origination/src/test/java/com/firefly/lumen/core/domain/LoanApplicationTest.java | Listado 23.2 — probando unitariamente la máquina de estados de un agregado en memoria
     @Test
     void happyPathReachesApproved() {
         LoanApplication app = draft();
@@ -118,32 +127,34 @@ transitions — entirely in memory, with no persistence:
     }
 :::
 
-The aggregate enforces its own rules — `cannotApproveADraft` asserts that calling
-`approve()` on a `DRAFT` throws `IllegalStateException` — and you verify every one of
-them without a database round trip, because the rules live in the object, not in the
-table. This is the dividend of keeping domain logic in plain Java: the most
-important behavior in the system is also the cheapest to test.
+El agregado impone sus propias reglas —`cannotApproveADraft` afirma que llamar a
+`approve()` sobre un `DRAFT` lanza `IllegalStateException`— y verificas cada una de
+ellas sin un viaje de ida y vuelta a la base de datos, porque las reglas viven en el
+objeto, no en la tabla. Este es el dividendo de mantener la lógica de dominio en Java
+puro: el comportamiento más importante del sistema es también el más barato de probar.
 
-!!! tip "Checkpoint"
-    Run just the two unit classes from `samples/lumen-lending`:
+!!! tip "Punto de control"
+    Ejecuta solo las dos clases unitarias desde `samples/lumen-lending`:
 
     ```text
     mvn -q -pl core-lending-loan-origination -Dtest=MoneyTest,LoanApplicationTest test
     ```
 
-    You should see `Tests run: 9, Failures: 0` — three from `MoneyTest`, six from
-    `LoanApplicationTest`. Note the time elapsed in the report: single-digit
-    milliseconds. That speed is why the base of the pyramid should be wide.
+    Deberías ver `Tests run: 9, Failures: 0` —tres de `MoneyTest`, seis de
+    `LoanApplicationTest`. Fíjate en el tiempo transcurrido en el informe:
+    milisegundos de un solo dígito. Esa velocidad es la razón por la que la base de la
+    pirámide debe ser ancha.
 
-## Level 2 — Reactive unit tests with StepVerifier
+## Nivel 2 — Pruebas unitarias reactivas con StepVerifier
 
-One level up, the unit under test returns a publisher. You cannot `assertEquals` a
-`Mono` — it is a recipe, not a value — so you subscribe and assert the signal
-sequence with `StepVerifier`, exactly as Chapter 5 taught. Crucially this is still a
-*unit* test: no context boots, no port opens. `ReactiveModelTest` is the purest
-form, asserting against hand-built publishers:
+Un nivel por encima, la unidad bajo prueba devuelve un publicador. No puedes hacer
+`assertEquals` sobre un `Mono` —es una receta, no un valor—, así que te suscribes y
+afirmas la secuencia de señales con `StepVerifier`, exactamente como enseñó el
+Capítulo 5. Es crucial que esto siga siendo una prueba *unitaria*: no arranca ningún
+contexto, no se abre ningún puerto. `ReactiveModelTest` es la forma más pura,
+afirmando contra publicadores construidos a mano:
 
-::: listing core-lending-loan-origination/src/test/java/com/firefly/lumen/core/ReactiveModelTest.java | Listing 23.3 — asserting a publisher's signals without Spring or a network
+::: listing core-lending-loan-origination/src/test/java/com/firefly/lumen/core/ReactiveModelTest.java | Listado 23.3 — afirmando las señales de un publicador sin Spring ni red
     @Test
     void operatorsTransformTheStream() {
         Flux<Integer> evensDoubled = Flux.range(1, 6)
@@ -156,44 +167,47 @@ form, asserting against hand-built publishers:
     }
 :::
 
-`StepVerifier.create(...)` subscribes; `.expectNext(...)` asserts each `onNext` in
-order; `.verifyComplete()` asserts the terminal `onComplete` *and runs the
-verification*. The whole thing executes synchronously on the test thread in
-microseconds. This is the canonical way to test any reactive method you write — a
-service method, a mapper, a custom operator — because it pulls values through the
-pipeline without `.block()` and asserts precisely what the stream emitted.
+`StepVerifier.create(...)` se suscribe; `.expectNext(...)` afirma cada `onNext` en
+orden; `.verifyComplete()` afirma el `onComplete` terminal *y ejecuta la
+verificación*. Todo el conjunto se ejecuta de forma síncrona en el hilo de prueba en
+microsegundos. Esta es la forma canónica de probar cualquier método reactivo que
+escribas —un método de servicio, un mapeador, un operador personalizado— porque tira
+de los valores a través de la tubería sin `.block()` y afirma con precisión lo que el
+flujo emitió.
 
-The same tool scales up to test reactive code that *does* involve real framework
-beans, while still asserting through `StepVerifier`. You saw it in Chapter 11: the
-EDA listener test drives the `EventListenerProcessor` and wraps the dispatch in a
-`StepVerifier`. The lesson is that `StepVerifier` is not tied to the unit level — it
-is how you assert *any* publisher, whether the publisher came from `Flux.range` or
-from a saga engine. We will see it again at the very top of the pyramid.
+La misma herramienta escala para probar código reactivo que *sí* involucra beans
+reales del framework, sin dejar de afirmar a través de `StepVerifier`. Lo viste en el
+Capítulo 11: la prueba del listener de EDA dirige el `EventListenerProcessor` y
+envuelve el despacho en un `StepVerifier`. La lección es que `StepVerifier` no está
+atado al nivel unitario: es como afirmas *cualquier* publicador, ya provenga de
+`Flux.range` o de un motor de sagas. Lo veremos de nuevo en la cima misma de la
+pirámide.
 
-!!! spring "Spring parity"
-    `StepVerifier` ships in `reactor-test`, a pure Project Reactor artifact with no
-    Firefly in it — a plain Spring WebFlux app tests reactive code the identical way.
-    Firefly adds nothing to the tool; it simply gives you more reactive code worth
-    testing with it, and keeps `reactor-test` on the test classpath via the core
-    starter so you never wire the dependency yourself.
+!!! spring "Equivalente en Spring"
+    `StepVerifier` se incluye en `reactor-test`, un artefacto puro de Project Reactor
+    sin nada de Firefly dentro: una app Spring WebFlux corriente prueba el código
+    reactivo de la forma idéntica. Firefly no añade nada a la herramienta; simplemente
+    te da más código reactivo digno de probar con ella, y mantiene `reactor-test` en el
+    classpath de pruebas a través del starter del core para que nunca cablees la
+    dependencia tú mismo.
 
-## Level 3 — The web slice with @SpringBootTest and WebTestClient
+## Nivel 3 — El corte web con @SpringBootTest y WebTestClient
 
-Now the pyramid narrows. To test the HTTP edge you need the real context: the
-controller, the service, the validators, the R2DBC repository, the global exception
-handler, and the web filters all wired together as they are at runtime. That is what
-`@SpringBootTest` gives you — and what makes Lumen's web slice the first test in this
-chapter that boots Spring.
+Ahora la pirámide se estrecha. Para probar el borde HTTP necesitas el contexto real:
+el controlador, el servicio, los validadores, el repositorio R2DBC, el manejador
+global de excepciones y los filtros web, todos cableados juntos tal como están en
+tiempo de ejecución. Eso es lo que te da `@SpringBootTest`, y lo que convierte el
+corte web de Lumen en la primera prueba de este capítulo que arranca Spring.
 
-The cost is a context startup of a couple of seconds. The payoff is that you verify
-the *integration* of the whole edge: that `@Valid` really fires, that
-`ResourceNotFoundException` really becomes a `404` problem detail, that JSON really
-serializes through the configured codecs. None of that can be reached by a unit
-test, because none of it lives in a single object.
+El coste es un arranque de contexto de un par de segundos. La recompensa es que
+verificas la *integración* de todo el borde: que `@Valid` realmente se dispara, que
+`ResourceNotFoundException` realmente se convierte en un *problem detail* `404`, que el
+JSON realmente se serializa a través de los códecs configurados. Nada de eso puede
+alcanzarse con una prueba unitaria, porque nada de ello vive en un único objeto.
 
-Here is how the slice boots and acquires its client:
+Así arranca el corte y adquiere su cliente:
 
-::: listing core-lending-loan-origination/src/test/java/com/firefly/lumen/core/web/LoanApplicationControllerTest.java | Listing 23.4 — booting the full reactive context and binding a WebTestClient
+::: listing core-lending-loan-origination/src/test/java/com/firefly/lumen/core/web/LoanApplicationControllerTest.java | Listado 23.4 — arrancando el contexto reactivo completo y enlazando un WebTestClient
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 class LoanApplicationControllerTest {
 
@@ -201,15 +215,16 @@ class LoanApplicationControllerTest {
     private WebTestClient client;
 :::
 
-`@SpringBootTest` starts the application context. `webEnvironment = RANDOM_PORT`
-boots a real reactive server on an ephemeral port and injects a `WebTestClient`
-bound to it. The `WebTestClient` is the reactive analogue of `MockMvc`: a
-non-blocking HTTP client that drives your endpoints and lets you assert on status,
-headers, and the JSON body with a fluent chain.
+`@SpringBootTest` arranca el contexto de la aplicación. `webEnvironment = RANDOM_PORT`
+arranca un servidor reactivo real en un puerto efímero e inyecta un `WebTestClient`
+enlazado a él. El `WebTestClient` es el análogo reactivo de `MockMvc`: un cliente HTTP
+no bloqueante que dirige tus endpoints y te deja afirmar sobre el estado, las
+cabeceras y el cuerpo JSON con una cadena fluida.
 
-With the context up, each test reads as a request and a set of expectations:
+Con el contexto en marcha, cada prueba se lee como una petición y un conjunto de
+expectativas:
 
-::: listing core-lending-loan-origination/src/test/java/com/firefly/lumen/core/web/LoanApplicationControllerTest.java | Listing 23.5 — driving the API and asserting on the RFC 7807 body
+::: listing core-lending-loan-origination/src/test/java/com/firefly/lumen/core/web/LoanApplicationControllerTest.java | Listado 23.5 — dirigiendo la API y afirmando sobre el cuerpo RFC 7807
     @Test
     void returnsRfc7807ProblemDetailWhenMissing() {
         client.get()
@@ -221,60 +236,64 @@ With the context up, each test reads as a request and a set of expectations:
     }
 :::
 
-`client.get().uri(...).exchange()` performs the request;
-`.expectStatus().isNotFound()` asserts the `404`;
-`.expectBody().jsonPath("$.status").isEqualTo(404)` reaches into the JSON and proves
-the problem detail is a real body, not a bare status line. The
-`createsAnApplicationAndReadsItBack` test in the same class does a full
-POST-then-GET round trip, and `rejectsAnInvalidPayload` posts a negative amount to
-confirm `@ValidAmount` produces a `400`. Three tests, one booted context, the entire
-edge verified.
+`client.get().uri(...).exchange()` realiza la petición;
+`.expectStatus().isNotFound()` afirma el `404`;
+`.expectBody().jsonPath("$.status").isEqualTo(404)` se adentra en el JSON y demuestra
+que el *problem detail* es un cuerpo real, no una mera línea de estado. La prueba
+`createsAnApplicationAndReadsItBack` de la misma clase hace un viaje completo de ida y
+vuelta POST-y-luego-GET, y `rejectsAnInvalidPayload` envía una cantidad negativa para
+confirmar que `@ValidAmount` produce un `400`. Tres pruebas, un contexto arrancado,
+todo el borde verificado.
 
-Notice the detail that makes this practical. The class comment says it best:
+Fíjate en el detalle que hace esto práctico. El comentario de la clase lo expresa
+mejor:
 
-> boots the full reactive context against in-memory H2 (R2DBC runtime + Flyway
-> migration, no Docker).
+> arranca el contexto reactivo completo contra una H2 en memoria (runtime de R2DBC +
+> migración Flyway, sin Docker).
 
-The repository under test is a *real* R2DBC repository running against an in-memory
-H2 database in R2DBC mode, with the schema applied by a Flyway migration at startup.
-There is no mock repository and there is no container. The persistence path is
-exercised for real — saves, reads, the round trip — against a database that lives
-entirely inside the JVM and vanishes when the test ends. That is how a slice test
-this thorough still runs in a couple of seconds with nothing installed.
+El repositorio bajo prueba es un repositorio R2DBC *real* corriendo contra una base de
+datos H2 en memoria en modo R2DBC, con el esquema aplicado por una migración Flyway al
+arranque. No hay un repositorio mockeado ni hay un contenedor. La ruta de persistencia
+se ejercita de verdad —guardados, lecturas, el viaje de ida y vuelta— contra una base
+de datos que vive enteramente dentro de la JVM y desaparece cuando la prueba termina.
+Así es como una prueba de corte tan exhaustiva como esta sigue ejecutándose en un par
+de segundos sin nada instalado.
 
-!!! note "Key term — slice test"
-    A **slice test** boots enough of the application to exercise one layer end to end
-    — here, the whole HTTP edge down to the database — using a real context rather than
-    mocks. It sits above unit tests (it starts Spring) and below a full external
-    integration test (it uses in-JVM substitutes like H2 instead of the production
-    Postgres). It is the highest-value-per-second test in most services: broad enough
-    to catch wiring bugs, fast enough to run on every save.
+!!! note "Termino clave — prueba de corte"
+    Una **prueba de corte** (*slice test*) arranca lo suficiente de la aplicación para
+    ejercitar una capa de extremo a extremo —aquí, todo el borde HTTP hasta la base de
+    datos— usando un contexto real en lugar de mocks. Se sitúa por encima de las pruebas
+    unitarias (arranca Spring) y por debajo de una prueba de integración externa
+    completa (usa sustitutos en la JVM como H2 en lugar del Postgres de producción). Es
+    la prueba de mayor valor por segundo en la mayoría de los servicios: lo bastante
+    amplia para detectar errores de cableado, lo bastante rápida para ejecutarse en cada
+    guardado.
 
-!!! spring "Spring parity"
-    `@SpringBootTest` with `RANDOM_PORT` and an injected `WebTestClient` is stock
-    Spring Boot — Firefly does not replace the test harness, it rides it. What the
-    booted context contains *is* Firefly: the auto-configured `GlobalExceptionHandler`,
-    the validators, the idempotency and transaction filters from Chapter 6. So the same
-    Boot test mechanism verifies the framework's cross-cutting behavior for free,
-    without you registering any of it in the test.
+!!! spring "Equivalente en Spring"
+    `@SpringBootTest` con `RANDOM_PORT` y un `WebTestClient` inyectado es Spring Boot de
+    serie: Firefly no reemplaza el arnés de pruebas, lo aprovecha. Lo que el contexto
+    arrancado contiene *sí es* Firefly: el `GlobalExceptionHandler` autoconfigurado, los
+    validadores, los filtros de idempotencia y de transacción del Capítulo 6. Así, el
+    mismo mecanismo de prueba de Boot verifica gratis el comportamiento transversal del
+    framework, sin que tú registres nada de ello en la prueba.
 
-## Level 4 — The saga compensation test
+## Nivel 4 — La prueba de compensación de saga
 
-At the apex sits the most demanding test in the suite: proving that when a saga step
-fails, the framework *compensates* the steps that already succeeded, leaving no
-orphaned write behind. This is the test that earns the orchestration chapter's
-central promise, and it is worth reading in full because it shows how much you can
-verify with `@SpringBootTest` and `StepVerifier` and still no broker, no container,
-no real downstream.
+En el vértice se sienta la prueba más exigente de la suite: demostrar que cuando un
+paso de la saga falla, el framework *compensa* los pasos que ya habían tenido éxito,
+sin dejar ninguna escritura huérfana detrás. Esta es la prueba que cumple la promesa
+central del capítulo de orquestación, y vale la pena leerla entera porque muestra
+cuánto puedes verificar con `@SpringBootTest` y `StepVerifier` y aun así sin broker,
+sin contenedor, sin un downstream real.
 
-Recall the saga's shape from the orchestration chapter: `registerLoanApplication` is
-the root step, and both `registerApplicant` and `proposeOffer` `dependsOn` it. The
-root step declares `compensate = removeLoanApplication`. If a dependent step fails
-after the root succeeded, the engine must run the root's compensation. The test
-forces exactly that failure by swapping in a stub configured to make `proposeOffer`
-throw:
+Recuerda la forma de la saga del capítulo de orquestación: `registerLoanApplication`
+es el paso raíz, y tanto `registerApplicant` como `proposeOffer` lo `dependsOn`. El
+paso raíz declara `compensate = removeLoanApplication`. Si un paso dependiente falla
+después de que la raíz tuviera éxito, el motor debe ejecutar la compensación de la
+raíz. La prueba fuerza exactamente ese fallo intercambiando un stub configurado para
+hacer que `proposeOffer` lance una excepción:
 
-::: listing domain-lending-loan-origination/src/test/java/com/firefly/lumen/domain/saga/RegisterApplicationSagaCompensationTest.java | Listing 23.6 — forcing a dependent step to fail with a test-scoped stub bean
+::: listing domain-lending-loan-origination/src/test/java/com/firefly/lumen/domain/saga/RegisterApplicationSagaCompensationTest.java | Listado 23.6 — forzando el fallo de un paso dependiente con un bean stub de ámbito de prueba
 @SpringBootTest
 @Import(RegisterApplicationSagaCompensationTest.FailingOfferConfig.class)
 class RegisterApplicationSagaCompensationTest {
@@ -288,17 +307,18 @@ class RegisterApplicationSagaCompensationTest {
     }
 :::
 
-`@SpringBootTest` boots the domain context — the saga engine, the CQRS bus, the
-command handlers — all real. The `@TestConfiguration` with `@Import` overrides one
-bean: the `LoanOriginationClient` becomes a `StubLoanOriginationClient` set to
-`failProposeOffer()`. This is the seam. The framework runtime is genuine; only the
-SDK boundary to the (absent) downstream service is stubbed, so the test can drive a
-failure deterministically without a network. Substituting a single bean at the edge,
-rather than mocking the engine, is what keeps the orchestration under test *real*.
+`@SpringBootTest` arranca el contexto de dominio —el motor de sagas, el bus de CQRS,
+los manejadores de comandos— todo real. La `@TestConfiguration` con `@Import`
+sobrescribe un bean: el `LoanOriginationClient` se convierte en un
+`StubLoanOriginationClient` configurado para `failProposeOffer()`. Esta es la costura.
+El runtime del framework es genuino; solo se sustituye con un stub la frontera del SDK
+hacia el servicio downstream (ausente), de modo que la prueba puede provocar un fallo
+de forma determinista sin red. Sustituir un único bean en el borde, en lugar de
+mockear el motor, es lo que mantiene la orquestación bajo prueba *real*.
 
-The assertion is where the compensation is proven:
+La afirmación es donde se demuestra la compensación:
 
-::: listing domain-lending-loan-origination/src/test/java/com/firefly/lumen/domain/saga/RegisterApplicationSagaCompensationTest.java | Listing 23.7 — asserting the failure, the failed step, and the compensated root
+::: listing domain-lending-loan-origination/src/test/java/com/firefly/lumen/domain/saga/RegisterApplicationSagaCompensationTest.java | Listado 23.7 — afirmando el fallo, el paso fallido y la raíz compensada
     @Test
     void submitApplication_failsAndCompensatesRootStep_whenDependentStepThrows() {
         StepVerifier.create(service.submitApplication("Ada Lovelace", 250_000L, 575))
@@ -315,22 +335,22 @@ The assertion is where the compensation is proven:
                 .verifyComplete();
 :::
 
-Read the assertion chain as the story the saga tells.
-`service.submitApplication(...)` returns a `Mono` of the saga result;
-`StepVerifier.create(...)` subscribes and `.assertNext(...)` inspects the single
-emitted result. The result reports `isFailed()` — the saga as a whole did not
-succeed — and `failedSteps()` contains `STEP_PROPOSE_OFFER`, the dependent step that
-threw. The decisive line is the last one: `compensatedSteps()` contains
-`STEP_REGISTER_LOAN_APPLICATION`, proving the engine ran the root step's
-`removeLoanApplication` compensation after the dependent failure. The same
-`StepVerifier` you used on `Flux.range(1, 6)` two levels down is here asserting a
-full orchestration outcome.
+Lee la cadena de afirmaciones como la historia que cuenta la saga.
+`service.submitApplication(...)` devuelve un `Mono` del resultado de la saga;
+`StepVerifier.create(...)` se suscribe y `.assertNext(...)` inspecciona el único
+resultado emitido. El resultado informa `isFailed()` —la saga en su conjunto no tuvo
+éxito— y `failedSteps()` contiene `STEP_PROPOSE_OFFER`, el paso dependiente que lanzó
+la excepción. La línea decisiva es la última: `compensatedSteps()` contiene
+`STEP_REGISTER_LOAN_APPLICATION`, demostrando que el motor ejecutó la compensación
+`removeLoanApplication` del paso raíz tras el fallo del dependiente. El mismo
+`StepVerifier` que usaste sobre `Flux.range(1, 6)` dos niveles más abajo está aquí
+afirmando el resultado de una orquestación completa.
 
-The test does not stop at the result object. It reaches into the stub to prove the
-*effect* — that the application created by the root step was actually removed, with
-no orphan left in the (stubbed) downstream:
+La prueba no se detiene en el objeto resultado. Se adentra en el stub para demostrar
+el *efecto*: que la solicitud creada por el paso raíz fue efectivamente eliminada, sin
+ningún huérfano en el downstream (stub):
 
-::: listing domain-lending-loan-origination/src/test/java/com/firefly/lumen/domain/saga/RegisterApplicationSagaCompensationTest.java | Listing 23.8 — proving the side effect was undone: same id created, then removed
+::: listing domain-lending-loan-origination/src/test/java/com/firefly/lumen/domain/saga/RegisterApplicationSagaCompensationTest.java | Listado 23.8 — demostrando que el efecto secundario se deshizo: mismo id creado y luego eliminado
         var stub = (StubLoanOriginationClient) client;
         // The application was created by the root step...
         assertThat(stub.createdApplications()).hasSize(1);
@@ -339,76 +359,78 @@ no orphan left in the (stubbed) downstream:
     }
 :::
 
-`createdApplications()` has exactly one entry — the root step did run and create the
-application. `removedApplications()` contains exactly the same ids — the compensation
-ran and undid it. `containsExactlyElementsOf` ties the two together: every id that
-was created was subsequently removed, so the saga left the system clean. This is the
-strongest correctness claim in the book — automatic rollback of a partially completed
-distributed transaction — and it is verified with a Boot context, a stubbed seam, and
-a `StepVerifier`. No saga state was persisted to disk; no broker delivered a message
-over a socket.
+`createdApplications()` tiene exactamente una entrada: el paso raíz sí se ejecutó y
+creó la solicitud. `removedApplications()` contiene exactamente los mismos ids: la
+compensación se ejecutó y la deshizo. `containsExactlyElementsOf` ata ambos: cada id
+que se creó fue posteriormente eliminado, así que la saga dejó el sistema limpio. Esta
+es la afirmación de corrección más fuerte del libro —reversión automática de una
+transacción distribuida parcialmente completada— y se verifica con un contexto de
+Boot, una costura con stub y un `StepVerifier`. No se persistió ningún estado de saga
+en disco; ningún broker entregó un mensaje por un socket.
 
-!!! note "Key term — compensation"
-    In the saga pattern, **compensation** is the act of undoing a completed step when a
-    later step fails — the distributed-systems substitute for a database rollback, which
-    cannot span independent services. Each step that mutates state declares a
-    `compensate` method; the engine invokes those methods, in reverse, for the steps
-    that already succeeded. Testing compensation means forcing a downstream failure and
-    asserting the undo ran — which is precisely what Listings 23.7 and 23.8 do.
+!!! note "Termino clave — compensacion"
+    En el patrón saga, la **compensacion** es el acto de deshacer un paso completado
+    cuando un paso posterior falla: el sustituto en sistemas distribuidos de un rollback
+    de base de datos, que no puede abarcar servicios independientes. Cada paso que muta
+    estado declara un método `compensate`; el motor invoca esos métodos, en orden
+    inverso, para los pasos que ya tuvieron éxito. Probar la compensación significa
+    forzar un fallo downstream y afirmar que el deshacer se ejecutó, que es precisamente
+    lo que hacen los Listados 23.7 y 23.8.
 
-## No Docker: how the upper tiers stay container-free
+## Sin Docker: cómo las capas superiores se mantienen libres de contenedores
 
-It is worth pausing on the recurring phrase in this chapter, because it is a genuine
-design choice and not a sample-only shortcut. Every test in these two modules — even
-the full-context web slice and the saga compensation test — runs with no Docker
-daemon, no docker-compose, and nothing pre-installed. Two substitutions make that
-possible.
+Vale la pena detenerse en la frase recurrente de este capítulo, porque es una decisión
+de diseño genuina y no un atajo solo para el ejemplo. Cada prueba de estos dos módulos
+—incluso el corte web con contexto completo y la prueba de compensación de saga— se
+ejecuta sin demonio de Docker, sin docker-compose y sin nada preinstalado. Dos
+sustituciones lo hacen posible.
 
-For persistence, the web slice runs against **H2 in R2DBC mode**: a real reactive
-SQL database that lives inside the JVM. Firefly's data layer speaks R2DBC, and the
-R2DBC driver for H2 lets the same repository code that runs against Postgres in
-production run against an in-memory database in the test, with a Flyway migration
-applying the schema at startup. The persistence path is exercised for real; only the
-*engine behind it* is the lightweight in-JVM one.
+Para la persistencia, el corte web se ejecuta contra **H2 en modo R2DBC**: una base de
+datos SQL reactiva real que vive dentro de la JVM. La capa de datos de Firefly habla
+R2DBC, y el driver R2DBC para H2 permite que el mismo código de repositorio que corre
+contra Postgres en producción corra contra una base de datos en memoria en la prueba,
+con una migración Flyway aplicando el esquema al arranque. La ruta de persistencia se
+ejercita de verdad; solo el *motor que hay detrás* es el ligero en la JVM.
 
-For messaging and orchestration, the EDA and saga runtimes run **in-process**. As
-Chapter 11 showed, binding a listener to `PublisherType.APPLICATION_EVENT` routes
-events over Spring's in-JVM event bus rather than Kafka, so the EDA test dispatches
-through the real `EventListenerProcessor` with no broker. The saga engine likewise
-runs entirely inside the Boot context; the only thing stubbed is the SDK call to the
-absent downstream service. In both cases the *framework runtime* is real — annotation
-discovery, routing, compensation all execute — and only the external network hop is
-elided.
+Para la mensajería y la orquestación, los runtimes de EDA y de saga corren **en el
+proceso**. Como mostró el Capítulo 11, enlazar un listener a
+`PublisherType.APPLICATION_EVENT` enruta los eventos por el bus de eventos en la JVM de
+Spring en lugar de Kafka, así que la prueba de EDA despacha a través del
+`EventListenerProcessor` real sin broker. El motor de sagas igualmente corre
+enteramente dentro del contexto de Boot; lo único que se sustituye con un stub es la
+llamada del SDK al servicio downstream ausente. En ambos casos el *runtime del
+framework* es real —el descubrimiento por anotaciones, el enrutamiento, la
+compensación, todo se ejecuta— y solo se elide el salto a la red externa.
 
-The result is a suite that is fully self-contained: clone, `mvn test`, watch it pass.
-That is not a small thing. A test suite that needs infrastructure is a test suite
-that runs in CI and nowhere else; a suite that runs anywhere runs *constantly*, which
-is where its value compounds.
+El resultado es una suite completamente autocontenida: clonas, `mvn test`, y la ves
+pasar. Eso no es poca cosa. Una suite de pruebas que necesita infraestructura es una
+suite que corre en CI y en ningún otro sitio; una suite que corre en cualquier parte
+corre *constantemente*, que es donde su valor se compone.
 
-!!! warning "In-JVM substitutes verify wiring, not the real backend"
-    H2 is not Postgres, and the in-JVM event bus is not Kafka. These substitutes
-    faithfully exercise *your* code — repositories, listeners, saga steps — but they do
-    not catch dialect-specific SQL, Postgres constraint behavior, Kafka partitioning,
-    consumer-group rebalancing, or serialization across a real wire. For those you need
-    a test against the genuine backend, which is the next section. Treat the
-    container-free tiers as exhaustive coverage of your logic and *partial* coverage of
-    your infrastructure.
+!!! warning "Los sustitutos en la JVM verifican el cableado, no el backend real"
+    H2 no es Postgres, y el bus de eventos en la JVM no es Kafka. Estos sustitutos
+    ejercitan fielmente *tu* código —repositorios, listeners, pasos de saga— pero no
+    detectan SQL específico del dialecto, el comportamiento de las restricciones de
+    Postgres, el particionado de Kafka, el rebalanceo de grupos de consumidores ni la
+    serialización a través de un cable real. Para eso necesitas una prueba contra el
+    backend genuino, que es la siguiente sección. Trata las capas libres de contenedores
+    como cobertura exhaustiva de tu lógica y cobertura *parcial* de tu infraestructura.
 
-## Where Testcontainers fits
+## Dónde encaja Testcontainers
 
-The pyramid as built tops out at in-JVM substitutes, and for the vast majority of
-your tests that is the right ceiling — fast, deterministic, runnable anywhere. But
-the warning above is real: some bugs only appear against the genuine backend. That is
-where **Testcontainers** belongs — a thin, deliberate cap above the in-JVM tier, run
-sparingly, for the handful of tests that must prove behavior against real Postgres or
-real Kafka.
+La pirámide tal como está construida culmina en sustitutos en la JVM, y para la gran
+mayoría de tus pruebas ese es el techo correcto: rápido, determinista, ejecutable en
+cualquier parte. Pero la advertencia de arriba es real: algunos errores solo aparecen
+contra el backend genuino. Ahí es donde pertenece **Testcontainers**: una cúspide fina
+y deliberada por encima de la capa en la JVM, usada con moderación, para el puñado de
+pruebas que deben demostrar el comportamiento contra Postgres real o Kafka real.
 
-Testcontainers is a library that starts a throwaway Docker container for the duration
-of a test and tears it down after. You point your R2DBC URL or Kafka bootstrap
-servers at the container and run the same test you would otherwise run against H2 or
-the in-JVM bus — but now against the real engine. The shape is illustrative here
-because the reactor ships no such test; Lumen stays container-free by design. Were
-you to add one, it would read like this:
+Testcontainers es una librería que arranca un contenedor Docker desechable durante la
+vida de una prueba y lo desmonta después. Apuntas tu URL de R2DBC o tus servidores
+bootstrap de Kafka al contenedor y ejecutas la misma prueba que de otro modo
+ejecutarías contra H2 o el bus en la JVM, pero ahora contra el motor real. La forma es
+ilustrativa aquí porque el reactor no incluye ninguna prueba así; Lumen se mantiene
+libre de contenedores por diseño. Si añadieras una, se leería así:
 
 ```java
 // Illustrative: a Testcontainers integration test against real Postgres.
@@ -435,44 +457,47 @@ class LoanApplicationPostgresIT {
 }
 ```
 
-`@Container` starts a Postgres 16 container; `@DynamicPropertySource` rewrites the
-R2DBC connection properties to point at it before the context boots; the test body is
-otherwise identical to the H2 slice. A Kafka container follows the same pattern with
-`KafkaContainer` and a `PublisherType.KAFKA` listener, proving real partition and
-consumer-group behavior the in-JVM bus cannot.
+`@Container` arranca un contenedor de Postgres 16; `@DynamicPropertySource` reescribe
+las propiedades de conexión de R2DBC para apuntarlas a él antes de que el contexto
+arranque; el cuerpo de la prueba es por lo demás idéntico al corte de H2. Un contenedor
+de Kafka sigue el mismo patrón con `KafkaContainer` y un listener
+`PublisherType.KAFKA`, demostrando el comportamiento real de particiones y de grupos
+de consumidores que el bus en la JVM no puede.
 
-The judgment call is *how many* of these to write. A Testcontainers test costs
-seconds of container startup and requires a Docker daemon, so it inverts the pyramid
-the moment you overuse it. Reserve it for what genuinely needs the real backend — a
-Postgres-specific migration, a Kafka rebalancing scenario, a serialization contract —
-and keep the broad coverage at the H2 and in-JVM tiers. The pyramid stays a pyramid:
-a wide, container-free base and middle, capped by a thin, deliberate band of
-real-backend tests.
+La decisión de criterio es *cuántas* de estas escribir. Una prueba de Testcontainers
+cuesta segundos de arranque de contenedor y requiere un demonio de Docker, así que
+invierte la pirámide en el momento en que abusas de ella. Resérvala para lo que
+genuinamente necesita el backend real —una migración específica de Postgres, un
+escenario de rebalanceo de Kafka, un contrato de serialización— y mantén la cobertura
+amplia en las capas de H2 y en la JVM. La pirámide sigue siendo una pirámide: una base
+y un centro anchos y libres de contenedores, coronados por una banda fina y deliberada
+de pruebas contra el backend real.
 
-!!! spring "Spring parity"
-    Testcontainers, `@DynamicPropertySource`, and the JUnit `@Testcontainers`
-    extension are all plain Spring Boot and Testcontainers — no Firefly involved.
-    Because Firefly's data and EDA layers are configured by ordinary `spring.r2dbc.*`
-    and `firefly.eda.*` properties, pointing a test at a containerized backend is the
-    same property override you would write in any Spring Boot service. The framework
-    does not get in the way of real-backend testing; it just makes you need it less.
+!!! spring "Equivalente en Spring"
+    Testcontainers, `@DynamicPropertySource` y la extensión `@Testcontainers` de JUnit
+    son todo Spring Boot y Testcontainers corrientes: nada de Firefly involucrado. Como
+    las capas de datos y de EDA de Firefly se configuran mediante propiedades
+    `spring.r2dbc.*` y `firefly.eda.*` ordinarias, apuntar una prueba a un backend en
+    contenedor es la misma sobrescritura de propiedades que escribirías en cualquier
+    servicio Spring Boot. El framework no se interpone en las pruebas contra el backend
+    real; simplemente hace que las necesites menos.
 
-## Run it
+## Ejecútalo
 
-Run both loan-origination modules' tests together, from the `samples/lumen-lending`
-directory:
+Ejecuta juntas las pruebas de ambos módulos de originación de préstamos, desde el
+directorio `samples/lumen-lending`:
 
 ```text
 mvn -q -pl core-lending-loan-origination,domain-lending-loan-origination test
 ```
 
-The two modules pass every test. The core module runs **eighteen** tests —
-`MoneyTest` (3), `LoanApplicationTest` (6), `ReactiveModelTest` (6), and the
-`LoanApplicationControllerTest` slice (3). The domain module runs **six** —
+Los dos módulos pasan todas las pruebas. El módulo core ejecuta **dieciocho** pruebas
+—`MoneyTest` (3), `LoanApplicationTest` (6), `ReactiveModelTest` (6) y el corte
+`LoanApplicationControllerTest` (3). El módulo de dominio ejecuta **seis**—
 `DomainLendingApplicationTest` (1), `RegisterLoanApplicationHandlerTest` (2),
-`LoanApplicationEventListenerTest` (1), `RegisterApplicationSagaHappyPathTest` (1),
-and `RegisterApplicationSagaCompensationTest` (1). Twenty-four green tests across
-all four levels of the pyramid:
+`LoanApplicationEventListenerTest` (1), `RegisterApplicationSagaHappyPathTest` (1) y
+`RegisterApplicationSagaCompensationTest` (1). Veinticuatro pruebas en verde a través
+de los cuatro niveles de la pirámide:
 
 ```text
 core-lending-loan-origination ..... Tests run: 18, Failures: 0, Errors: 0, Skipped: 0
@@ -480,69 +505,74 @@ domain-lending-loan-origination ... Tests run: 6,  Failures: 0, Errors: 0, Skipp
 BUILD SUCCESS
 ```
 
-!!! tip "Checkpoint"
-    Run the command above and confirm both modules report `Failures: 0, Errors: 0`.
-    Note the wall-clock time — the whole twenty-four-test suite, including two booted
-    Spring contexts and a full saga compensation, finishes in seconds with no Docker
-    running. To watch a single tier, narrow with `-Dtest`, for example
-    `-Dtest=RegisterApplicationSagaCompensationTest` for just the apex test. If you
-    see `Unable to load ...MacOSDnsServerAddressStreamProvider` in the log, ignore it —
-    it is a harmless Netty DNS warning on macOS, not a test failure.
+!!! tip "Punto de control"
+    Ejecuta el comando de arriba y confirma que ambos módulos informan `Failures: 0,
+    Errors: 0`. Fíjate en el tiempo de reloj de pared: la suite completa de
+    veinticuatro pruebas, incluyendo dos contextos de Spring arrancados y una
+    compensación de saga completa, termina en segundos sin Docker corriendo. Para
+    observar una sola capa, acota con `-Dtest`, por ejemplo
+    `-Dtest=RegisterApplicationSagaCompensationTest` para solo la prueba del vértice. Si
+    ves `Unable to load ...MacOSDnsServerAddressStreamProvider` en el log, ignóralo: es
+    un aviso inofensivo de DNS de Netty en macOS, no un fallo de prueba.
 
-## What you learned {.recap}
+## Lo que has aprendido {.recap}
 
-- A Firefly service tests as a **pyramid**: a wide base of plain unit tests, a band of
-  reactive `StepVerifier` tests, web **slice tests** with `@SpringBootTest` and
-  `WebTestClient`, and a thin cap of orchestration/integration tests — twenty-four in
-  Lumen's two loan-origination modules.
-- **Level 1** is plain Java — `MoneyTest` and `LoanApplicationTest` assert invariants
-  and state transitions with no Spring and no publishers, in microseconds, because the
-  domain logic lives in the objects.
-- **Level 2** uses `StepVerifier` from `reactor-test` to assert a publisher's signal
-  sequence without `.block()`; the same tool scales from `Flux.range` up to a whole
-  saga result.
-- **Level 3**, the web slice, boots the full reactive context against **in-memory H2
-  in R2DBC mode** (schema via Flyway, no Docker) and drives the edge with
-  `WebTestClient`, verifying validation, the RFC 7807 `404`, and the persistence round
-  trip for real.
-- **Level 4** proves saga **compensation**: a `@TestConfiguration` swaps in a stub that
-  fails `proposeOffer`, and the test asserts `compensatedSteps()` contains
-  `registerLoanApplication` and that every created application id was removed — full
-  distributed rollback, with no broker and no container.
-- The upper tiers stay **container-free** by substituting H2 for Postgres and the
-  in-JVM event bus for Kafka, keeping the framework runtime real and only eliding the
-  network. **Testcontainers** is the deliberate, thin cap for the few tests that must
-  run against the genuine Postgres or Kafka.
+- Un servicio Firefly se prueba como una **pirámide**: una base ancha de pruebas
+  unitarias puras, una banda de pruebas reactivas con `StepVerifier`, **pruebas de
+  corte** web con `@SpringBootTest` y `WebTestClient`, y una cúspide fina de pruebas de
+  orquestación/integración —veinticuatro en los dos módulos de originación de préstamos
+  de Lumen.
+- El **Nivel 1** es Java puro —`MoneyTest` y `LoanApplicationTest` afirman invariantes
+  y transiciones de estado sin Spring y sin publicadores, en microsegundos, porque la
+  lógica de dominio vive en los objetos.
+- El **Nivel 2** usa `StepVerifier` de `reactor-test` para afirmar la secuencia de
+  señales de un publicador sin `.block()`; la misma herramienta escala desde
+  `Flux.range` hasta un resultado de saga completo.
+- El **Nivel 3**, el corte web, arranca el contexto reactivo completo contra **H2 en
+  memoria en modo R2DBC** (esquema vía Flyway, sin Docker) y dirige el borde con
+  `WebTestClient`, verificando de verdad la validación, el `404` RFC 7807 y el viaje de
+  ida y vuelta de persistencia.
+- El **Nivel 4** demuestra la **compensacion** de la saga: una `@TestConfiguration`
+  intercambia un stub que hace fallar `proposeOffer`, y la prueba afirma que
+  `compensatedSteps()` contiene `registerLoanApplication` y que cada id de solicitud
+  creada fue eliminado —reversión distribuida completa, sin broker y sin contenedor.
+- Las capas superiores se mantienen **libres de contenedores** sustituyendo H2 por
+  Postgres y el bus de eventos en la JVM por Kafka, manteniendo real el runtime del
+  framework y elidiendo únicamente la red. **Testcontainers** es la cúspide deliberada
+  y fina para las pocas pruebas que deben correr contra el Postgres o el Kafka genuinos.
 
-## Try it yourself {.exercises}
+## Pruebalo tu mismo {.exercises}
 
-1. **Add an invariant to Level 1.** In `MoneyTest`, add a test that
-   `Money.of(0)` is permitted (zero is a valid amount) and that adding two amounts
-   returns their sum, mirroring the existing `minusReturnsTheDifference` style. Run
-   `-Dtest=MoneyTest` and keep it green — a new fact pinned in microseconds.
-2. **Assert a reactive service method.** Pick a service method that returns a `Mono`,
-   and write a `StepVerifier` test for it that asserts the emitted value with
-   `.expectNextMatches(...)` and `.verifyComplete()`. Confirm it runs without booting a
-   context — that is the Level 2 discipline.
-3. **Extend the web slice.** In `LoanApplicationControllerTest`, add a test that posts
-   a request with `currency = "XYZ"` and asserts `.expectStatus().isBadRequest()` plus
-   `.jsonPath("$.status").isEqualTo(400)`, proving `@ValidCurrencyCode` is enforced at
-   the booted edge. Re-run `-Dtest=LoanApplicationControllerTest`.
-4. **Break compensation and watch it fail.** In `RegisterApplicationSaga`, temporarily
-   remove the `compensate` attribute from the root step's `@SagaStep`, then run
-   `-Dtest=RegisterApplicationSagaCompensationTest`. Read the assertion failure on
-   `compensatedSteps()` — the root no longer rolls back — then restore the attribute.
-   You have just proven what the test is actually guarding.
-5. **Sketch a Testcontainers cap.** Take the illustrative `LoanApplicationPostgresIT`
-   above and list, for your own service, exactly which one or two tests genuinely need
-   real Postgres (a dialect-specific migration? a unique constraint?) and which belong
-   at the H2 tier. Write the list as a comment — the goal is a *thin* cap, not a second
-   full suite.
+1. **Añade un invariante al Nivel 1.** En `MoneyTest`, añade una prueba de que
+   `Money.of(0)` está permitido (cero es una cantidad válida) y de que sumar dos
+   cantidades devuelve su suma, reflejando el estilo existente de
+   `minusReturnsTheDifference`. Ejecuta `-Dtest=MoneyTest` y mantenla en verde: un
+   nuevo hecho fijado en microsegundos.
+2. **Afirma un método de servicio reactivo.** Elige un método de servicio que devuelva
+   un `Mono` y escribe una prueba con `StepVerifier` que afirme el valor emitido con
+   `.expectNextMatches(...)` y `.verifyComplete()`. Confirma que se ejecuta sin arrancar
+   un contexto: esa es la disciplina del Nivel 2.
+3. **Extiende el corte web.** En `LoanApplicationControllerTest`, añade una prueba que
+   envíe una petición con `currency = "XYZ"` y afirme `.expectStatus().isBadRequest()`
+   más `.jsonPath("$.status").isEqualTo(400)`, demostrando que `@ValidCurrencyCode` se
+   impone en el borde arrancado. Vuelve a ejecutar `-Dtest=LoanApplicationControllerTest`.
+4. **Rompe la compensación y obsérvala fallar.** En `RegisterApplicationSaga`, elimina
+   temporalmente el atributo `compensate` del `@SagaStep` del paso raíz, luego ejecuta
+   `-Dtest=RegisterApplicationSagaCompensationTest`. Lee el fallo de afirmación en
+   `compensatedSteps()` —la raíz ya no se revierte— y luego restaura el atributo.
+   Acabas de demostrar qué está protegiendo realmente la prueba.
+5. **Esboza una cúspide de Testcontainers.** Toma el `LoanApplicationPostgresIT`
+   ilustrativo de arriba y enumera, para tu propio servicio, exactamente qué una o dos
+   pruebas necesitan genuinamente Postgres real (¿una migración específica del
+   dialecto? ¿una restricción de unicidad?) y cuáles pertenecen a la capa de H2.
+   Escribe la lista como un comentario: el objetivo es una cúspide *fina*, no una
+   segunda suite completa.
 
-## Where to go next
+## Adonde ir ahora
 
-You can now test a Firefly service at every level and know which level each behavior
-belongs to. The next chapters turn from proving a service correct to running it well:
-observability, so a service in production tells you what it is doing, and the
-operational concerns — configuration, health, deployment — that take Lumen Lending from
-a suite of green tests to a system you can trust on call.
+Ahora puedes probar un servicio Firefly en cada nivel y saber a qué nivel pertenece
+cada comportamiento. Los próximos capítulos pasan de demostrar que un servicio es
+correcto a ejecutarlo bien: observabilidad, para que un servicio en producción te diga
+qué está haciendo, y las preocupaciones operativas —configuración, salud,
+despliegue— que llevan a Lumen Lending de una suite de pruebas en verde a un sistema
+en el que puedes confiar estando de guardia.

@@ -1,55 +1,59 @@
-Chapter 9 left the loan application enforcing its own rules — but it changed state
-through a direct method call inside one service. That works until the orchestration
-gets real. A domain service that registers an application, attaches an applicant,
-proposes an offer, *and* knows how to undo each step if a later one fails is a lot of
-behavior to pour into one method. The cure is to break the work into discrete,
-named, individually testable units, and to dispatch them through a bus instead of
-calling them directly. That is **CQRS**, and it is the heart of the domain tier.
+El capítulo 9 dejó la solicitud de préstamo aplicando sus propias reglas, pero cambiaba
+de estado mediante una llamada directa a un método dentro de un único servicio. Eso
+funciona hasta que la orquestación se vuelve seria. Un servicio de dominio que registra
+una solicitud, le adjunta un solicitante, propone una oferta *y* además sabe cómo
+deshacer cada paso si uno posterior falla es mucho comportamiento para volcarlo en un
+solo método. La cura consiste en descomponer el trabajo en unidades discretas, con
+nombre y verificables de forma individual, y despacharlas a través de un bus en lugar de
+llamarlas directamente. Eso es **CQRS**, y es el corazón de la capa de dominio.
 
-In this chapter you meet the **domain** tier of Lumen Lending — `starter-domain`, the
-orchestration layer that owns no database and talks to the core system of record over
-an SDK. You will define a `Command<R>` and a `Query<R>`, write the single-method
-handlers that satisfy them, and watch the framework discover and dispatch those
-handlers by their generic type, with no manual registration. You will see the
-`CommandBus` and `QueryBus` that route the work, the multi-tenant `ExecutionContext`
-that flows through it, and the SDK seam — a reactive port — that stands in for the
-generated core client until Chapter 14 wires the real one.
+En este capítulo conoces la capa de **dominio** de Lumen Lending: `starter-domain`, la
+capa de orquestación que no posee ninguna base de datos y habla con el sistema central de
+registro a través de un SDK. Definirás un `Command<R>` y una `Query<R>`, escribirás los
+manejadores de un único método que los satisfacen y verás cómo el framework descubre y
+despacha esos manejadores por su tipo genérico, sin registro manual. Verás el
+`CommandBus` y el `QueryBus` que enrutan el trabajo, el `ExecutionContext` multi-tenant
+que fluye a través de él y la costura del SDK —un puerto reactivo— que sustituye al
+cliente central generado hasta que el capítulo 14 conecta el real.
 
-Everything you slice lives in the `domain-lending-loan-origination` module, and a
-six-method test suite proves it boots and runs with no core service and no Docker.
-Let's start with the two halves of CQRS: commands that change state, and queries
-that read it.
+Todo lo que separes vive en el módulo `domain-lending-loan-origination`, y una batería de
+seis pruebas demuestra que arranca y se ejecuta sin servicio central y sin Docker.
+Empecemos con las dos mitades de CQRS: comandos que cambian el estado y consultas que lo
+leen.
 
-## Why split commands from queries
+## Por qué separar comandos de consultas
 
-The acronym is **C**ommand **Q**uery **R**esponsibility **S**egregation, and the idea
-is older than any framework: the operation that *changes* the world and the operation
-that *reads* it have different shapes, different scaling needs, and different failure
-modes, so model them separately. A command — "register this loan application" — is an
-imperative with a result you care about (the new id). A query — "what is this
-application's status?" — is a question with an answer and no side effects.
+El acrónimo es **C**ommand **Q**uery **R**esponsibility **S**egregation, y la idea es más
+antigua que cualquier framework: la operación que *cambia* el mundo y la operación que lo
+*lee* tienen formas distintas, necesidades de escalado distintas y modos de fallo
+distintos, así que modélalas por separado. Un comando —"registra esta solicitud de
+préstamo"— es un imperativo con un resultado que te importa (el nuevo id). Una consulta
+—"¿cuál es el estado de esta solicitud?"— es una pregunta con una respuesta y sin efectos
+secundarios.
 
-Firefly makes the split concrete with two generic interfaces and two buses. A command
-implements `Command<R>`, where `R` is the result type, and travels on the
-`CommandBus`. A query implements `Query<R>` and travels on the `QueryBus`. The buses
-are separate on purpose: the write path can validate, emit events, and participate in
-a saga, while the read path can cache aggressively, because a read changes nothing.
+Firefly hace concreta esa separación con dos interfaces genéricas y dos buses. Un comando
+implementa `Command<R>`, donde `R` es el tipo de resultado, y viaja por el `CommandBus`.
+Una consulta implementa `Query<R>` y viaja por el `QueryBus`. Los buses están separados a
+propósito: el camino de escritura puede validar, emitir eventos y participar en una saga,
+mientras que el camino de lectura puede cachear de forma agresiva, porque una lectura no
+cambia nada.
 
-!!! note "Key term — CQRS"
-    **CQRS** separates the model that *writes* state (commands) from the model that
-    *reads* it (queries). In Firefly each is a small typed message — `Command<R>` or
-    `Query<R>` — dispatched through its own bus to a handler the framework discovers by
-    generic type. The benefit is not ceremony; it is that each operation becomes a
-    discrete unit you can test, trace, cache, and orchestrate independently.
+!!! note "Término clave — CQRS"
+    **CQRS** separa el modelo que *escribe* el estado (comandos) del modelo que lo *lee*
+    (consultas). En Firefly cada uno es un pequeño mensaje tipado —`Command<R>` o
+    `Query<R>`— despachado a través de su propio bus hacia un manejador que el framework
+    descubre por el tipo genérico. El beneficio no es la ceremonia; es que cada operación
+    se convierte en una unidad discreta que puedes probar, trazar, cachear y orquestar de
+    forma independiente.
 
-## Step 1 — Define a command
+## Paso 1 — Definir un comando
 
-A command is a plain message: the data the operation needs, plus the result type
-baked into the interface. Here is the command to register a loan application. It
-implements `Command<UUID>` — the result is the server-assigned id — and carries only
-the two fields this slice needs.
+Un comando es un mensaje sencillo: los datos que la operación necesita, más el tipo de
+resultado incorporado en la interfaz. Aquí está el comando para registrar una solicitud
+de préstamo. Implementa `Command<UUID>` —el resultado es el id asignado por el servidor— y
+lleva solo los dos campos que esta porción necesita.
 
-::: listing domain-lending-loan-origination/src/main/java/com/firefly/lumen/domain/command/RegisterLoanApplicationCommand.java | Listing 10.1 — a command is a typed message carrying its result type
+::: listing domain-lending-loan-origination/src/main/java/com/firefly/lumen/domain/command/RegisterLoanApplicationCommand.java | Listado 10.1 — un comando es un mensaje tipado que lleva su tipo de resultado
 public final class RegisterLoanApplicationCommand implements Command<UUID> {
 
     private final String applicantName;
@@ -70,32 +74,34 @@ public final class RegisterLoanApplicationCommand implements Command<UUID> {
 }
 :::
 
-That `Command<UUID>` is the load-bearing part. The type parameter is a *contract*: it
-says "dispatching me yields a `Mono<UUID>`," and it is also the key the framework uses
-to find the handler. The command itself has no behavior — no logic, no client, no
-bus. It is an envelope. The behavior lives in a handler, and the type parameter is the
-wire between them.
+Ese `Command<UUID>` es la parte que sostiene todo. El parámetro de tipo es un *contrato*:
+dice "despacharme produce un `Mono<UUID>`", y es además la clave que el framework usa para
+encontrar el manejador. El comando en sí no tiene comportamiento: ni lógica, ni cliente,
+ni bus. Es un sobre. El comportamiento vive en un manejador, y el parámetro de tipo es el
+cable entre ambos.
 
-!!! spring "Spring parity"
-    `Command<R>` and `Query<R>` are Firefly interfaces, but the message-and-handler
-    split is the same idea behind Spring's `ApplicationEventPublisher` or a mediator
-    library like a Java port of MediatR. What Firefly adds over a raw event publisher
-    is the *typed result*: a command returns a `Mono<R>`, so the caller gets the new
-    id back, not just a fire-and-forget notification.
+!!! spring "Equivalente en Spring"
+    `Command<R>` y `Query<R>` son interfaces de Firefly, pero la separación
+    mensaje-y-manejador es la misma idea que hay detrás del `ApplicationEventPublisher` de
+    Spring o de una biblioteca de mediación como un port de MediatR a Java. Lo que Firefly
+    añade sobre un publicador de eventos en crudo es el *resultado tipado*: un comando
+    devuelve un `Mono<R>`, de modo que quien llama recupera el nuevo id, no solo una
+    notificación del tipo dispara-y-olvida.
 
-## Step 2 — Write the handler
+## Paso 2 — Escribir el manejador
 
-A handler is where the command does its work. Firefly's handler pattern is
-deliberately narrow: you extend `CommandHandler<C, R>` and implement *one* method,
-`doHandle`, which receives the command and returns a `Mono<R>`. The framework wraps
-your `doHandle` with validation, metrics, tracing, and error mapping, so your method
-contains only the business step.
+Un manejador es donde el comando hace su trabajo. El patrón de manejador de Firefly es
+deliberadamente estrecho: extiendes `CommandHandler<C, R>` e implementas *un* método,
+`doHandle`, que recibe el comando y devuelve un `Mono<R>`. El framework envuelve tu
+`doHandle` con validación, métricas, trazado y mapeo de errores, de modo que tu método
+contiene únicamente el paso de negocio.
 
-Here is the handler for the register command. It is annotated
-`@CommandHandlerComponent`, injects the SDK-seam client and an event publisher, and
-in `doHandle` calls the core to create the application, then publishes a domain event.
+Aquí está el manejador del comando de registro. Está anotado con
+`@CommandHandlerComponent`, inyecta el cliente de la costura del SDK y un publicador de
+eventos y, en `doHandle`, llama al núcleo para crear la solicitud y luego publica un
+evento de dominio.
 
-::: listing domain-lending-loan-origination/src/main/java/com/firefly/lumen/domain/handler/RegisterLoanApplicationHandler.java | Listing 10.2 — a command handler: one doHandle, annotated for discovery
+::: listing domain-lending-loan-origination/src/main/java/com/firefly/lumen/domain/handler/RegisterLoanApplicationHandler.java | Listado 10.2 — un manejador de comandos: un solo doHandle, anotado para su descubrimiento
 @CommandHandlerComponent
 public class RegisterLoanApplicationHandler extends CommandHandler<RegisterLoanApplicationCommand, UUID> {
 
@@ -120,41 +126,43 @@ public class RegisterLoanApplicationHandler extends CommandHandler<RegisterLoanA
 }
 :::
 
-Read the generics on the `extends` clause: `CommandHandler<RegisterLoanApplicationCommand, UUID>`.
-The first type parameter is the command this handler answers; the second is the result.
-That pairing is exactly the information the framework needs to route — it indexes every
-`@CommandHandlerComponent` by its command type, so when something sends a
-`RegisterLoanApplicationCommand`, the bus already knows this is the handler. You never
-write a `register(...)` line or a switch statement; the generic type *is* the registration.
+Lee los genéricos de la cláusula `extends`: `CommandHandler<RegisterLoanApplicationCommand, UUID>`.
+El primer parámetro de tipo es el comando que este manejador responde; el segundo es el
+resultado. Ese emparejamiento es exactamente la información que el framework necesita para
+enrutar: indexa cada `@CommandHandlerComponent` por su tipo de comando, de modo que cuando
+algo envía un `RegisterLoanApplicationCommand`, el bus ya sabe que este es el manejador.
+Nunca escribes una línea `register(...)` ni una sentencia switch; el tipo genérico *es* el
+registro.
 
-Inside `doHandle`, the reactive vocabulary from Chapter 5 is all you need. `client.
-createLoanApplication(...)` returns a `Mono<UUID>`; `flatMap` chains the asynchronous
-event publish and then re-emits the id with `thenReturn`. This is the canonical
-"command writes, then emits a domain event" shape — the write reaches the system of
-record first, and only on success does the event go out.
+Dentro de `doHandle`, el vocabulario reactivo del capítulo 5 es todo lo que necesitas.
+`client.createLoanApplication(...)` devuelve un `Mono<UUID>`; `flatMap` encadena la
+publicación asíncrona del evento y luego vuelve a emitir el id con `thenReturn`. Esta es la
+forma canónica "el comando escribe y luego emite un evento de dominio": la escritura
+alcanza primero el sistema de registro, y solo en caso de éxito sale el evento.
 
-!!! note "Key term — the single-method handler pattern"
-    A Firefly handler extends `CommandHandler<C, R>` (or `QueryHandler<Q, R>`) and
-    implements exactly one abstract method, `doHandle`. Everything cross-cutting —
-    input validation, the metrics timer, the trace span, error translation — lives in
-    the framework's surrounding `handle` method, which calls your `doHandle`. You write
-    the business step and nothing else, and every handler in the fleet is wrapped the
-    same way.
+!!! note "Término clave — el patrón de manejador de un único método"
+    Un manejador de Firefly extiende `CommandHandler<C, R>` (o `QueryHandler<Q, R>`) e
+    implementa exactamente un método abstracto, `doHandle`. Todo lo transversal
+    —validación de la entrada, el temporizador de métricas, el span de trazado, la
+    traducción de errores— vive en el método `handle` que rodea al tuyo en el framework, el
+    cual llama a tu `doHandle`. Tú escribes el paso de negocio y nada más, y cada manejador
+    de la flota se envuelve de la misma manera.
 
-!!! spring "Spring parity"
-    `@CommandHandlerComponent` is a meta-annotated Spring stereotype — under the hood
-    it is a `@Component`, so component scanning finds the handler exactly as it finds
-    an `@Service`. The Firefly addition is the post-processing that reads the handler's
-    generic type parameters and registers it on the `CommandBus`. No XML, no manual
-    `bus.register(...)`: classpath presence plus a generic signature is the whole wiring.
+!!! spring "Equivalente en Spring"
+    `@CommandHandlerComponent` es un estereotipo de Spring meta-anotado: por debajo es un
+    `@Component`, de modo que el escaneo de componentes encuentra el manejador exactamente
+    igual que encuentra un `@Service`. La aportación de Firefly es el post-procesamiento
+    que lee los parámetros de tipo genérico del manejador y lo registra en el `CommandBus`.
+    Sin XML, sin `bus.register(...)` manual: la presencia en el classpath más una firma
+    genérica es todo el cableado.
 
-## Step 3 — Define a query and its handler
+## Paso 3 — Definir una consulta y su manejador
 
-The read side is symmetrical and simpler. A query implements `Query<R>`; here
-`GetApplicationStatusQuery` implements `Query<String>` because the answer is a status
-label.
+El lado de lectura es simétrico y más sencillo. Una consulta implementa `Query<R>`; aquí
+`GetApplicationStatusQuery` implementa `Query<String>` porque la respuesta es una etiqueta
+de estado.
 
-::: listing domain-lending-loan-origination/src/main/java/com/firefly/lumen/domain/query/GetApplicationStatusQuery.java | Listing 10.3 — a query is a typed question
+::: listing domain-lending-loan-origination/src/main/java/com/firefly/lumen/domain/query/GetApplicationStatusQuery.java | Listado 10.3 — una consulta es una pregunta tipada
 public final class GetApplicationStatusQuery implements Query<String> {
 
     private final UUID loanApplicationId;
@@ -169,13 +177,13 @@ public final class GetApplicationStatusQuery implements Query<String> {
 }
 :::
 
-Its handler follows the same single-method pattern as the command handler, but extends
-`QueryHandler<Q, R>` and is annotated `@QueryHandlerComponent`. The slice keeps the
-read model trivial on purpose — once an application id exists, its status is reported
-as `REGISTERED` — so the command/query split is visible without dragging in a separate
-projection store.
+Su manejador sigue el mismo patrón de un único método que el manejador de comandos, pero
+extiende `QueryHandler<Q, R>` y está anotado con `@QueryHandlerComponent`. La porción
+mantiene el modelo de lectura trivial a propósito —una vez que existe un id de solicitud,
+su estado se reporta como `REGISTERED`— de modo que la separación comando/consulta es
+visible sin arrastrar un almacén de proyección aparte.
 
-::: listing domain-lending-loan-origination/src/main/java/com/firefly/lumen/domain/handler/GetApplicationStatusHandler.java | Listing 10.4 — the read-side handler, discovered on the QueryBus
+::: listing domain-lending-loan-origination/src/main/java/com/firefly/lumen/domain/handler/GetApplicationStatusHandler.java | Listado 10.4 — el manejador del lado de lectura, descubierto en el QueryBus
 @QueryHandlerComponent
 public class GetApplicationStatusHandler extends QueryHandler<GetApplicationStatusQuery, String> {
 
@@ -186,45 +194,49 @@ public class GetApplicationStatusHandler extends QueryHandler<GetApplicationStat
 }
 :::
 
-Notice how little there is to it: no client, no event, just a `Mono` of the answer. A
-real read handler would consult a projection or call the core's read API, but the
-*shape* is identical — extend the base class, parameterize with the query and its
-result, implement `doHandle`. The framework discovers it on the `QueryBus` precisely
-the way it discovered the command handler on the `CommandBus`, by the generic type.
+Fíjate en lo poco que tiene: ni cliente, ni evento, solo un `Mono` con la respuesta. Un
+manejador de lectura real consultaría una proyección o llamaría a la API de lectura del
+núcleo, pero la *forma* es idéntica: extiende la clase base, parametriza con la consulta y
+su resultado, implementa `doHandle`. El framework lo descubre en el `QueryBus` exactamente
+del mismo modo que descubrió el manejador de comandos en el `CommandBus`, por el tipo
+genérico.
 
-!!! tip "Checkpoint"
-    Stop and notice the pattern. Four files — two messages, two handlers — and you have
-    not written a single line that *registers* a handler, *routes* a message, or
-    *subscribes* to a `Mono`. The command/query interfaces declare the result type; the
-    handler base classes declare which message they answer; the framework reads those
-    generics and wires the buses. If you came expecting a configuration class, there
-    isn't one.
+!!! tip "Punto de control"
+    Detente y fíjate en el patrón. Cuatro archivos —dos mensajes, dos manejadores— y no
+    has escrito una sola línea que *registre* un manejador, *enrute* un mensaje o se
+    *suscriba* a un `Mono`. Las interfaces de comando/consulta declaran el tipo de
+    resultado; las clases base de los manejadores declaran qué mensaje responden; el
+    framework lee esos genéricos y cablea los buses. Si venías esperando una clase de
+    configuración, no la hay.
 
-## Step 4 — Dispatch through the buses
+## Paso 4 — Despachar a través de los buses
 
-Handlers are discovered, but something has to *send*. That is the `CommandBus` and
-`QueryBus`. You inject them like any bean and call `send` for a command or `query` for
-a query; each returns a `Mono<R>` whose type matches the message's result parameter.
+Los manejadores se descubren, pero algo tiene que *enviar*. Eso son el `CommandBus` y el
+`QueryBus`. Los inyectas como cualquier bean y llamas a `send` para un comando o a `query`
+para una consulta; cada uno devuelve un `Mono<R>` cuyo tipo coincide con el parámetro de
+resultado del mensaje.
 
-The cleanest place to see the read path is the domain service. `LoanOriginationService`
-injects the `QueryBus` and dispatches the status query in one line:
+El sitio más limpio para ver el camino de lectura es el servicio de dominio.
+`LoanOriginationService` inyecta el `QueryBus` y despacha la consulta de estado en una
+línea:
 
-::: listing domain-lending-loan-origination/src/main/java/com/firefly/lumen/domain/service/LoanOriginationService.java | Listing 10.5 — the service dispatches a query through the QueryBus
+::: listing domain-lending-loan-origination/src/main/java/com/firefly/lumen/domain/service/LoanOriginationService.java | Listado 10.5 — el servicio despacha una consulta a través del QueryBus
     /** Reads the current status of a loan application via the {@link QueryBus}. */
     public Mono<String> getApplicationStatus(UUID loanApplicationId) {
         return queryBus.query(new GetApplicationStatusQuery(loanApplicationId));
     }
 :::
 
-`queryBus.query(new GetApplicationStatusQuery(id))` returns `Mono<String>` — the
-compiler infers the result type from the query's `Query<String>` parameter, and the
-bus routes to `GetApplicationStatusHandler` because that handler declared the same
-query type. The caller never names the handler. It names the *message*, and the bus
-finds the rest.
+`queryBus.query(new GetApplicationStatusQuery(id))` devuelve `Mono<String>`: el compilador
+infiere el tipo de resultado a partir del parámetro `Query<String>` de la consulta, y el
+bus enruta a `GetApplicationStatusHandler` porque ese manejador declaró el mismo tipo de
+consulta. Quien llama nunca nombra el manejador. Nombra el *mensaje*, y el bus encuentra
+el resto.
 
-The command side dispatches the same way, with `commandBus.send(command)`. You will
-not see a bare `send` in the service, because in Lumen the write path is wrapped in a
-saga (the next chapter's subject), but inside a saga step the call is exactly that:
+El lado del comando despacha de la misma manera, con `commandBus.send(command)`. No verás
+un `send` desnudo en el servicio, porque en Lumen el camino de escritura está envuelto en
+una saga (el tema del próximo capítulo), pero dentro de un paso de saga la llamada es
+exactamente esa:
 
 ```java
 // Inside a saga step — a command dispatched on the CommandBus.
@@ -232,26 +244,27 @@ return commandBus.send(command)
         .doOnNext(id -> ctx.putVariable(CTX_LOAN_APPLICATION_ID, id));
 ```
 
-`commandBus.send(command)` returns the `Mono<UUID>` promised by the command's
-`Command<UUID>` parameter; the step stashes the new id in the `ExecutionContext` so
-later steps can read it. Whether dispatched directly or from a saga step, the contract
-is the same: hand the bus a typed message, get back a `Mono` of its declared result.
+`commandBus.send(command)` devuelve el `Mono<UUID>` prometido por el parámetro
+`Command<UUID>` del comando; el paso guarda el nuevo id en el `ExecutionContext` para que
+los pasos posteriores puedan leerlo. Tanto si se despacha directamente como desde un paso
+de saga, el contrato es el mismo: entrega al bus un mensaje tipado y obtén de vuelta un
+`Mono` de su resultado declarado.
 
-!!! note "Key term — ExecutionContext"
-    The **`ExecutionContext`** is the request-scoped bag of variables and metadata that
-    flows through a dispatch — across command and query handlers, and across every step
-    of a saga. It is how a multi-tenant fleet keeps a tenant id, a correlation id, and
-    intermediate results (like the new application id) traveling with the work, on the
-    reactive stack, without a `ThreadLocal`. You write to it with `putVariable` and read
-    it back, typed, with `getVariableAs`.
+!!! note "Término clave — ExecutionContext"
+    El **`ExecutionContext`** es la bolsa de variables y metadatos con alcance de petición
+    que fluye a través de un despacho —entre manejadores de comandos y consultas, y a
+    través de cada paso de una saga—. Es la forma en que una flota multi-tenant mantiene un
+    id de tenant, un id de correlación y resultados intermedios (como el nuevo id de
+    solicitud) viajando con el trabajo, sobre la pila reactiva, sin un `ThreadLocal`.
+    Escribes en él con `putVariable` y lo lees de vuelta, tipado, con `getVariableAs`.
 
-## Step 5 — The SDK seam, honestly
+## Paso 5 — La costura del SDK, con honestidad
 
-The command handler called `client.createLoanApplication(...)`. What is that client?
-It is a **reactive port** — an interface the domain tier depends on to reach the core
-system of record. Here is the seam.
+El manejador de comandos llamaba a `client.createLoanApplication(...)`. ¿Qué es ese
+cliente? Es un **puerto reactivo**: una interfaz de la que depende la capa de dominio para
+alcanzar el sistema central de registro. Aquí está la costura.
 
-::: listing domain-lending-loan-origination/src/main/java/com/firefly/lumen/domain/client/LoanOriginationClient.java | Listing 10.6 — the SDK seam: a reactive port to the core service
+::: listing domain-lending-loan-origination/src/main/java/com/firefly/lumen/domain/client/LoanOriginationClient.java | Listado 10.6 — la costura del SDK: un puerto reactivo hacia el servicio central
 public interface LoanOriginationClient {
 
     /**
@@ -264,39 +277,41 @@ public interface LoanOriginationClient {
     Mono<UUID> createLoanApplication(String applicantName, long amount);
 :::
 
-Be clear-eyed about what this is. In a real Firefly deployment, the domain tier does
-not hand-write this interface — it injects the *generated core SDK*, a WebClient-based
-client produced from the core service's OpenAPI contract. The reactor hand-rolls a
-trimmed port here for one honest reason: so the sample compiles and its tests run with
-**no running core service and no Docker**. The port is a stand-in. Chapter 14 replaces
-it with the generated SDK and wires the real HTTP call to the core tier you built in
-Chapters 7 and 8.
+Ten claro qué es esto. En un despliegue real de Firefly, la capa de dominio no escribe a
+mano esta interfaz: inyecta el *SDK central generado*, un cliente basado en WebClient
+producido a partir del contrato OpenAPI del servicio central. El reactor escribe a mano un
+puerto recortado aquí por una razón honesta: para que el ejemplo compile y sus pruebas se
+ejecuten **sin un servicio central en marcha y sin Docker**. El puerto es un sustituto. El
+capítulo 14 lo reemplaza por el SDK generado y conecta la llamada HTTP real a la capa
+central que construiste en los capítulos 7 y 8.
 
-That substitution is exactly why CQRS and the port matter. The handler depends on the
-*interface*, never on a concrete client, so a test can supply an in-memory
-implementation and the production wiring can supply the generated SDK — and the
-handler does not change. The tiers integrate over a contract, never a shared database,
-which is the rule Chapter 1 set for the whole fleet.
+Esa sustitución es precisamente por qué importan CQRS y el puerto. El manejador depende de
+la *interfaz*, nunca de un cliente concreto, de modo que una prueba puede proporcionar una
+implementación en memoria y el cableado de producción puede proporcionar el SDK
+generado, y el manejador no cambia. Las capas se integran sobre un contrato, nunca sobre
+una base de datos compartida, que es la regla que el capítulo 1 fijó para toda la flota.
 
-!!! warning "The port is a stand-in, not the production client"
-    Do not read `LoanOriginationClient` as "how Firefly calls a downstream service."
-    The production path is a *generated* SDK client with resilient defaults — retries,
-    timeouts, a circuit breaker (Chapter 14). The hand-rolled port exists so this
-    chapter can teach CQRS without standing up the core service. When you see the port,
-    read "this is where the generated SDK plugs in."
+!!! warning "El puerto es un sustituto, no el cliente de producción"
+    No leas `LoanOriginationClient` como "así llama Firefly a un servicio aguas abajo". El
+    camino de producción es un cliente SDK *generado* con valores por defecto resilientes:
+    reintentos, timeouts, un circuit breaker (capítulo 14). El puerto escrito a mano existe
+    para que este capítulo pueda enseñar CQRS sin levantar el servicio central. Cuando veas
+    el puerto, lee "aquí es donde se enchufa el SDK generado".
 
-## How queries cache, and where the bus reports
+## Cómo cachean las consultas, y dónde reporta el bus
 
-Two capabilities of the CQRS buses are worth knowing even though the slice does not
-exercise them, because they explain *why* the command/query split is more than
-naming.
+Dos capacidades de los buses de CQRS merece la pena conocerlas aunque la porción no las
+ejercite, porque explican *por qué* la separación comando/consulta es más que una cuestión
+de nomenclatura.
 
-Because a query changes nothing, the `QueryBus` can cache its result. Firefly's CQRS
-auto-configuration supports caching a query's answer keyed by the query instance, so a
-repeated `GetApplicationStatusQuery` for the same id can be served from cache instead
-of re-hitting the read model. You opt in per query type and tune it with `firefly.cqrs.*`
-properties; the command bus never caches, because a command's whole purpose is the
-side effect. Conceptually a cacheable query handler looks like this:
+Como una consulta no cambia nada, el `QueryBus` puede cachear su resultado. La
+autoconfiguración de CQRS de Firefly admite cachear la respuesta de una consulta indexada
+por la instancia de la consulta, de modo que un `GetApplicationStatusQuery` repetido para
+el mismo id puede servirse desde la caché en lugar de volver a golpear el modelo de
+lectura. Te suscribes por tipo de consulta y lo ajustas con las propiedades
+`firefly.cqrs.*`; el bus de comandos nunca cachea, porque el propósito entero de un comando
+es el efecto secundario. Conceptualmente, un manejador de consulta cacheable tiene este
+aspecto:
 
 ```java
 // Illustrative — a query handler that opts into result caching.
@@ -309,42 +324,44 @@ public class GetApplicationStatusHandler extends QueryHandler<GetApplicationStat
 }
 ```
 
-And because every dispatch flows through a bus, the framework can observe it. When the
-CQRS capability is on the classpath it contributes an Actuator endpoint, `/actuator/cqrs`,
-that reports the registered handlers and per-type metrics — how many commands and
-queries have been dispatched, their latencies, their failure counts. You did not wire
-any of that; it comes with the bus, identically across the fleet. The slice in this
-chapter does not assert against the endpoint, so treat both caching and `/actuator/cqrs`
-as how-it-works, not as something this build verifies.
+Y como cada despacho fluye a través de un bus, el framework puede observarlo. Cuando la
+capacidad de CQRS está en el classpath, contribuye un endpoint de Actuator,
+`/actuator/cqrs`, que reporta los manejadores registrados y métricas por tipo: cuántos
+comandos y consultas se han despachado, sus latencias, sus recuentos de fallos. No cableaste
+nada de eso; viene con el bus, idéntico en toda la flota. La porción de este capítulo no
+hace aserciones contra el endpoint, así que trata tanto el cacheo como `/actuator/cqrs`
+como un "así funciona", no como algo que esta build verifique.
 
-!!! spring "Spring parity"
-    Query caching rides on Spring's cache abstraction, and `/actuator/cqrs` is a plain
-    Spring Boot Actuator endpoint — both are mechanisms you could assemble by hand in a
-    vanilla app. Firefly's value is that they are pre-wired to the buses: every command
-    and query is timed and counted, and any query can opt into caching, without you
-    touching a `CacheManager` or writing an `@Endpoint`.
+!!! spring "Equivalente en Spring"
+    El cacheo de consultas se apoya en la abstracción de caché de Spring, y
+    `/actuator/cqrs` es un endpoint corriente de Spring Boot Actuator: ambos son mecanismos
+    que podrías ensamblar a mano en una aplicación normal. El valor de Firefly es que están
+    precableados a los buses: cada comando y cada consulta se cronometra y se cuenta, y
+    cualquier consulta puede suscribirse al cacheo, sin que toques un `CacheManager` ni
+    escribas un `@Endpoint`.
 
-## Run it
+## Ejecútalo
 
-The whole tier boots and runs without a core service. The reactor proves it with six
-tests: two that exercise the register handler in isolation against an in-memory stub,
-and four that boot a real Spring context to wire the buses, the handlers, and the saga
-— substituting only the SDK seam. From the `samples/lumen-lending` directory:
+La capa entera arranca y se ejecuta sin un servicio central. El reactor lo demuestra con
+seis pruebas: dos que ejercitan el manejador de registro de forma aislada contra un stub en
+memoria, y cuatro que arrancan un contexto real de Spring para cablear los buses, los
+manejadores y la saga, sustituyendo únicamente la costura del SDK. Desde el directorio
+`samples/lumen-lending`:
 
 ```text
 mvn -q -pl domain-lending-loan-origination test
 ```
 
-The expected result:
+El resultado esperado:
 
 ```text
 Tests run: 6, Failures: 0, Errors: 0, Skipped: 0
 BUILD SUCCESS
 ```
 
-The handler test is the one to read closely, because it shows the dispatch machinery
-without a Spring context at all — it constructs the handler directly and calls the
-framework's public `handle` method, which wraps `doHandle`:
+La prueba del manejador es la que conviene leer con atención, porque muestra la maquinaria
+de despacho sin contexto de Spring en absoluto: construye el manejador directamente y llama
+al método público `handle` del framework, que envuelve a `doHandle`:
 
 ```java
 // From RegisterLoanApplicationHandlerTest — handle(...) wraps your doHandle(...).
@@ -353,66 +370,68 @@ StepVerifier.create(handler.handle(command))
         .verifyComplete();
 ```
 
-The four context-booting tests go one level up: they let the framework discover every
-`@CommandHandlerComponent`, register the `@Saga`, and wire the `CommandBus` and
-`QueryBus` — and the *only* substitution is a `@Bean` that supplies the in-memory
-`StubLoanOriginationClient` for the `LoanOriginationClient` port. No Docker, no core
-service. That is the SDK seam earning its keep.
+Las cuatro pruebas que arrancan el contexto suben un nivel: dejan que el framework descubra
+cada `@CommandHandlerComponent`, registre la `@Saga` y cablee el `CommandBus` y el
+`QueryBus`, y la *única* sustitución es un `@Bean` que suministra el
+`StubLoanOriginationClient` en memoria para el puerto `LoanOriginationClient`. Sin Docker,
+sin servicio central. Eso es la costura del SDK ganándose el sueldo.
 
-!!! tip "Checkpoint"
-    Six green tests, and not one of them needs the core tier running. The command/query
-    split, the typed buses, and the port together let you test the orchestration layer
-    in complete isolation — the fastest possible feedback for the most business-critical
-    code in the fleet.
+!!! tip "Punto de control"
+    Seis pruebas en verde, y ninguna de ellas necesita la capa central en marcha. La
+    separación comando/consulta, los buses tipados y el puerto, juntos, te permiten probar
+    la capa de orquestación en completo aislamiento: el feedback más rápido posible para el
+    código más crítico para el negocio de toda la flota.
 
-## What you built {.recap}
+## Lo que has construido {.recap}
 
-- A **`Command<UUID>`** and a **`Query<String>`** — typed messages that carry their
-  result type, the write side on the `CommandBus`, the read side on the `QueryBus`,
-  separated because writing and reading have different shapes and needs.
-- Two **single-method handlers** — `@CommandHandlerComponent` and
-  `@QueryHandlerComponent` stereotypes that extend `CommandHandler<C, R>` /
-  `QueryHandler<Q, R>` and implement only `doHandle`, while the framework supplies
-  validation, metrics, tracing, and error mapping around them.
-- **Auto-discovery by generic type** — the framework indexes each handler by its
-  command/query type parameter and routes `commandBus.send` / `queryBus.query` to it,
-  with no manual registration and no switch statement.
-- The **`ExecutionContext`** that carries tenant, correlation, and intermediate state
-  through a dispatch on the reactive stack, and a first look at query caching and
-  `/actuator/cqrs` as capabilities the bus contributes for free.
-- The **SDK seam** — `LoanOriginationClient`, a reactive port that stands in for the
-  generated core SDK so the whole tier compiles and tests green with no core service
-  and no Docker, and that Chapter 14 will replace with the real client.
+- Un **`Command<UUID>`** y una **`Query<String>`** —mensajes tipados que llevan su tipo de
+  resultado, el lado de escritura en el `CommandBus`, el lado de lectura en el `QueryBus`,
+  separados porque escribir y leer tienen formas y necesidades distintas.
+- Dos **manejadores de un único método** —los estereotipos `@CommandHandlerComponent` y
+  `@QueryHandlerComponent` que extienden `CommandHandler<C, R>` / `QueryHandler<Q, R>` e
+  implementan solo `doHandle`, mientras el framework aporta validación, métricas, trazado y
+  mapeo de errores a su alrededor.
+- **Auto-descubrimiento por tipo genérico** —el framework indexa cada manejador por su
+  parámetro de tipo de comando/consulta y enruta `commandBus.send` / `queryBus.query` hacia
+  él, sin registro manual y sin sentencia switch.
+- El **`ExecutionContext`** que lleva tenant, correlación y estado intermedio a través de un
+  despacho sobre la pila reactiva, y un primer vistazo al cacheo de consultas y a
+  `/actuator/cqrs` como capacidades que el bus aporta gratis.
+- La **costura del SDK** —`LoanOriginationClient`, un puerto reactivo que sustituye al SDK
+  central generado para que la capa entera compile y pase sus pruebas en verde sin servicio
+  central y sin Docker, y que el capítulo 14 reemplazará por el cliente real.
 
-## Try it yourself {.exercises}
+## Pruébalo tú mismo {.exercises}
 
-1. **Add a query.** Define `GetApplicationAmountQuery implements Query<Long>` alongside
-   the status query, and a `@QueryHandlerComponent` handler that returns a fixed
-   `Mono.just(0L)`. Inject the `QueryBus` in a small test and dispatch it. You wrote no
-   registration code — explain which line told the framework about your new handler.
-2. **Read the generic wiring.** In `RegisterLoanApplicationHandler`, change the second
-   type parameter of `CommandHandler<RegisterLoanApplicationCommand, UUID>` to `String`
-   without changing `doHandle`. Read the compile error and explain, in one sentence,
-   why the result type is part of the contract and not a free choice.
-3. **Prove the port is the seam.** Open `StubLoanOriginationClient` under
-   `src/test/java`, change the format of the call it records in `createLoanApplication`,
-   and re-run `RegisterLoanApplicationHandlerTest`. Adjust only the test's assertion and
-   confirm the *handler* never changed — it depends on the interface, not the stub.
-4. **Trace a command to its handler.** Starting from `commandBus.send(command)` in
-   `RegisterApplicationSaga`, follow the type parameters: which handler answers a
-   `RegisterLoanApplicationCommand`, and what in its class declaration makes the bus
-   pick it? Write down the single fact the bus uses to route.
-5. **Make a query cacheable in your head.** The slice's `GetApplicationStatusHandler`
-   returns a constant. Argue why caching it would be safe, then describe one change to
-   the read model that would make caching *unsafe* — and which `firefly.cqrs.*` knob you
-   would reach for to bound the staleness.
+1. **Añade una consulta.** Define `GetApplicationAmountQuery implements Query<Long>` junto a
+   la consulta de estado, y un manejador `@QueryHandlerComponent` que devuelva un
+   `Mono.just(0L)` fijo. Inyecta el `QueryBus` en una pequeña prueba y despáchalo. No
+   escribiste código de registro: explica qué línea le contó al framework sobre tu nuevo
+   manejador.
+2. **Lee el cableado genérico.** En `RegisterLoanApplicationHandler`, cambia el segundo
+   parámetro de tipo de `CommandHandler<RegisterLoanApplicationCommand, UUID>` a `String`
+   sin cambiar `doHandle`. Lee el error de compilación y explica, en una frase, por qué el
+   tipo de resultado es parte del contrato y no una elección libre.
+3. **Demuestra que el puerto es la costura.** Abre `StubLoanOriginationClient` bajo
+   `src/test/java`, cambia el formato de la llamada que registra en `createLoanApplication`
+   y vuelve a ejecutar `RegisterLoanApplicationHandlerTest`. Ajusta únicamente la aserción
+   de la prueba y confirma que el *manejador* nunca cambió: depende de la interfaz, no del
+   stub.
+4. **Traza un comando hasta su manejador.** Partiendo de `commandBus.send(command)` en
+   `RegisterApplicationSaga`, sigue los parámetros de tipo: qué manejador responde a un
+   `RegisterLoanApplicationCommand`, y qué hay en la declaración de su clase que hace que el
+   bus lo escoja. Anota el único hecho que el bus usa para enrutar.
+5. **Haz una consulta cacheable en tu cabeza.** El `GetApplicationStatusHandler` de la
+   porción devuelve una constante. Argumenta por qué cachearla sería seguro, luego describe
+   un cambio en el modelo de lectura que haría el cacheo *inseguro*, y qué perilla
+   `firefly.cqrs.*` usarías para acotar la obsolescencia.
 
-## Where to go next
+## Adónde ir ahora
 
-You now have discrete, dispatched, testable commands and queries — but a real
-registration is several commands that must succeed or fail *together*, with each
-completed step undone if a later one breaks. Chapter 11 introduces the **saga**: the
-`@Saga` and `@SagaStep` orchestration that runs `registerLoanApplication`,
-`registerApplicant`, and `proposeOffer` as one atomic flow, threads the new id through
-the `ExecutionContext` you met here, and compensates in reverse when a step fails. The
-commands you just built are exactly the steps that saga will orchestrate.
+Ahora tienes comandos y consultas discretos, despachados y verificables, pero un registro
+real son varios comandos que deben tener éxito o fallar *juntos*, con cada paso completado
+deshecho si uno posterior se rompe. El capítulo 11 introduce la **saga**: la orquestación
+`@Saga` y `@SagaStep` que ejecuta `registerLoanApplication`, `registerApplicant` y
+`proposeOffer` como un único flujo atómico, hila el nuevo id a través del
+`ExecutionContext` que conociste aquí y compensa en orden inverso cuando un paso falla. Los
+comandos que acabas de construir son exactamente los pasos que esa saga orquestará.

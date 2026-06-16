@@ -1,35 +1,35 @@
-Every chapter so far let a request straight through to the handler. That was fine
-while you were learning the reactive stack, but a lending platform cannot ship that
-way: creating a loan application is a privileged act, and reading one back exposes a
-customer's financial life. The experience tier — the channel-facing BFF you met in
-Chapter 17 — is where Lumen decides *who may do what*. This chapter shows how it
-does, on WebFlux, with two pieces working together.
+Hasta ahora, en todos los capítulos cada petición llegaba directamente al manejador. Eso
+estaba bien mientras aprendías la pila reactiva, pero una plataforma de préstamos no puede
+salir a producción así: crear una solicitud de préstamo es un acto privilegiado, y leer una
+expone la vida financiera de un cliente. La capa de experiencia —el BFF orientado al canal
+que conociste en el Capítulo 17— es donde Lumen decide *quién puede hacer qué*. Este capítulo
+muestra cómo lo hace, sobre WebFlux, con dos piezas que trabajan juntas.
 
-The first piece is conventional Spring: a reactive `SecurityWebFilterChain` at the
-edge of the HTTP pipeline. The second is Firefly's: a declarative `@Secure`
-annotation on the controller method, enforced not by the filter chain but by a
-framework AOP aspect that reads the authenticated principal and tenant out of an
-application context. Splitting authorization this way — coarse transport rules in the
-filter, fine permission checks at the method — is the model the application starter
-encourages, and it is what lets the same controller run unchanged whether identity
-comes from Keycloak, Cognito, or an internal directory.
+La primera pieza es Spring convencional: una `SecurityWebFilterChain` reactiva en el borde
+del pipeline HTTP. La segunda es de Firefly: una anotación declarativa `@Secure` sobre el
+método del controlador, aplicada no por la cadena de filtros sino por un aspecto AOP del
+framework que lee el principal autenticado y el tenant de un contexto de aplicación. Repartir
+la autorización de este modo —reglas de transporte de grano grueso en el filtro, comprobaciones
+finas de permisos en el método— es el modelo que fomenta el starter de aplicación, y es lo que
+permite que el mismo controlador se ejecute sin cambios tanto si la identidad procede de
+Keycloak, de Cognito o de un directorio interno.
 
-We will slice the real `ApplicationController` and its `WebSecurityConfig` out of
-`exp-lending`, trace how `@Secure` is enforced (and how one property turns that
-enforcement off for tests), sketch the `AppContext` that carries the principal, and
-end at the provider-agnostic identity port that Appendix B catalogs. Then we run the
-slice test that exercises the secured methods with enforcement disabled.
+Vamos a recortar el `ApplicationController` real y su `WebSecurityConfig` de `exp-lending`,
+seguir cómo se aplica `@Secure` (y cómo una propiedad apaga esa aplicación para los tests),
+esbozar el `AppContext` que transporta el principal, y terminar en el puerto de identidad
+agnóstico al proveedor que el Apéndice B cataloga. Luego ejecutamos el test de rebanada que
+ejercita los métodos protegidos con la aplicación desactivada.
 
-## Spring Security on WebFlux is a filter chain, not a servlet filter
+## Spring Security sobre WebFlux es una cadena de filtros, no un filtro de servlet
 
-If you have secured a Spring MVC application you reached for `WebSecurityConfigurerAdapter`
-or a `SecurityFilterChain` built on the servlet `Filter` stack. WebFlux is a
-different runtime — there is no servlet, no `ThreadLocal`-bound `SecurityContext` —
-so Spring Security exposes a parallel, reactive API. You annotate a configuration
-class with `@EnableWebFluxSecurity` and publish a `SecurityWebFilterChain` bean built
-from a `ServerHttpSecurity`. Here is Lumen's, whole.
+Si has protegido una aplicación Spring MVC, habrás echado mano de `WebSecurityConfigurerAdapter`
+o de una `SecurityFilterChain` construida sobre la pila de `Filter` de servlet. WebFlux es un
+runtime distinto —no hay servlet, ni `SecurityContext` ligado a un `ThreadLocal`— de modo que
+Spring Security expone una API paralela y reactiva. Anotas una clase de configuración con
+`@EnableWebFluxSecurity` y publicas un bean `SecurityWebFilterChain` construido a partir de un
+`ServerHttpSecurity`. Aquí tienes la de Lumen, entera.
 
-::: listing exp-lending/src/main/java/com/firefly/lumen/exp/config/WebSecurityConfig.java | Listing 19.1 — the reactive security filter chain for the BFF
+::: listing exp-lending/src/main/java/com/firefly/lumen/exp/config/WebSecurityConfig.java | Listado 19.1 — la cadena de filtros de seguridad reactiva del BFF
 @Configuration
 @EnableWebFluxSecurity
 public class WebSecurityConfig {
@@ -60,48 +60,47 @@ public class WebSecurityConfig {
 }
 :::
 
-Read what this chain actually does, because the surprise is what it *does not* do. It
-disables four things Spring Security switches on by default the moment
-`spring-boot-starter-security` lands on the classpath — and it does land, because
-`fireflyframework-starter-application` brings it transitively. HTTP Basic, form login,
-CSRF, and logout are the right defaults for a server-rendered web app and exactly
-wrong for a stateless JSON BFF: HTTP Basic would pop a browser auth dialog, CSRF would
-reject your `POST` without a token. Disabling them clears that noise.
+Lee lo que esta cadena hace realmente, porque la sorpresa está en lo que *no* hace. Desactiva
+cuatro cosas que Spring Security enciende por defecto en cuanto `spring-boot-starter-security`
+aterriza en el classpath —y aterriza, porque `fireflyframework-starter-application` lo arrastra
+transitivamente—. HTTP Basic, el login por formulario, CSRF y logout son los valores por defecto
+correctos para una aplicación web renderizada en servidor y exactamente equivocados para un BFF
+JSON sin estado: HTTP Basic abriría un diálogo de autenticación del navegador, y CSRF rechazaría
+tu `POST` sin un token. Desactivarlos despeja ese ruido.
 
-Then `authorizeExchange` permits everything — the documented routes explicitly, and
-`anyExchange().permitAll()` for the rest. That looks alarming until you see the second
-half of the design. This filter chain is deliberately *open* at the transport layer
-because authorization in Lumen happens one layer in, at the method, through `@Secure`.
-The filter chain's job here is to stop Spring Security's defaults from interfering;
-the *deciding* is delegated. A different deployment could tighten this chain to
-require a bearer token on `anyExchange()` and validate a JWT — the slot is right
-there — but Lumen keeps the transport rules permissive and puts the real check on the
-handler.
+Luego `authorizeExchange` permite todo —las rutas documentadas de forma explícita, y
+`anyExchange().permitAll()` para el resto—. Eso resulta alarmante hasta que ves la segunda mitad
+del diseño. Esta cadena de filtros está deliberadamente *abierta* en la capa de transporte porque
+la autorización en Lumen ocurre una capa más adentro, en el método, a través de `@Secure`. El
+trabajo de la cadena de filtros aquí es impedir que los valores por defecto de Spring Security
+interfieran; la *decisión* se delega. Otro despliegue podría endurecer esta cadena para exigir un
+token bearer en `anyExchange()` y validar un JWT —el hueco está justo ahí— pero Lumen mantiene las
+reglas de transporte permisivas y pone la comprobación real en el manejador.
 
-!!! spring "Spring parity"
-    Every type in this listing is stock Spring Security for WebFlux:
-    `@EnableWebFluxSecurity`, `ServerHttpSecurity`, `SecurityWebFilterChain`, the
-    `CsrfSpec`/`HttpBasicSpec`/`FormLoginSpec`/`LogoutSpec` lambdas, and
-    `authorizeExchange`. There is no Firefly type on this page. If you have written a
-    reactive security config, you have written this one. What Firefly adds is *not*
-    here — it is the method-level `@Secure` model the next section introduces, which
-    rides on top of this chain rather than replacing it.
+!!! spring "Equivalente en Spring"
+    Todos los tipos de este listado son Spring Security para WebFlux de serie:
+    `@EnableWebFluxSecurity`, `ServerHttpSecurity`, `SecurityWebFilterChain`, las lambdas
+    `CsrfSpec`/`HttpBasicSpec`/`FormLoginSpec`/`LogoutSpec`, y `authorizeExchange`. No hay
+    ningún tipo de Firefly en esta página. Si has escrito una configuración de seguridad
+    reactiva, has escrito esta. Lo que Firefly añade *no* está aquí —es el modelo `@Secure` a
+    nivel de método que introduce la siguiente sección, que cabalga sobre esta cadena en lugar
+    de reemplazarla.
 
-!!! note "Key term — `SecurityWebFilterChain`"
-    The WebFlux equivalent of a servlet `SecurityFilterChain`. It is a `WebFilter`
-    pipeline that runs on Reactor's event loop, built fluently from a
-    `ServerHttpSecurity`. Because it is reactive, the principal it resolves lives in
-    the Reactor `Context`, not a `ThreadLocal` — which is why a blocking
-    `SecurityContextHolder` lookup does not work on this stack, and why Firefly's
-    own context (below) is propagated through the reactive chain instead.
+!!! note "Término clave — `SecurityWebFilterChain`"
+    El equivalente en WebFlux de una `SecurityFilterChain` de servlet. Es un pipeline de
+    `WebFilter` que se ejecuta sobre el bucle de eventos de Reactor, construido de forma fluida a
+    partir de un `ServerHttpSecurity`. Como es reactiva, el principal que resuelve vive en el
+    `Context` de Reactor, no en un `ThreadLocal` —y por eso una búsqueda bloqueante en
+    `SecurityContextHolder` no funciona en esta pila, y por eso el propio contexto de Firefly
+    (más abajo) se propaga a través de la cadena reactiva en su lugar.
 
-## The declarative check: `@Secure` on the method
+## La comprobación declarativa: `@Secure` en el método
 
-Now the controller. It is an ordinary reactive `@RestController` — two methods, a
-`POST` to create an application and a `GET` to read one back — but each method carries
-a Firefly `@Secure` annotation declaring the permission the caller must hold.
+Ahora el controlador. Es un `@RestController` reactivo corriente —dos métodos, un `POST` para
+crear una solicitud y un `GET` para leerla— pero cada método lleva una anotación `@Secure` de
+Firefly que declara el permiso que el llamante debe poseer.
 
-::: listing exp-lending/src/main/java/com/firefly/lumen/exp/web/ApplicationController.java | Listing 19.2 — declarative method-level authorization with @Secure
+::: listing exp-lending/src/main/java/com/firefly/lumen/exp/web/ApplicationController.java | Listado 19.2 — autorización declarativa a nivel de método con @Secure
 @RestController
 @RequestMapping("/api/v1/experience/lending/applications")
 @Tag(name = "Lending - Applications")
@@ -136,64 +135,62 @@ public class ApplicationController {
 }
 :::
 
-The authorization rule reads like documentation: `createApplication` requires
-`lending:application:create`, `getApplication` requires `lending:application:read`.
-The permission strings are scoped — `resource:action`, namespaced by domain — so a
-role definition in your identity provider can grant `lending:application:read`
-without accidentally handing out create rights. The `description` is not decoration:
-it feeds the endpoint security registry the framework builds at startup, which is how
-a back-office screen or an audit export can list every protected method and the
-permission it demands without reading the source.
+La regla de autorización se lee como documentación: `createApplication` requiere
+`lending:application:create`, `getApplication` requiere `lending:application:read`. Las cadenas
+de permiso están dentro de un ámbito —`resource:action`, con espacio de nombres por dominio—
+de modo que una definición de rol en tu proveedor de identidad puede conceder
+`lending:application:read` sin repartir por accidente derechos de creación. El `description` no
+es decoración: alimenta el registro de seguridad de endpoints que el framework construye en el
+arranque, que es como una pantalla de back-office o una exportación de auditoría pueden listar
+cada método protegido y el permiso que exige sin leer el código fuente.
 
-Notice the import in the source file: `@Secure` is
-`org.fireflyframework.common.application.security.annotation.Secure`, a framework
-annotation, not a Spring Security one. Spring's method security uses
-`@PreAuthorize("hasAuthority('...')")` with a SpEL expression; Firefly's `@Secure`
-takes a typed list of permission strings and is enforced by a framework aspect rather
-than Spring's `MethodSecurityInterceptor`. The two solve the same problem; Firefly's
-version is tuned for the multi-tenant, reactive, permission-string world the platform
-lives in.
+Fíjate en el import del fichero fuente: `@Secure` es
+`org.fireflyframework.common.application.security.annotation.Secure`, una anotación del framework,
+no de Spring Security. La seguridad de métodos de Spring usa `@PreAuthorize("hasAuthority('...')")`
+con una expresión SpEL; el `@Secure` de Firefly toma una lista tipada de cadenas de permiso y se
+aplica mediante un aspecto del framework en lugar del `MethodSecurityInterceptor` de Spring. Las
+dos resuelven el mismo problema; la versión de Firefly está afinada para el mundo multi-tenant,
+reactivo y de cadenas de permiso en el que vive la plataforma.
 
-!!! note "Key term — `@Secure`"
-    A Firefly method-level authorization annotation. You declare the `permissions`
-    (and optionally roles) a caller must hold; the framework's `SecurityAspect`
-    intercepts the call and checks them against the authenticated principal carried in
-    the application context. It is declarative — no `if (user.hasPermission(...))`
-    in your handler — and it lives on the *method*, so the same controller can mix
-    public and protected endpoints without splitting them across classes.
+!!! note "Término clave — `@Secure`"
+    Una anotación de autorización a nivel de método de Firefly. Declaras los `permissions` (y
+    opcionalmente los roles) que un llamante debe poseer; el `SecurityAspect` del framework
+    intercepta la llamada y los comprueba contra el principal autenticado transportado en el
+    contexto de aplicación. Es declarativa —nada de `if (user.hasPermission(...))` en tu
+    manejador— y vive en el *método*, así que el mismo controlador puede mezclar endpoints
+    públicos y protegidos sin repartirlos entre varias clases.
 
-## How `@Secure` is enforced: the SecurityAspect
+## Cómo se aplica `@Secure`: el SecurityAspect
 
-`@Secure` is an annotation, which means it does nothing on its own — something has to
-*read* it and act. That something is the application starter's `SecurityAspect`, an
-ordinary Spring AOP aspect that wraps every `@Secure` method. When a secured method is
-invoked, the aspect runs first: it locates the application execution context, resolves
-the caller's permissions from it, compares them against the annotation's required set,
-and either proceeds to your handler or short-circuits with an authorization failure
-that the web layer renders as a `403`. Your handler body never runs if the check
-fails.
+`@Secure` es una anotación, lo que significa que por sí sola no hace nada —algo tiene que
+*leerla* y actuar—. Ese algo es el `SecurityAspect` del starter de aplicación, un aspecto AOP
+de Spring corriente que envuelve todos los métodos `@Secure`. Cuando se invoca un método
+protegido, el aspecto se ejecuta primero: localiza el contexto de ejecución de la aplicación,
+resuelve a partir de él los permisos del llamante, los compara con el conjunto requerido por la
+anotación, y o bien continúa hacia tu manejador o bien corta el paso con un fallo de autorización
+que la capa web renderiza como un `403`. El cuerpo de tu manejador nunca se ejecuta si la
+comprobación falla.
 
-You can watch this happen. With logging at debug, the running service prints a line
-per intercepted call:
+Puedes verlo ocurrir. Con el logging en debug, el servicio en ejecución imprime una línea por
+cada llamada interceptada:
 
 ```text
 DEBUG o.f.c.application.aop.SecurityAspect : Intercepting @Secure method: createApplication
 ```
 
-That line is real output from the slice test in this chapter — the aspect is wired and
-firing, not theoretical. What makes the test *pass* without minting any tokens is the
-enforcement toggle.
+Esa línea es salida real del test de rebanada de este capítulo —el aspecto está cableado y
+disparándose, no es teórico—. Lo que hace que el test *pase* sin acuñar ningún token es el
+interruptor de aplicación.
 
-### The enforcement toggle: `firefly.application.security.enabled`
+### El interruptor de aplicación: `firefly.application.security.enabled`
 
-The `SecurityAspect` honors a single property, `firefly.application.security.enabled`.
-In production it is `true` and the aspect enforces every `@Secure` rule. In a slice
-test you flip it to `false`, and the aspect degrades to a no-op: it still intercepts
-the method — so the annotation is genuinely exercised — but it logs that security is
-disabled and proceeds straight to the handler without checking permissions. Lumen's
-test profile sets exactly that:
+El `SecurityAspect` respeta una única propiedad, `firefly.application.security.enabled`. En
+producción es `true` y el aspecto aplica cada regla `@Secure`. En un test de rebanada la pones a
+`false`, y el aspecto degrada a un no-op: sigue interceptando el método —de modo que la anotación
+se ejercita de verdad— pero registra que la seguridad está desactivada y continúa directamente
+hacia el manejador sin comprobar permisos. El perfil de test de Lumen establece exactamente eso:
 
-::: listing exp-lending/src/test/resources/application.yml | Listing 19.3 — disabling enforcement for the slice test, without changing the controller
+::: listing exp-lending/src/test/resources/application.yml | Listado 19.3 — desactivar la aplicación para el test de rebanada, sin cambiar el controlador
 firefly:
   application:
     security:
@@ -202,55 +199,54 @@ firefly:
     enabled: false
 :::
 
-This is the honest, important detail of the whole chapter. The slice test does **not**
-remove `@Secure`, mock a principal, or stub the aspect. It keeps the real annotation
-and the real `SecurityAspect`, and disables only *enforcement* through configuration.
-The aspect runs, finds no application execution context in the method arguments —
-because the test calls the endpoint over `WebTestClient` without one — and, with
-enforcement off, waves the call through. In the test logs you can see both halves of
-that decision:
+Este es el detalle honesto e importante de todo el capítulo. El test de rebanada **no** elimina
+`@Secure`, ni simula un principal, ni reemplaza el aspecto. Conserva la anotación real y el
+`SecurityAspect` real, y desactiva solo la *aplicación* mediante configuración. El aspecto se
+ejecuta, no encuentra ningún contexto de ejecución de la aplicación en los argumentos del método
+—porque el test llama al endpoint a través de `WebTestClient` sin uno— y, con la aplicación
+apagada, deja pasar la llamada. En los logs del test puedes ver ambas mitades de esa decisión:
 
 ```text
 DEBUG SecurityAspect : Intercepting @Secure method: getApplication
 WARN  SecurityAspect : No ApplicationExecutionContext found in method arguments, skipping security check
 ```
 
-The first line proves the annotation path is live; the second is the aspect declining
-to enforce. Turn the property back to `true` without supplying a context, and the same
-call would be rejected — which is precisely the behavior you want in production and the
-behavior the test deliberately steps around so it can assert business logic in
-isolation.
+La primera línea prueba que el camino de la anotación está vivo; la segunda es el aspecto
+declinando aplicar. Vuelve a poner la propiedad a `true` sin suministrar un contexto, y la misma
+llamada sería rechazada —que es precisamente el comportamiento que quieres en producción y el
+comportamiento que el test sortea deliberadamente para poder afirmar la lógica de negocio de
+forma aislada.
 
-!!! warning "`security.enabled=false` is a test-only knob"
-    Disabling enforcement is the right move for a slice test that asserts mapping and
-    status codes, and the wrong move anywhere a real caller can reach. Keep it scoped
-    to `src/test/resources` (or a test profile) as Lumen does. Shipping a service with
-    `firefly.application.security.enabled=false` makes every `@Secure` annotation
-    decorative — the aspect intercepts, logs, and lets everyone through. The default
-    is `true` for exactly this reason; never override it in a deployed profile.
+!!! warning "`security.enabled=false` es un mando solo para tests"
+    Desactivar la aplicación es la jugada correcta para un test de rebanada que afirma el mapeo y
+    los códigos de estado, y la jugada equivocada en cualquier sitio donde pueda llegar un llamante
+    real. Mantenlo acotado a `src/test/resources` (o a un perfil de test) como hace Lumen. Enviar a
+    producción un servicio con `firefly.application.security.enabled=false` convierte cada anotación
+    `@Secure` en decorativa —el aspecto intercepta, registra y deja pasar a todo el mundo—. El valor
+    por defecto es `true` por exactamente esta razón; nunca lo sobreescribas en un perfil desplegado.
 
-!!! spring "Spring parity"
-    Spring's `@EnableMethodSecurity` plus `@PreAuthorize` is enforced by an AOP
-    interceptor too — the mechanism is the same shape. Firefly's difference is the
-    *toggle*: there is one fleet-wide property that turns method authorization on or
-    off, so every service's tests disable enforcement the same way instead of each
-    inventing a `@WithMockUser` dance or a custom test security config. You are still
-    using AOP-driven method security; Firefly standardizes the seams around it.
+!!! spring "Equivalente en Spring"
+    El `@EnableMethodSecurity` de Spring más `@PreAuthorize` también se aplica mediante un
+    interceptor AOP —el mecanismo tiene la misma forma—. La diferencia de Firefly es el *interruptor*:
+    hay una única propiedad para toda la flota que enciende o apaga la autorización de métodos, de
+    modo que los tests de cada servicio desactivan la aplicación de la misma manera en lugar de que
+    cada uno invente un baile con `@WithMockUser` o una configuración de seguridad de test a medida.
+    Sigues usando seguridad de métodos basada en AOP; Firefly estandariza las costuras alrededor.
 
-## `AppContext`: the principal and tenant, carried reactively
+## `AppContext`: el principal y el tenant, transportados de forma reactiva
 
-The aspect needs to know *who* is calling and *which tenant* they belong to. On the
-servlet stack that lives in a `ThreadLocal` `SecurityContextHolder`; on the reactive
-stack a `ThreadLocal` is a trap, because Reactor hops threads between operators and the
-value would not follow. Firefly's answer is an application context object — call it the
-`AppContext` (its security half is the `AppSecurityContext`) — that travels *with* the
-request through the Reactor `Context`, so the authenticated principal and tenant id are
-available at any point in the reactive chain, on any thread.
+El aspecto necesita saber *quién* llama y a *qué tenant* pertenece. En la pila de servlet eso vive
+en un `SecurityContextHolder` con `ThreadLocal`; en la pila reactiva un `ThreadLocal` es una trampa,
+porque Reactor salta de hilo entre operadores y el valor no lo seguiría. La respuesta de Firefly es
+un objeto de contexto de aplicación —llámalo el `AppContext` (su mitad de seguridad es el
+`AppSecurityContext`)— que viaja *con* la petición a través del `Context` de Reactor, de modo que el
+principal autenticado y el id de tenant están disponibles en cualquier punto de la cadena reactiva,
+en cualquier hilo.
 
-The application starter populates this context at the edge from whatever authentication
-the request carried — a validated bearer token, an upstream gateway header — and the
-`SecurityAspect` reads the caller's permissions out of it to satisfy `@Secure`. The
-shape you would pass into a secured method, or read inside one, looks like this:
+El starter de aplicación rellena este contexto en el borde a partir de la autenticación que
+trajera la petición —un token bearer validado, una cabecera de un gateway aguas arriba— y el
+`SecurityAspect` lee de él los permisos del llamante para satisfacer `@Secure`. La forma que pasarías
+a un método protegido, o leerías dentro de uno, tiene este aspecto:
 
 ```java
 // Illustrative: the application context carrying principal and tenant through a reactive call.
@@ -262,40 +258,41 @@ public Mono<ApplicationDetailDTO> createApplication(AppContext ctx, CreateApplic
 }
 ```
 
-That is illustrative — Lumen's slice controller does not take the context as a
-parameter, which is exactly why the test logged "No ApplicationExecutionContext found
-in method arguments." In a fully wired deployment the context is threaded in (or
-resolved from the Reactor `Context`), the aspect finds it, and the permission check has
-something to check against. The tenant id matters as much as the principal: a lending
-platform is multi-tenant, and the same `getApplication` call must scope its read to the
-caller's tenant so one bank's operator cannot fetch another's loan. The context is how
-that tenant boundary follows the request without a parameter on every method.
+Eso es ilustrativo —el controlador de rebanada de Lumen no toma el contexto como parámetro, que es
+exactamente por lo que el test registró "No ApplicationExecutionContext found in method arguments"—.
+En un despliegue completamente cableado el contexto se enhebra (o se resuelve desde el `Context` de
+Reactor), el aspecto lo encuentra, y la comprobación de permisos tiene algo contra lo que comparar.
+El id de tenant importa tanto como el principal: una plataforma de préstamos es multi-tenant, y la
+misma llamada `getApplication` debe acotar su lectura al tenant del llamante para que el operador de
+un banco no pueda recuperar el préstamo de otro. El contexto es cómo esa frontera de tenant sigue a
+la petición sin un parámetro en cada método.
 
-!!! note "Key term — `AppContext` / `AppSecurityContext`"
-    The request-scoped object the application tier carries through a reactive call,
-    holding the authenticated principal id, the tenant id, the caller's permissions and
-    roles, and correlation metadata. `AppSecurityContext` is its security-focused view.
-    It is the reactive-safe replacement for `SecurityContextHolder`: populated once at
-    the edge, propagated through the Reactor `Context`, and read by the `SecurityAspect`
-    (and your handlers) downstream. It is the same idea as the CQRS `ExecutionContext`
-    from Chapter 10, scoped to the experience tier and centered on identity.
+!!! note "Término clave — `AppContext` / `AppSecurityContext`"
+    El objeto con ámbito de petición que la capa de aplicación transporta a través de una llamada
+    reactiva, conteniendo el id del principal autenticado, el id de tenant, los permisos y roles del
+    llamante, y metadatos de correlación. `AppSecurityContext` es su vista centrada en la seguridad.
+    Es el reemplazo seguro para reactivo de `SecurityContextHolder`: se rellena una vez en el borde,
+    se propaga a través del `Context` de Reactor, y lo lee el `SecurityAspect` (y tus manejadores)
+    aguas abajo. Es la misma idea que el `ExecutionContext` de CQRS del Capítulo 10, acotada a la
+    capa de experiencia y centrada en la identidad.
 
-!!! spring "Spring parity"
-    Spring Security WebFlux exposes the principal through
-    `ReactiveSecurityContextHolder.getContext()`, which reads from the Reactor
-    `Context` — the right reactive primitive. Firefly's `AppContext` builds on that
-    same primitive but carries more than a principal: tenant, permissions as scoped
-    strings, and correlation, in one object the whole application tier shares. You can
-    still reach Spring's `ReactiveSecurityContextHolder`; `AppContext` is the
-    fleet-standard envelope around it.
+!!! spring "Equivalente en Spring"
+    Spring Security WebFlux expone el principal a través de
+    `ReactiveSecurityContextHolder.getContext()`, que lee desde el `Context` de Reactor —la primitiva
+    reactiva correcta—. El `AppContext` de Firefly se construye sobre esa misma primitiva pero
+    transporta más que un principal: tenant, permisos como cadenas con ámbito, y correlación, en un
+    único objeto que toda la capa de aplicación comparte. Aún puedes alcanzar el
+    `ReactiveSecurityContextHolder` de Spring; `AppContext` es el sobre estándar de la flota a su
+    alrededor.
 
-## `@RequireContext`: demanding the context be present
+## `@RequireContext`: exigir que el contexto esté presente
 
-`@Secure` answers "may this caller do this?" A companion annotation, `@RequireContext`,
-answers a prior question: "is there an authenticated context at all?" You put it on a
-method (or class) that must not run anonymously — it tells the aspect to reject the call
-when no `AppContext` is present, before any permission check. It is the explicit way to
-say "this endpoint is never public," and it pairs naturally with `@Secure`:
+`@Secure` responde a "¿puede este llamante hacer esto?" Una anotación complementaria,
+`@RequireContext`, responde a una pregunta previa: "¿hay siquiera un contexto autenticado?" La
+pones sobre un método (o una clase) que no debe ejecutarse de forma anónima —le dice al aspecto que
+rechace la llamada cuando no haya ningún `AppContext` presente, antes de cualquier comprobación de
+permisos—. Es la forma explícita de decir "este endpoint nunca es público", y se combina de manera
+natural con `@Secure`:
 
 ```java
 // Illustrative: require an authenticated context, then a specific permission.
@@ -306,21 +303,21 @@ public Mono<ResponseEntity<ApplicationDetailDTO>> getApplication(AppContext ctx,
 }
 ```
 
-Lumen's slice uses `@Secure` alone and relies on the test toggle to skip enforcement,
-so `@RequireContext` does not appear in the reactor — treat it as the how-it-works
-companion you reach for when an endpoint must hard-fail on a missing identity rather
-than depend on `@Secure`'s permission list to catch it. Chapter 17 covers the broader
-`AppContext` story for the experience tier; here the point is just that the two
-annotations compose: require the context, then constrain what it may do.
+La rebanada de Lumen usa `@Secure` a solas y se apoya en el interruptor de test para saltarse la
+aplicación, así que `@RequireContext` no aparece en el reactor —trátala como la compañera de
+cómo-funciona a la que recurres cuando un endpoint debe fallar en seco ante una identidad ausente en
+lugar de depender de la lista de permisos de `@Secure` para atraparlo—. El Capítulo 17 cubre la
+historia más amplia del `AppContext` para la capa de experiencia; aquí lo importante es solo que las
+dos anotaciones componen: exige el contexto, y luego restringe lo que puede hacer.
 
-## Where identity comes from: the provider-agnostic IDP port
+## De dónde viene la identidad: el puerto IDP agnóstico al proveedor
 
-Everything so far assumed an authenticated principal arrived. *Producing* that
-principal — logging a user in, validating a token, refreshing a session, looking up a
-user's roles — is the job of an identity provider, and Firefly keeps it behind a port
-exactly like every other vendor concern in the platform. The IDP core defines one
-`IdpAdapter` interface (login, refresh, token introspection, user CRUD, MFA, sessions),
-and a concrete adapter is chosen by a single property:
+Todo lo anterior daba por supuesto que llegaba un principal autenticado. *Producir* ese principal
+—autenticar a un usuario, validar un token, refrescar una sesión, buscar los roles de un usuario—
+es trabajo de un proveedor de identidad, y Firefly lo mantiene tras un puerto exactamente como
+cualquier otra preocupación de proveedor en la plataforma. El núcleo IDP define una única interfaz
+`IdpAdapter` (login, refresco, introspección de tokens, CRUD de usuarios, MFA, sesiones), y un
+adaptador concreto se elige mediante una única propiedad:
 
 ```yaml
 # Illustrative: pick an identity provider with one property; the adapter jar registers the rest.
@@ -329,124 +326,122 @@ firefly:
     provider: keycloak   # keycloak | cognito | azure-ad | internal-db
 ```
 
-Switching from Keycloak to AWS Cognito is a dependency swap plus this one line — your
-`SecurityWebFilterChain`, your `@Secure` annotations, and your `AppContext`-aware
-handlers do not change, because they depend on the *port's* notion of a principal and
-permissions, never on a vendor SDK. That is the same hexagonal pattern Chapter 1
-promised and the EDA transport swap in Chapter 11 demonstrated, applied to identity.
-The IDP core is not exercised by this chapter's slice — the test disables enforcement
-rather than mint a real token — so treat the provider table as where it plugs in, not
-as something this build runs.
+Cambiar de Keycloak a AWS Cognito es un intercambio de dependencia más esta única línea —tu
+`SecurityWebFilterChain`, tus anotaciones `@Secure`, y tus manejadores conscientes de `AppContext`
+no cambian, porque dependen de la noción de principal y permisos *del puerto*, nunca de un SDK de
+proveedor—. Ese es el mismo patrón hexagonal que el Capítulo 1 prometió y que el intercambio de
+transporte de EDA del Capítulo 11 demostró, aplicado a la identidad. El núcleo IDP no se ejercita
+en la rebanada de este capítulo —el test desactiva la aplicación en lugar de acuñar un token real—
+así que trata la tabla de proveedores como dónde se enchufa, no como algo que esta build ejecuta.
 
-!!! note "Key term — IDP port (`IdpAdapter`)"
-    A single interface the platform depends on for all identity operations — login,
-    refresh, introspection, user and group management, MFA, session handling. Each
-    vendor (Keycloak, Cognito, Microsoft Entra ID, an internal database) ships an
-    adapter that activates by `@ConditionalOnProperty` when `firefly.idp.provider`
-    names it. Your security code targets the port; the property picks the
-    implementation. Appendix B lists the adapters and the exact dependencies.
+!!! note "Término clave — puerto IDP (`IdpAdapter`)"
+    Una única interfaz de la que la plataforma depende para todas las operaciones de identidad
+    —login, refresco, introspección, gestión de usuarios y grupos, MFA, manejo de sesiones—. Cada
+    proveedor (Keycloak, Cognito, Microsoft Entra ID, una base de datos interna) entrega un adaptador
+    que se activa mediante `@ConditionalOnProperty` cuando `firefly.idp.provider` lo nombra. Tu código
+    de seguridad apunta al puerto; la propiedad elige la implementación. El Apéndice B lista los
+    adaptadores y las dependencias exactas.
 
-!!! spring "Spring parity"
-    In plain Spring you would wire `spring-security-oauth2-resource-server` to one
-    issuer, or a Keycloak adapter, directly into your security config — and changing
-    providers means editing that config in every service. Firefly's IDP port turns the
-    provider into configuration: the resource-server or adapter wiring lives in the
-    chosen adapter jar, selected by `firefly.idp.provider`, so the swap is fleet-wide
-    and code-free. See Appendix B for the full adapter catalog.
+!!! spring "Equivalente en Spring"
+    En Spring puro cablearías `spring-security-oauth2-resource-server` a un emisor, o un adaptador de
+    Keycloak, directamente en tu configuración de seguridad —y cambiar de proveedor significa editar
+    esa configuración en cada servicio—. El puerto IDP de Firefly convierte el proveedor en
+    configuración: el cableado del servidor de recursos o del adaptador vive en el jar del adaptador
+    elegido, seleccionado por `firefly.idp.provider`, de modo que el intercambio es para toda la flota
+    y sin código. Consulta el Apéndice B para el catálogo completo de adaptadores.
 
-## Run it
+## Ejecútalo
 
-The slice test boots the real `exp-lending` application — the `ApplicationController`
-with its `@Secure` annotations, the `WebSecurityConfig` filter chain, the
-`SecurityAspect`, and `fireflyframework-web`'s `GlobalExceptionHandler` — and drives it
-through `WebTestClient`, satisfying the SDK seam with an in-memory stub so there is no
-domain service and no Docker. Enforcement is disabled through the test profile's
-`firefly.application.security.enabled=false`, so the secured methods run while the
-`SecurityAspect` short-circuits. From the `samples/lumen-lending` directory:
+El test de rebanada arranca la aplicación `exp-lending` real —el `ApplicationController` con sus
+anotaciones `@Secure`, la cadena de filtros `WebSecurityConfig`, el `SecurityAspect`, y el
+`GlobalExceptionHandler` de `fireflyframework-web`— y la conduce a través de `WebTestClient`,
+satisfaciendo la costura del SDK con un stub en memoria de modo que no hay servicio de dominio ni
+Docker. La aplicación está desactivada mediante el `firefly.application.security.enabled=false` del
+perfil de test, así que los métodos protegidos se ejecutan mientras el `SecurityAspect` corta el
+paso. Desde el directorio `samples/lumen-lending`:
 
 ```text
 mvn -q -pl exp-lending test
 ```
 
-You should see the module's tests pass:
+Deberías ver pasar los tests del módulo:
 
 ```text
 Tests run: 9, Failures: 0, Errors: 0, Skipped: 0
 BUILD SUCCESS
 ```
 
-The four tests in `ApplicationControllerTest` are the ones that matter here. They
-`POST` a valid application and assert `201`, round-trip a create-then-`GET`, assert an
-unknown id returns a `404` problem detail, and reject a zero amount with `400` — and
-every one of those requests passes through a `@Secure` method whose aspect intercepts,
-logs, and (enforcement off) proceeds. The build proves two things at once: the
-authorization annotations are wired and live on the real handlers, and disabling
-enforcement is a configuration flip, not a code change.
+Los cuatro tests de `ApplicationControllerTest` son los que importan aquí. Hacen `POST` de una
+solicitud válida y afirman `201`, hacen el viaje de ida y vuelta de crear-y-luego-`GET`, afirman que
+un id desconocido devuelve un detalle de problema `404`, y rechazan un importe cero con `400` —y cada
+una de esas peticiones pasa por un método `@Secure` cuyo aspecto intercepta, registra y (con la
+aplicación apagada) continúa. La build prueba dos cosas a la vez: las anotaciones de autorización
+están cableadas y vivas sobre los manejadores reales, y desactivar la aplicación es un cambio de
+configuración, no de código.
 
-!!! tip "Checkpoint"
-    Run the command above and confirm `Tests run: 9, Failures: 0`. Then run it with
-    enforcement on — `mvn -q -pl exp-lending -Dfirefly.application.security.enabled=true test`
-    — and watch the secured calls fail authorization: with no `AppContext` supplied,
-    the `SecurityAspect` has nothing to check the required permissions against and
-    rejects the request. Restore the test default and it passes again. You just saw the
-    toggle do its single job, from both sides.
+!!! tip "Punto de control"
+    Ejecuta el comando de arriba y confirma `Tests run: 9, Failures: 0`. Luego ejecútalo con la
+    aplicación activada —`mvn -q -pl exp-lending -Dfirefly.application.security.enabled=true test`—
+    y observa cómo las llamadas protegidas fallan la autorización: sin ningún `AppContext`
+    suministrado, el `SecurityAspect` no tiene nada contra lo que comprobar los permisos requeridos
+    y rechaza la petición. Restaura el valor por defecto del test y vuelve a pasar. Acabas de ver al
+    interruptor hacer su único trabajo, desde ambos lados.
 
-## What you learned {.recap}
+## Lo que has aprendido {.recap}
 
-- Spring Security on WebFlux is a reactive **`SecurityWebFilterChain`**, built from
-  `ServerHttpSecurity` under `@EnableWebFluxSecurity` — not the servlet filter stack.
-  Lumen's chain disables the stateless-hostile defaults (HTTP Basic, form login, CSRF,
-  logout) and permits all exchanges, *delegating* authorization to the method layer.
-- **`@Secure`** is Firefly's declarative method-level authorization: a typed list of
-  scoped permission strings (`lending:application:create`) on the handler, enforced by
-  the application starter's **`SecurityAspect`** (AOP), not by Spring's
-  `@PreAuthorize`.
-- One property, **`firefly.application.security.enabled`**, turns enforcement on (the
-  production default) or off (the test profile). With it `false`, the aspect still
-  intercepts the `@Secure` method but skips the permission check — which is exactly how
-  the slice test keeps the real annotations while asserting business logic.
-- **`AppContext`/`AppSecurityContext`** carries the authenticated principal, tenant id,
-  and permissions through the reactive chain via the Reactor `Context` — the
-  reactive-safe replacement for `SecurityContextHolder` — and **`@RequireContext`**
-  demands it be present before a method runs.
-- Identity is produced behind a provider-agnostic **`IdpAdapter`** port, selected by
-  `firefly.idp.provider` (Keycloak, Cognito, Entra ID, internal DB) — a one-line swap
-  cross-referenced in Appendix B.
-- A passing module build (`Tests run: 9, Failures: 0`) in which every controller call
-  traverses a real `@Secure` aspect with enforcement disabled by configuration.
+- Spring Security sobre WebFlux es una **`SecurityWebFilterChain`** reactiva, construida a partir
+  de `ServerHttpSecurity` bajo `@EnableWebFluxSecurity` —no la pila de filtros de servlet—. La
+  cadena de Lumen desactiva los valores por defecto hostiles a la ausencia de estado (HTTP Basic,
+  login por formulario, CSRF, logout) y permite todos los exchanges, *delegando* la autorización en
+  la capa de método.
+- **`@Secure`** es la autorización declarativa a nivel de método de Firefly: una lista tipada de
+  cadenas de permiso con ámbito (`lending:application:create`) sobre el manejador, aplicada por el
+  **`SecurityAspect`** del starter de aplicación (AOP), no por el `@PreAuthorize` de Spring.
+- Una propiedad, **`firefly.application.security.enabled`**, enciende la aplicación (el valor por
+  defecto de producción) o la apaga (el perfil de test). Con ella a `false`, el aspecto sigue
+  interceptando el método `@Secure` pero se salta la comprobación de permisos —que es exactamente
+  cómo el test de rebanada conserva las anotaciones reales mientras afirma la lógica de negocio.
+- **`AppContext`/`AppSecurityContext`** transporta el principal autenticado, el id de tenant y los
+  permisos a través de la cadena reactiva vía el `Context` de Reactor —el reemplazo seguro para
+  reactivo de `SecurityContextHolder`— y **`@RequireContext`** exige que esté presente antes de que
+  un método se ejecute.
+- La identidad se produce tras un puerto **`IdpAdapter`** agnóstico al proveedor, seleccionado por
+  `firefly.idp.provider` (Keycloak, Cognito, Entra ID, BD interna) —un intercambio de una sola línea
+  con referencia cruzada al Apéndice B.
+- Una build de módulo que pasa (`Tests run: 9, Failures: 0`) en la que cada llamada del controlador
+  atraviesa un aspecto `@Secure` real con la aplicación desactivada mediante configuración.
 
-## Try it yourself {.exercises}
+## Pruébalo tú mismo {.exercises}
 
-1. **Prove the aspect is real.** Run `mvn -pl exp-lending test` and read the test
-   output for the `SecurityAspect` log lines (`Intercepting @Secure method: ...` and
-   `skipping security check`). Find both for `createApplication` and `getApplication`,
-   and explain in one sentence why the second line means the annotation is exercised
-   but not enforced.
-2. **Flip the toggle.** Run the module with
-   `-Dfirefly.application.security.enabled=true` and confirm the secured tests now fail
-   authorization. Read the failure, then restore the test default. Which line in
-   `src/test/resources/application.yml` is the one knob you changed?
-3. **Add a permission.** Give `getApplication` a second required permission (for
-   example `lending:application:read` *and* `lending:tenant:member`) by extending the
-   `permissions` array in `@Secure`. Re-run the slice test — it still passes, because
-   enforcement is off — then write a sentence on what would have to be true of the
-   caller's `AppContext` for it to pass with enforcement *on*.
-4. **Tighten the filter chain.** In `WebSecurityConfig`, change the final
-   `.anyExchange().permitAll()` to `.anyExchange().authenticated()` and add a bearer-token
-   resource server (`http.oauth2ResourceServer(...)`). Sketch — no need to run a real
-   IDP — how this transport-level check and the method-level `@Secure` would each
-   reject an unauthorized request, and which one fires first.
-5. **Trace a provider swap.** Without changing any `@Secure` or `SecurityWebFilterChain`
-   code, list what you would change to move Lumen's identity from Keycloak to AWS
-   Cognito: which `firefly.idp.provider` value, which adapter dependency. Confirm
-   against Appendix B that the controller and aspect stay untouched — that invariance is
-   the point of the port.
+1. **Demuestra que el aspecto es real.** Ejecuta `mvn -pl exp-lending test` y lee la salida del test
+   buscando las líneas de log del `SecurityAspect` (`Intercepting @Secure method: ...` y
+   `skipping security check`). Encuentra ambas para `createApplication` y `getApplication`, y explica
+   en una frase por qué la segunda línea significa que la anotación se ejercita pero no se aplica.
+2. **Acciona el interruptor.** Ejecuta el módulo con `-Dfirefly.application.security.enabled=true` y
+   confirma que los tests protegidos ahora fallan la autorización. Lee el fallo, y luego restaura el
+   valor por defecto del test. ¿Qué línea de `src/test/resources/application.yml` es el único mando
+   que cambiaste?
+3. **Añade un permiso.** Da a `getApplication` un segundo permiso requerido (por ejemplo
+   `lending:application:read` *y* `lending:tenant:member`) ampliando el array `permissions` de
+   `@Secure`. Vuelve a ejecutar el test de rebanada —sigue pasando, porque la aplicación está
+   apagada— y luego escribe una frase sobre qué tendría que ser cierto del `AppContext` del llamante
+   para que pasara con la aplicación *encendida*.
+4. **Endurece la cadena de filtros.** En `WebSecurityConfig`, cambia el `.anyExchange().permitAll()`
+   final por `.anyExchange().authenticated()` y añade un servidor de recursos con token bearer
+   (`http.oauth2ResourceServer(...)`). Esboza —sin necesidad de ejecutar un IDP real— cómo esta
+   comprobación a nivel de transporte y el `@Secure` a nivel de método rechazarían cada uno una
+   petición no autorizada, y cuál se dispara primero.
+5. **Sigue el rastro de un intercambio de proveedor.** Sin cambiar ningún código `@Secure` ni
+   `SecurityWebFilterChain`, lista qué cambiarías para mover la identidad de Lumen de Keycloak a AWS
+   Cognito: qué valor de `firefly.idp.provider`, qué dependencia de adaptador. Confirma contra el
+   Apéndice B que el controlador y el aspecto quedan intactos —esa invariancia es el sentido del
+   puerto.
 
-## Where to go next
+## Adónde ir ahora
 
-You now have requests that are authenticated, authorized, and tenant-scoped — but a
-read endpoint like `getApplication` still hits the domain tier on every call, even
-when nothing changed. Chapter 20 turns to **caching**: how Firefly's reactive
-`CacheAdapter` port lets the experience and query tiers serve repeated reads from a
-local Caffeine layer (and an optional distributed L2) without a vendor SDK in your
-code — the same hexagonal pattern you just saw for identity, applied to speed.
+Ahora tienes peticiones que están autenticadas, autorizadas y acotadas por tenant —pero un endpoint
+de lectura como `getApplication` aún golpea la capa de dominio en cada llamada, incluso cuando nada
+ha cambiado—. El Capítulo 20 se vuelca en el **cacheo**: cómo el puerto reactivo `CacheAdapter` de
+Firefly permite que las capas de experiencia y de consulta sirvan lecturas repetidas desde una capa
+local de Caffeine (y un L2 distribuido opcional) sin un SDK de proveedor en tu código —el mismo
+patrón hexagonal que acabas de ver para la identidad, aplicado a la velocidad.

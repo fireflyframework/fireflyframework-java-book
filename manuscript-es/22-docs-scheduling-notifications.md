@@ -1,46 +1,49 @@
-A loan-origination service does most of its work inside its own boundary —
-validating, scoring, deciding, persisting. But the moments a customer actually
-*feels* happen at the edges, where the service reaches out to the world: a PDF
-agreement to sign, a "your loan is approved" email, a nightly job that expires
-stale offers, a webhook from the payment rail, a callback to a partner's system.
-Each of these is a small integration with its own failure modes, and a fleet that
-hand-rolls each one ends up with a dozen subtly different retry loops, signature
-schemes, and templating engines — exactly the enterprise tax Chapter 1 named.
+Un servicio de originación de préstamos realiza la mayor parte de su trabajo dentro
+de su propia frontera: validar, puntuar, decidir, persistir. Pero los momentos que
+un cliente *siente* de verdad ocurren en los bordes, donde el servicio se asoma al
+mundo: un acuerdo en PDF que firmar, un correo de "tu préstamo ha sido aprobado", un
+trabajo nocturno que caduca ofertas obsoletas, un webhook desde la pasarela de pagos,
+una llamada de retorno al sistema de un socio. Cada uno de ellos es una pequeña
+integración con sus propios modos de fallo, y una flota que se artesana cada uno
+acaba con una docena de bucles de reintento, esquemas de firma y motores de
+plantillas sutilmente distintos: exactamente el impuesto empresarial que nombró el
+Capítulo 1.
 
-This chapter is a tour of four Firefly capabilities that handle those edges
-consistently: **documents** (rendering a PDF you can sign), **scheduling**
-(durable, recoverable background work), **notifications** (email, SMS, and push
-behind provider ports), and **webhooks and callbacks** (inbound ingestion and
-outbound signed delivery). The aim is not to make you an expert in any one — each
-has its own reference — but to give you the shape of each, the one sentence that
-makes it different from the obvious alternative, and where it plugs into the Lumen
-Lending you have been building.
+Este capítulo es un recorrido por cuatro capacidades de Firefly que gestionan esos
+bordes de forma consistente: **documentos** (renderizar un PDF que puedas firmar),
+**planificación** (trabajo en segundo plano duradero y recuperable), **notificaciones**
+(correo, SMS y push tras puertos de proveedor) y **webhooks y callbacks** (ingesta
+entrante y entrega saliente firmada). El objetivo no es convertirte en experto en
+ninguna de ellas (cada una tiene su propia referencia), sino darte la forma de cada
+una, la frase que la diferencia de la alternativa obvia y dónde se enchufa en el
+Lumen Lending que has ido construyendo.
 
-!!! warning "Honesty about Lumen Lending"
-    None of these four capabilities appears in the companion reactor. The trimmed
-    origination slice stops at offer acceptance, so there is **no documents,
-    scheduling, notifications, or webhook code in the sample, and no companion test
-    for this chapter.** Every code block below is *illustrative* — a faithful sketch
-    of how the capability is used, not a verbatim slice of the reactor. Where a
-    capability connects to something the sample *does* build (the events from
-    Chapter 11, the e-signature flow in Appendix C), the text says so explicitly.
+!!! warning "Sinceridad sobre Lumen Lending"
+    Ninguna de estas cuatro capacidades aparece en el reactor de acompañamiento. La
+    porción recortada de originación se detiene en la aceptación de la oferta, así que
+    **no hay código de documentos, planificación, notificaciones ni webhooks en el
+    ejemplo, ni una prueba de acompañamiento para este capítulo.** Cada bloque de
+    código de abajo es *ilustrativo*: un boceto fiel de cómo se usa la capacidad, no
+    una porción textual del reactor. Donde una capacidad conecta con algo que el
+    ejemplo *sí* construye (los eventos del Capítulo 11, el flujo de firma electrónica
+    del Apéndice C), el texto lo indica explícitamente.
 
-## Documents — render a PDF you can sign
+## Documentos — renderizar un PDF que puedas firmar
 
-When an offer is accepted, the loan agreement must become a real document:
-generated from the application and the accepted offer, presented for signature, and
-stored as durable evidence. Firefly splits that into two responsibilities.
-*Generating* the document is the job of `TemplateRenderUtil` in
-`fireflyframework-utils`; *storing and signing* it is the job of the ECM ports in
-Appendix C. This section covers the first half — turning data into a PDF.
+Cuando se acepta una oferta, el acuerdo de préstamo debe convertirse en un documento
+real: generado a partir de la solicitud y la oferta aceptada, presentado para la firma
+y almacenado como evidencia duradera. Firefly divide eso en dos responsabilidades.
+*Generar* el documento es tarea de `TemplateRenderUtil` en `fireflyframework-utils`;
+*almacenarlo y firmarlo* es tarea de los puertos ECM del Apéndice C. Esta sección
+cubre la primera mitad: convertir datos en un PDF.
 
-`TemplateRenderUtil` is a FreeMarker-to-XHTML-to-PDF pipeline: you author the
-agreement as a FreeMarker template (`.ftl`) that produces well-formed XHTML, feed it
-a data model, and it renders a print-ready PDF with support for watermarks,
-encryption, metadata, and template caching. The differentiating idea is the
-*two-stage* rendering — FreeMarker first produces XHTML, which a PDF engine then
-paginates — so the same template language and the same data model that drive your
-notification emails also drive your legal documents.
+`TemplateRenderUtil` es una tubería de FreeMarker a XHTML a PDF: redactas el acuerdo
+como una plantilla FreeMarker (`.ftl`) que produce XHTML bien formado, le proporcionas
+un modelo de datos y renderiza un PDF listo para imprimir con soporte de marcas de
+agua, cifrado, metadatos y caché de plantillas. La idea diferenciadora es el renderizado
+en *dos etapas*: FreeMarker produce primero XHTML, que un motor de PDF pagina después,
+de modo que el mismo lenguaje de plantillas y el mismo modelo de datos que impulsan tus
+correos de notificación impulsan también tus documentos legales.
 
 ```java
 // Illustrative — not in the companion reactor.
@@ -52,8 +55,8 @@ byte[] agreement = templateRenderUtil.renderPdf(
             "generatedAt", LocalDate.now()));
 ```
 
-The template itself is ordinary FreeMarker over XHTML — the loan terms interpolated
-into a styled document body:
+La plantilla en sí es FreeMarker corriente sobre XHTML: los términos del préstamo
+interpolados en el cuerpo de un documento con estilo:
 
 ```html
 <!-- loan-agreement.ftl (illustrative) -->
@@ -63,43 +66,48 @@ into a styled document body:
 <p>Term: ${offer.termMonths} months at ${offer.apr}% APR</p>
 ```
 
-Those `agreement` bytes are exactly what Appendix C's e-signature flow consumes: the
-document port stores the rendered file, the e-signature ports wrap it in a signing
-envelope, and the sealed proof comes back to be stored alongside it. Generation and
-signing are deliberately separate concerns — you can render an agreement without
-signing it, and the signature ports do not care how the bytes were produced.
+Esos bytes de `agreement` son exactamente lo que consume el flujo de firma electrónica
+del Apéndice C: el puerto de documentos almacena el archivo renderizado, los puertos de
+firma electrónica lo envuelven en un sobre de firma y la prueba sellada vuelve para
+almacenarse junto a él. La generación y la firma son deliberadamente preocupaciones
+separadas: puedes renderizar un acuerdo sin firmarlo, y a los puertos de firma no les
+importa cómo se produjeron los bytes.
 
-!!! note "Key term — `TemplateRenderUtil`"
-    A document-rendering utility in `fireflyframework-utils` that compiles a
-    FreeMarker template to XHTML and then to PDF. It is *not* part of the ECM
-    document ports; it produces the bytes that those ports store and sign. Because it
-    shares FreeMarker with the notification channels below, a service has **one**
-    templating story for both legal documents and customer messages.
+!!! note "Término clave — `TemplateRenderUtil`"
+    Una utilidad de renderizado de documentos en `fireflyframework-utils` que compila
+    una plantilla FreeMarker a XHTML y luego a PDF. *No* forma parte de los puertos de
+    documentos ECM; produce los bytes que esos puertos almacenan y firman. Como comparte
+    FreeMarker con los canales de notificación de más abajo, un servicio tiene **una**
+    historia de plantillas tanto para los documentos legales como para los mensajes al
+    cliente.
 
-!!! spring "Spring parity"
-    Plain Spring has no opinion here — you would pick a templating library
-    (FreeMarker, Thymeleaf) and a PDF engine (OpenPDF, Flying Saucer) and wire them
-    together yourself, differently in each service. Firefly's contribution is the
-    pre-assembled pipeline and the shared template engine, so document generation
-    looks the same fleet-wide.
+!!! spring "Equivalente en Spring"
+    Spring puro no tiene opinión aquí: elegirías una biblioteca de plantillas
+    (FreeMarker, Thymeleaf) y un motor de PDF (OpenPDF, Flying Saucer) y los conectarías
+    tú mismo, de forma distinta en cada servicio. La contribución de Firefly es la
+    tubería preensamblada y el motor de plantillas compartido, de modo que la generación
+    de documentos tiene el mismo aspecto en toda la flota.
 
-## Scheduling — durable, recoverable background work
+## Planificación — trabajo en segundo plano duradero y recuperable
 
-Origination has work that is not triggered by a request: offers expire after a
-window, a nightly batch re-scores applications whose bureau data changed, a reminder
-goes out three days before a signing deadline. The reflex is Spring's `@Scheduled` —
-a method that fires on a cron. That is fine for a heartbeat, but it has a sharp edge
-for *business* work: `@Scheduled` is fire-and-forget and node-local. If the process
-dies mid-run, the work is simply lost; if you run three replicas, the job fires three
-times.
+La originación tiene trabajo que no se dispara por una petición: las ofertas caducan
+tras una ventana, un lote nocturno vuelve a puntuar las solicitudes cuyos datos de
+buró cambiaron, un recordatorio sale tres días antes de una fecha límite de firma. El
+reflejo es el `@Scheduled` de Spring: un método que se dispara según un cron. Eso vale
+para un latido, pero tiene un filo afilado para el trabajo de *negocio*: `@Scheduled`
+es dispara-y-olvida y local al nodo. Si el proceso muere a mitad de ejecución, el
+trabajo simplemente se pierde; si ejecutas tres réplicas, el trabajo se dispara tres
+veces.
 
-Firefly's answer is to make scheduled work *durable* by routing it through the same
-orchestration engines you already use for foreground flows. `@ScheduledSaga` triggers
-a saga (Chapter 18) on a schedule, and `@ScheduledWorkflow` triggers a workflow — so
-a scheduled run gets persistence, step-level recovery, and compensation, not just a
-timer. The differentiating sentence: a plain `@Scheduled` method *runs* on a
-schedule, whereas a `@ScheduledSaga` *starts a recoverable, single-flighted
-transaction* on a schedule, surviving restarts and coordinating across replicas.
+La respuesta de Firefly es hacer el trabajo planificado *duradero* enrutándolo a través
+de los mismos motores de orquestación que ya usas para los flujos en primer plano.
+`@ScheduledSaga` dispara una saga (Capítulo 18) según una planificación, y
+`@ScheduledWorkflow` dispara un workflow, de modo que una ejecución planificada obtiene
+persistencia, recuperación a nivel de paso y compensación, no solo un temporizador. La
+frase diferenciadora: un método `@Scheduled` corriente *se ejecuta* según una
+planificación, mientras que un `@ScheduledSaga` *inicia una transacción recuperable y
+de vuelo único* según una planificación, sobreviviendo a los reinicios y coordinándose
+entre réplicas.
 
 ```java
 // Illustrative — not in the companion reactor.
@@ -124,34 +132,35 @@ public class ExpireStaleOffersSaga {
 }
 ```
 
-The lighter `@Scheduled` still has its place — health pings, cache warmups, metric
-rollups, anything idempotent and disposable. Reach for `@ScheduledSaga` or
-`@ScheduledWorkflow` the moment the work mutates business state and you would be sorry
-to run it twice or lose it halfway.
+El `@Scheduled` más ligero sigue teniendo su lugar: pings de salud, calentamientos de
+caché, agregaciones de métricas, cualquier cosa idempotente y desechable. Recurre a
+`@ScheduledSaga` o `@ScheduledWorkflow` en cuanto el trabajo mute estado de negocio y te
+pesará ejecutarlo dos veces o perderlo a medio camino.
 
-!!! spring "Spring parity"
-    `@ScheduledSaga` and `@ScheduledWorkflow` build *on* Spring's scheduling — the
-    trigger is the same cron mechanism — and add durability through Firefly's saga and
-    workflow runtimes. Use plain Spring `@Scheduled` for ephemeral ticks; use the
-    Firefly variants when "this fired but never finished" or "this fired twice" would
-    be a real incident.
+!!! spring "Equivalente en Spring"
+    `@ScheduledSaga` y `@ScheduledWorkflow` se construyen *sobre* la planificación de
+    Spring (el disparador es el mismo mecanismo de cron) y añaden durabilidad a través
+    de los runtimes de saga y workflow de Firefly. Usa el `@Scheduled` corriente de
+    Spring para tics efímeros; usa las variantes de Firefly cuando "esto se disparó pero
+    nunca terminó" o "esto se disparó dos veces" sería un incidente de verdad.
 
-## Notifications — email, SMS, and push behind ports
+## Notificaciones — correo, SMS y push tras puertos
 
-The same approval that generates an agreement should also reach the customer:
-"You're approved," "Please sign by Friday," "Your loan is active." Firefly models
-that as a set of **channel services** — email, SMS, and push — each sitting behind a
-provider port, exactly like the hexagonal pattern you saw for events and ECM. You
-call a channel-neutral API; an adapter selected by a `firefly.notifications.*`
-property routes the message to SendGrid, Twilio, Firebase, or another vendor without
-your code naming any of them.
+La misma aprobación que genera un acuerdo debería también llegar al cliente: "Has sido
+aprobado", "Firma antes del viernes, por favor", "Tu préstamo está activo". Firefly
+modela eso como un conjunto de **servicios de canal** (correo, SMS y push), cada uno
+situado tras un puerto de proveedor, exactamente como el patrón hexagonal que viste
+para los eventos y el ECM. Llamas a una API neutral respecto al canal; un adaptador
+seleccionado por una propiedad `firefly.notifications.*` enruta el mensaje a SendGrid,
+Twilio, Firebase u otro proveedor sin que tu código nombre a ninguno de ellos.
 
-Two details make the notifications module more than a thin SDK wrapper. First, it
-shares the FreeMarker engine with document generation, so a templated email is
-rendered the same way the loan agreement is — one templating story for documents and
-messages alike. Second, it honors **per-user channel preferences**: a customer who
-opted out of SMS but wants email gets the message on the channel they chose, decided
-by the framework rather than by branching in your handler.
+Dos detalles hacen que el módulo de notificaciones sea más que un fino envoltorio de un
+SDK. Primero, comparte el motor FreeMarker con la generación de documentos, de modo que
+un correo con plantilla se renderiza igual que el acuerdo de préstamo: una historia de
+plantillas para documentos y mensajes por igual. Segundo, respeta las **preferencias de
+canal por usuario**: un cliente que se dio de baja del SMS pero quiere correo recibe el
+mensaje en el canal que eligió, decidido por el framework en lugar de por bifurcaciones
+en tu manejador.
 
 ```java
 // Illustrative — not in the companion reactor.
@@ -166,48 +175,52 @@ Mono<Void> sent = notificationService.send(
 // the recipient has opted into — email, SMS, and/or push.
 ```
 
-A natural trigger for that send is an event you already publish. The
-`LoanApplicationRegisteredEvent` from Chapter 11 — or a later `OfferAcceptedEvent` —
-is exactly the announcement a notification consumer reacts to: an `@EventListener`
-receives the fact and calls `notificationService.send(...)`, so messaging is
-decoupled from the write that caused it, the same way every other consumer is.
+Un disparador natural para ese envío es un evento que ya publicas. El
+`LoanApplicationRegisteredEvent` del Capítulo 11 (o un posterior `OfferAcceptedEvent`)
+es exactamente el anuncio al que reacciona un consumidor de notificaciones: un
+`@EventListener` recibe el hecho y llama a `notificationService.send(...)`, de modo que
+la mensajería queda desacoplada de la escritura que la causó, igual que cualquier otro
+consumidor.
 
-!!! note "Key term — channel service"
-    A **channel service** is the port for one delivery medium — email, SMS, or push.
-    You program against the channel-neutral `NotificationService` (or a specific
-    channel port) and a provider adapter does the real send. Switching from one SMS
-    vendor to another is a property change and an adapter on the classpath, not an
-    SDK rewrite — the same one-property-swap promise as Firefly's other ports.
+!!! note "Término clave — servicio de canal"
+    Un **servicio de canal** es el puerto para un medio de entrega: correo, SMS o push.
+    Programas contra el `NotificationService` neutral respecto al canal (o contra un
+    puerto de canal concreto) y un adaptador de proveedor hace el envío real. Cambiar de
+    un proveedor de SMS a otro es un cambio de propiedad y un adaptador en el classpath,
+    no una reescritura de SDK: la misma promesa de cambio-de-una-propiedad que los demás
+    puertos de Firefly.
 
-!!! spring "Spring parity"
-    Spring offers `JavaMailSender` for email and nothing unified for SMS or push, so
-    each service grows its own vendor clients and its own preference logic. Firefly's
-    notifications module unifies the three channels behind one API, shares the
-    templating engine with document generation, and centralizes channel preferences —
-    so "notify the customer" is one call, not three integrations.
+!!! spring "Equivalente en Spring"
+    Spring ofrece `JavaMailSender` para el correo y nada unificado para SMS o push, así
+    que cada servicio cría sus propios clientes de proveedor y su propia lógica de
+    preferencias. El módulo de notificaciones de Firefly unifica los tres canales tras
+    una API, comparte el motor de plantillas con la generación de documentos y
+    centraliza las preferencias de canal, de modo que "notifica al cliente" es una sola
+    llamada, no tres integraciones.
 
-## Webhooks vs callbacks — inbound ingestion vs outbound delivery
+## Webhooks frente a callbacks — ingesta entrante frente a entrega saliente
 
-The last edge is the trickiest, because it runs both directions, and the two
-directions are *not* symmetric. A **webhook** is something the outside world sends
-*to* you — a payment processor telling you a disbursement settled. A **callback** is
-something you send *to* the outside world — telling a broker partner that an
-application reached a decision. Firefly treats them as two capabilities with
-genuinely different concerns, and conflating them is the mistake the module is
-designed to prevent.
+El último borde es el más delicado, porque funciona en ambas direcciones, y las dos
+direcciones *no* son simétricas. Un **webhook** es algo que el mundo exterior te envía
+*a ti*: un procesador de pagos diciéndote que un desembolso se liquidó. Un **callback**
+es algo que tú envías *al* mundo exterior: diciéndole a un socio corredor que una
+solicitud llegó a una decisión. Firefly los trata como dos capacidades con
+preocupaciones genuinamente distintas, y confundirlos es el error que el módulo está
+diseñado para evitar.
 
-### Inbound webhooks — store fast, then process
+### Webhooks entrantes — almacena rápido, luego procesa
 
-An inbound webhook arrives from a system you do not control, often with an aggressive
-delivery-and-retry policy: acknowledge in a few hundred milliseconds or it retries,
-sometimes redelivering the same event many times. So Firefly's inbound handling is
-**two-phase**. Phase one validates the provider's signature and *durably stores* the
-raw payload, then immediately returns `2xx` — fast, before any business logic runs.
-Phase two processes the stored event asynchronously, with idempotency keyed on the
-provider's event id so a redelivery is recognized and dropped rather than applied
-twice. The differentiating idea is *store-then-process*: you never make a flaky
-caller wait on your business logic, and you never lose an event because processing
-threw.
+Un webhook entrante llega desde un sistema que no controlas, a menudo con una política
+agresiva de entrega y reintento: confirma en unos pocos cientos de milisegundos o
+reintenta, a veces reenviando el mismo evento muchas veces. Por eso el manejo entrante
+de Firefly es **en dos fases**. La fase uno valida la firma del proveedor y *almacena de
+forma duradera* el payload en bruto, luego devuelve inmediatamente `2xx`: rápido, antes
+de que se ejecute cualquier lógica de negocio. La fase dos procesa el evento almacenado
+de forma asíncrona, con idempotencia basada en el id de evento del proveedor de modo que
+un reenvío se reconoce y se descarta en lugar de aplicarse dos veces. La idea
+diferenciadora es *almacena-luego-procesa*: nunca haces esperar a un llamante inestable
+por tu lógica de negocio, y nunca pierdes un evento porque el procesamiento lanzó una
+excepción.
 
 ```java
 // Illustrative — not in the companion reactor.
@@ -225,23 +238,24 @@ public class PaymentWebhookHandler {
 }
 ```
 
-!!! warning "An inbound webhook must acknowledge before it processes"
-    If you do the business work *before* returning `2xx`, a slow database call or a
-    transient error turns into the provider retrying — and now you are processing the
-    same event two, three, five times under load. The store-then-process split exists
-    precisely so the acknowledgement is fast and the processing is idempotent. Let the
-    framework store and ack; do your work in phase two.
+!!! warning "Un webhook entrante debe confirmar antes de procesar"
+    Si haces el trabajo de negocio *antes* de devolver `2xx`, una llamada lenta a la
+    base de datos o un error transitorio se convierte en que el proveedor reintenta, y
+    ahora estás procesando el mismo evento dos, tres, cinco veces bajo carga. La división
+    almacena-luego-procesa existe precisamente para que la confirmación sea rápida y el
+    procesamiento sea idempotente. Deja que el framework almacene y confirme; haz tu
+    trabajo en la fase dos.
 
-### Outbound callbacks — sign, then deliver resiliently
+### Callbacks salientes — firma, luego entrega de forma resiliente
 
-An outbound callback is the mirror image. *You* are now the caller, so the burden is
-on you to prove authenticity and to survive the partner being down. Firefly signs the
-payload with **HMAC** so the recipient can verify it came from you and was not
-tampered with, and delivers it through a **circuit-breaker**-guarded client with
-retries — so a partner that is timing out trips the breaker instead of drowning your
-threads, and recovers automatically when it comes back. The differentiating sentence:
-an outbound callback is an HMAC-signed, circuit-broken *delivery*, not just an HTTP
-POST.
+Un callback saliente es la imagen especular. *Tú* eres ahora el llamante, así que la
+carga recae en ti de demostrar autenticidad y de sobrevivir a que el socio esté caído.
+Firefly firma el payload con **HMAC** para que el destinatario pueda verificar que vino
+de ti y no fue manipulado, y lo entrega a través de un cliente protegido por un
+**circuit-breaker** con reintentos, de modo que un socio que está agotando su tiempo de
+espera dispara el breaker en lugar de ahogar tus hilos, y se recupera automáticamente
+cuando vuelve. La frase diferenciadora: un callback saliente es una *entrega* firmada con
+HMAC y con circuit-breaker, no solo un POST HTTP.
 
 ```java
 // Illustrative — not in the companion reactor.
@@ -255,73 +269,75 @@ Mono<Void> delivered = callbackService.send(
 // through a circuit-breaker-guarded client with retry and backoff.
 ```
 
-Put the two side by side and the asymmetry is the whole lesson. Inbound, you trust
-nothing and optimize for *not losing* events you did not ask for: validate, store,
-ack, then process idempotently. Outbound, you are trusted by no one and optimize for
-*provable, resilient* delivery: sign, then deliver through a breaker. Same word
-family, opposite postures.
+Pon las dos lado a lado y la asimetría es la lección entera. Entrante, no confías en
+nada y optimizas para *no perder* los eventos que no pediste: valida, almacena, confirma,
+luego procesa de forma idempotente. Saliente, nadie confía en ti y optimizas por una
+entrega *demostrable y resiliente*: firma, luego entrega a través de un breaker. La misma
+familia de palabras, posturas opuestas.
 
-!!! note "Key term — webhook vs callback"
-    In Firefly's vocabulary a **webhook** is *inbound* (the world calls you) and a
-    **callback** is *outbound* (you call the world). They are separate capabilities
-    because their problems are different: inbound is about fast acknowledgement,
-    signature validation, and idempotent redelivery; outbound is about HMAC signing
-    and circuit-broken, retrying delivery. If you find yourself writing the same retry
-    code on both sides, you have probably collapsed two different problems into one.
+!!! note "Término clave — webhook frente a callback"
+    En el vocabulario de Firefly, un **webhook** es *entrante* (el mundo te llama) y un
+    **callback** es *saliente* (tú llamas al mundo). Son capacidades separadas porque sus
+    problemas son distintos: lo entrante trata de la confirmación rápida, la validación de
+    firma y el reenvío idempotente; lo saliente trata de la firma HMAC y la entrega con
+    circuit-breaker y reintentos. Si te encuentras escribiendo el mismo código de reintento
+    en ambos lados, probablemente has colapsado dos problemas distintos en uno.
 
-!!! spring "Spring parity"
-    Plain Spring gives you `@RestController` for the inbound endpoint and `WebClient`
-    for the outbound call, and leaves signature validation, durable storage,
-    idempotency, HMAC signing, and circuit breaking entirely to you. Firefly's
-    webhook and callback modules pre-wire those concerns so every service ingests and
-    emits integrations the same way — the inbound `2xx`-then-process contract and the
-    outbound signed-and-broken delivery, identical across the fleet.
+!!! spring "Equivalente en Spring"
+    Spring puro te da `@RestController` para el endpoint entrante y `WebClient` para la
+    llamada saliente, y deja la validación de firma, el almacenamiento duradero, la
+    idempotencia, la firma HMAC y el circuit breaking enteramente en tus manos. Los módulos
+    de webhook y callback de Firefly precablean esas preocupaciones para que cada servicio
+    ingiera y emita integraciones de la misma manera: el contrato entrante de
+    `2xx`-luego-procesa y la entrega saliente firmada-y-protegida-con-breaker, idénticos en
+    toda la flota.
 
-## What you learned {.recap}
+## Lo que has aprendido {.recap}
 
-- **Documents** are rendered with `TemplateRenderUtil` — a FreeMarker → XHTML → PDF
-  pipeline in `fireflyframework-utils` — whose bytes feed Appendix C's e-signature
-  flow. Generation and signing are deliberately separate steps.
-- **Scheduling** comes in two strengths: plain Spring `@Scheduled` for ephemeral
-  ticks, and Firefly's `@ScheduledSaga` / `@ScheduledWorkflow` for durable,
-  single-flighted, recoverable background work that mutates business state.
-- **Notifications** are channel services — email, SMS, push — behind provider ports,
-  sharing the FreeMarker engine with document generation and honoring per-user channel
-  preferences, and they are naturally triggered by the domain events from Chapter 11.
-- **Webhooks and callbacks** are asymmetric: inbound webhooks *store fast, then
-  process* (signature validation, durable storage, idempotent redelivery); outbound
-  callbacks *sign, then deliver* (HMAC signatures over a circuit-breaker-guarded
-  client). Same word family, opposite postures.
-- None of this is in the companion reactor; the chapter is a map of where each
-  capability plugs into the Lumen Lending you have built, not a verified slice.
+- Los **documentos** se renderizan con `TemplateRenderUtil` (una tubería de FreeMarker →
+  XHTML → PDF en `fireflyframework-utils`) cuyos bytes alimentan el flujo de firma
+  electrónica del Apéndice C. La generación y la firma son pasos deliberadamente separados.
+- La **planificación** viene en dos intensidades: el `@Scheduled` corriente de Spring para
+  tics efímeros, y `@ScheduledSaga` / `@ScheduledWorkflow` de Firefly para trabajo en
+  segundo plano duradero, de vuelo único y recuperable que muta estado de negocio.
+- Las **notificaciones** son servicios de canal (correo, SMS, push) tras puertos de
+  proveedor, que comparten el motor FreeMarker con la generación de documentos y respetan
+  las preferencias de canal por usuario, y se disparan de forma natural por los eventos de
+  dominio del Capítulo 11.
+- Los **webhooks y callbacks** son asimétricos: los webhooks entrantes *almacenan rápido,
+  luego procesan* (validación de firma, almacenamiento duradero, reenvío idempotente); los
+  callbacks salientes *firman, luego entregan* (firmas HMAC sobre un cliente protegido por
+  circuit-breaker). La misma familia de palabras, posturas opuestas.
+- Nada de esto está en el reactor de acompañamiento; el capítulo es un mapa de dónde se
+  enchufa cada capacidad en el Lumen Lending que has construido, no una porción verificada.
 
-## Try it yourself {.exercises}
+## Pruébalo tú mismo {.exercises}
 
-1. **Sketch the agreement template.** Write a small `loan-agreement.ftl` that
-   interpolates an applicant name, principal, term, and APR into XHTML. You do not
-   need to render it — the goal is to see that the document template is the same
-   FreeMarker you would use for an email body.
-2. **Pick the right scheduler.** For each of these, decide between `@Scheduled`,
-   `@ScheduledSaga`, and `@ScheduledWorkflow`, and justify it in one sentence: a
-   five-minute health ping; a nightly job that expires offers and reverses partial
-   work on failure; an hourly cache warmup.
-3. **Wire a notification to an event.** Sketch an `@EventListener` (the Chapter 11
-   style) on `LoanApplicationRegisteredEvent` that calls `notificationService.send`
-   with a `"loan-approved"` template. Note that the producer does not change — a new
-   consumer simply reacts, exactly as in the EDA chapter.
-4. **Defend the two-phase webhook.** In two or three sentences, explain what breaks
-   if an inbound webhook handler does its database work *before* returning `2xx`.
-   Name the failure mode (provider retries) and the fix (store-then-process with
-   idempotency on the provider's event id).
-5. **Contrast the postures.** Write the one sentence that distinguishes an inbound
-   webhook from an outbound callback in Firefly's vocabulary, then list the concern
-   that is unique to each (idempotent redelivery for one; HMAC signing for the other).
+1. **Esboza la plantilla del acuerdo.** Escribe un pequeño `loan-agreement.ftl` que
+   interpole un nombre de solicitante, principal, plazo y APR en XHTML. No necesitas
+   renderizarlo: el objetivo es ver que la plantilla del documento es el mismo FreeMarker
+   que usarías para el cuerpo de un correo.
+2. **Elige el planificador correcto.** Para cada uno de estos, decide entre `@Scheduled`,
+   `@ScheduledSaga` y `@ScheduledWorkflow`, y justifícalo en una frase: un ping de salud de
+   cinco minutos; un trabajo nocturno que caduca ofertas y revierte trabajo parcial ante un
+   fallo; un calentamiento de caché horario.
+3. **Conecta una notificación a un evento.** Esboza un `@EventListener` (el estilo del
+   Capítulo 11) sobre `LoanApplicationRegisteredEvent` que llame a `notificationService.send`
+   con una plantilla `"loan-approved"`. Observa que el productor no cambia: un nuevo
+   consumidor simplemente reacciona, exactamente como en el capítulo de EDA.
+4. **Defiende el webhook en dos fases.** En dos o tres frases, explica qué se rompe si un
+   manejador de webhook entrante hace su trabajo de base de datos *antes* de devolver `2xx`.
+   Nombra el modo de fallo (reintentos del proveedor) y el arreglo (almacena-luego-procesa
+   con idempotencia sobre el id de evento del proveedor).
+5. **Contrasta las posturas.** Escribe la única frase que distingue un webhook entrante de
+   un callback saliente en el vocabulario de Firefly, luego enumera la preocupación que es
+   única de cada uno (reenvío idempotente para uno; firma HMAC para el otro).
 
-## Where to go next
+## Adónde ir ahora
 
-You have now seen Lumen Lending's edges as well as its core. What remains is
-confidence: proving the whole thing works and keeping it working in production.
-Chapter 23 gathers the testing patterns the book has been using all along — slice
-tests against in-memory R2DBC, broker-free EDA tests, `StepVerifier` on every
-publisher — into a deliberate strategy, and Chapter 24 takes the service the last
-mile to production.
+Ya has visto tanto los bordes de Lumen Lending como su núcleo. Lo que queda es confianza:
+demostrar que todo funciona y mantenerlo funcionando en producción. El Capítulo 23 reúne
+los patrones de prueba que el libro ha venido usando todo el tiempo (pruebas de porción
+contra R2DBC en memoria, pruebas de EDA sin broker, `StepVerifier` sobre cada publicador)
+en una estrategia deliberada, y el Capítulo 24 lleva el servicio la última milla hasta
+producción.

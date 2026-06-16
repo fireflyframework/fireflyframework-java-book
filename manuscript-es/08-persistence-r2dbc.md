@@ -1,39 +1,42 @@
-A core service owns its data. Up to here Lumen Lending's loan-origination service
-has a controller, DTOs, and a service that returns canned values; this chapter
-gives it a real persistence layer. By the end, a loan application you POST is
-written to a relational table, read back by id, and listed by status — reactively,
-end to end, with no blocking call anywhere on the path.
+Un servicio core es dueño de sus datos. Hasta aquí, el servicio de originación de
+préstamos de Lumen Lending tiene un controlador, DTOs y un servicio que devuelve
+valores prefabricados; este capítulo le da una capa de persistencia real. Al
+terminar, una solicitud de préstamo que envíes por POST se escribe en una tabla
+relacional, se vuelve a leer por id y se lista por estado — de forma reactiva, de
+extremo a extremo, sin ninguna llamada bloqueante en todo el recorrido.
 
-You will build six pieces: an R2DBC `@Table` entity, a status enum, a reactive
-repository, a Flyway migration that creates the schema, a MapStruct mapper between
-entity and DTO, and the application service that ties them together. Most of it
-will look like ordinary Spring Data — because it is. The one genuinely tricky part,
-and the best teaching moment in the chapter, is a four-line `Persistable` trick that
-tells R2DBC whether a `save` should INSERT or UPDATE when *you* assign the primary
-key. Get that wrong and your second read silently overwrites instead of inserting;
-get it right and it is invisible forever.
+Vas a construir seis piezas: una entidad R2DBC con `@Table`, un enum de estado, un
+repositorio reactivo, una migración Flyway que crea el esquema, un mapeador
+MapStruct entre la entidad y el DTO, y el servicio de aplicación que los une. La
+mayor parte se parecerá a Spring Data corriente — porque lo es. La única parte
+realmente delicada, y el mejor momento didáctico del capítulo, es un truco de cuatro
+líneas con `Persistable` que le dice a R2DBC si un `save` debe hacer INSERT o UPDATE
+cuando eres *tú* quien asigna la clave primaria. Si lo haces mal, tu segunda lectura
+sobrescribe en silencio en lugar de insertar; si lo haces bien, es invisible para
+siempre.
 
-Everything here lives in `core-lending-loan-origination`, the system-of-record
-service from Chapter 1's four-tier map. Cores own schema and data; they expose
-reactive CRUD over R2DBC and never share a database with another tier. This is that
-core's data layer.
+Todo lo de aquí vive en `core-lending-loan-origination`, el servicio que actúa como
+sistema de registro del mapa de cuatro capas del Capítulo 1. Los cores son dueños del
+esquema y de los datos; exponen un CRUD reactivo sobre R2DBC y nunca comparten una
+base de datos con otra capa. Esta es la capa de datos de ese core.
 
-!!! warning "R2DBC, not JPA"
-    The prelude warned that JPA, JDBC, and Hibernate are blocking and have no place
-    on the reactive stack. That warning is load-bearing here. If you reach for
-    `@Entity`, `EntityManager`, or `JpaRepository`, you are back in the servlet
-    world and you will stall the event loop. Everything in this chapter is Spring
-    Data **R2DBC** — the reactive relational story the prelude introduced.
+!!! warning "R2DBC, no JPA"
+    El preludio advertía que JPA, JDBC y Hibernate son bloqueantes y no tienen cabida
+    en la pila reactiva. Esa advertencia es fundamental aquí. Si recurres a
+    `@Entity`, `EntityManager` o `JpaRepository`, vuelves al mundo de los servlets y
+    bloquearás el bucle de eventos. Todo lo de este capítulo es Spring Data **R2DBC**
+    — la historia relacional reactiva que presentó el preludio.
 
-## The entity: an R2DBC `@Table`
+## La entidad: una `@Table` de R2DBC
 
-Spring Data R2DBC maps a plain Java class to a table. There is no JPA provider, no
-lazy loading, no dirty-checking session — just a lightweight mapping from columns to
-fields and back. You mark the class with `@Table`, the primary key with `@Id`, and
-each column with `@Column`, naming the snake_case database column explicitly so the
-Java camelCase field and the SQL name can differ without surprises.
+Spring Data R2DBC mapea una clase Java sencilla a una tabla. No hay proveedor JPA, ni
+carga perezosa, ni sesión con dirty-checking — solo un mapeo ligero de columnas a
+campos y viceversa. Marcas la clase con `@Table`, la clave primaria con `@Id` y cada
+columna con `@Column`, nombrando explícitamente la columna snake_case de la base de
+datos para que el campo Java en camelCase y el nombre SQL puedan diferir sin
+sorpresas.
 
-::: listing core-lending-loan-origination/src/main/java/com/firefly/lumen/core/domain/LoanApplication.java | Listing 8.1 — the R2DBC table mapping and UUID primary key
+::: listing core-lending-loan-origination/src/main/java/com/firefly/lumen/core/domain/LoanApplication.java | Listado 8.1 — el mapeo de tabla R2DBC y la clave primaria UUID
 @Table("loan_application")
 @Data
 @Builder
@@ -83,29 +86,31 @@ public class LoanApplication implements Persistable<UUID> {
     private LocalDateTime updatedAt;
 :::
 
-A few things to notice. The Lombok annotations (`@Data`, `@Builder`,
-`@NoArgsConstructor`, `@AllArgsConstructor`) generate the boilerplate — accessors,
-a builder, the two constructors R2DBC's mapping needs. The primary key is a
-`UUID`, not a database-generated `BIGSERIAL`; the application assigns it before
-the first save, which keeps ids opaque and lets a caller mint one without a round
-trip. And the `status` field is the `ApplicationStatus` enum, which R2DBC stores
-as a string in a `VARCHAR` column — more on that with the migration.
+Hay varias cosas en las que fijarse. Las anotaciones de Lombok (`@Data`, `@Builder`,
+`@NoArgsConstructor`, `@AllArgsConstructor`) generan el código repetitivo —
+accesores, un builder y los dos constructores que necesita el mapeo de R2DBC. La
+clave primaria es un `UUID`, no un `BIGSERIAL` generado por la base de datos; la
+aplicación se lo asigna antes del primer guardado, lo que mantiene los ids opacos y
+permite que un llamante acuñe uno sin un viaje de ida y vuelta. Y el campo `status`
+es el enum `ApplicationStatus`, que R2DBC almacena como una cadena en una columna
+`VARCHAR` — más sobre esto al hablar de la migración.
 
-!!! note "Key term — surrogate vs. business key"
-    `loanApplicationId` is the **surrogate key**: an internal UUID with no meaning
-    beyond identity, used for joins and lookups. `applicationNumber` is a
-    **business key**: a stable public reference you can quote to a customer. Keeping
-    them separate means you can change how either is generated without breaking the
-    other — and the repository can look an application up by either.
+!!! note "Termino clave — clave subrogada frente a clave de negocio"
+    `loanApplicationId` es la **clave subrogada**: un UUID interno sin más significado
+    que la identidad, usado para joins y búsquedas. `applicationNumber` es una **clave
+    de negocio**: una referencia pública estable que puedes citarle a un cliente.
+    Mantenerlas separadas significa que puedes cambiar cómo se genera cualquiera de
+    ellas sin romper la otra — y el repositorio puede buscar una solicitud por
+    cualquiera de las dos.
 
-## The status enum
+## El enum de estado
 
-The lifecycle of an application is a small closed set of states, so it is an enum.
-R2DBC needs no special configuration to persist it: by default it maps an enum to
-its `name()` as a string, which is exactly what the `VARCHAR(32)` status column
-expects.
+El ciclo de vida de una solicitud es un pequeño conjunto cerrado de estados, así que
+es un enum. R2DBC no necesita ninguna configuración especial para persistirlo: por
+defecto mapea un enum a su `name()` como cadena, que es exactamente lo que espera la
+columna de estado `VARCHAR(32)`.
 
-::: listing core-lending-loan-origination/src/main/java/com/firefly/lumen/core/domain/ApplicationStatus.java | Listing 8.2 — the lifecycle enum, stored as a string
+::: listing core-lending-loan-origination/src/main/java/com/firefly/lumen/core/domain/ApplicationStatus.java | Listado 8.2 — el enum del ciclo de vida, almacenado como cadena
 public enum ApplicationStatus {
 
     /** Captured but not yet submitted for review. */
@@ -135,29 +140,31 @@ public enum ApplicationStatus {
 }
 :::
 
-Storing the `name()` rather than the ordinal is the safe choice: adding or
-reordering enum constants later never silently re-labels existing rows. The column
-is wide enough (`VARCHAR(32)`) for the longest name with room to grow.
+Almacenar el `name()` en lugar del ordinal es la opción segura: añadir o reordenar
+constantes del enum más adelante nunca reetiqueta en silencio las filas existentes.
+La columna es lo bastante ancha (`VARCHAR(32)`) para el nombre más largo, con margen
+para crecer.
 
-## The `Persistable` trick: insert versus update
+## El truco de `Persistable`: insertar frente a actualizar
 
-Here is the subtle part. Spring Data's `save` has to decide, for each entity,
-whether to emit an `INSERT` or an `UPDATE`. With a database-generated id, the rule
-is easy: a `null` id means "never saved, so INSERT," and a non-null id means
-"already has a key, so UPDATE." That heuristic is what Spring Data uses by default.
+Aquí está la parte sutil. El `save` de Spring Data tiene que decidir, para cada
+entidad, si emite un `INSERT` o un `UPDATE`. Con un id generado por la base de datos,
+la regla es fácil: un id `null` significa "nunca se ha guardado, así que INSERT" y un
+id no nulo significa "ya tiene clave, así que UPDATE". Esa heurística es la que usa
+Spring Data por defecto.
 
-But Lumen assigns the UUID *itself*, before the first save. By the time the entity
-reaches the repository its id is already non-null — so the default heuristic
-concludes "this must be an update," issues an `UPDATE ... WHERE id = ?`, matches
-zero rows, and the insert you intended silently never happens. This is a classic
-R2DBC footgun with client-assigned keys, and it fails quietly: no exception, just a
-row that was never written.
+Pero Lumen asigna el UUID *él mismo*, antes del primer guardado. Para cuando la
+entidad llega al repositorio su id ya no es nulo — así que la heurística por defecto
+concluye "esto debe ser una actualización", emite un `UPDATE ... WHERE id = ?`,
+coincide con cero filas, y la inserción que pretendías sencillamente nunca ocurre.
+Este es un clásico tiro al pie de R2DBC con claves asignadas por el cliente, y falla
+en silencio: ninguna excepción, solo una fila que nunca se escribió.
 
-The fix is to stop letting R2DBC guess. Implement `Persistable<UUID>` and answer
-the question explicitly with an `isNew()` method, backed by a `@Transient` flag that
-is never written to the database.
+La solución es dejar de permitir que R2DBC adivine. Implementa `Persistable<UUID>` y
+responde a la pregunta de forma explícita con un método `isNew()`, respaldado por un
+indicador `@Transient` que nunca se escribe en la base de datos.
 
-::: listing core-lending-loan-origination/src/main/java/com/firefly/lumen/core/domain/LoanApplication.java | Listing 8.3 — telling R2DBC "this is new" explicitly
+::: listing core-lending-loan-origination/src/main/java/com/firefly/lumen/core/domain/LoanApplication.java | Listado 8.3 — decirle a R2DBC "esto es nuevo" de forma explícita
     /**
      * Transient flag (never persisted) that tells Spring Data R2DBC whether a
      * {@code save} should INSERT or UPDATE. Because the primary key is a
@@ -192,38 +199,40 @@ is never written to the database.
     }
 :::
 
-The `@Transient` annotation keeps `newEntity` out of the mapping, so there is no
-`new_entity` column and the flag never touches the wire. `getId()` returns the
-surrogate key; `isNew()` returns the flag. When the service is about to save a
-brand-new application it calls `markNew()`, R2DBC sees `isNew() == true`, and an
-`INSERT` is issued regardless of the non-null id. On any later `save` the loaded
-entity has `newEntity == false`, so an `UPDATE` is issued — which is exactly right.
+La anotación `@Transient` mantiene `newEntity` fuera del mapeo, de modo que no hay
+columna `new_entity` y el indicador nunca llega al cable. `getId()` devuelve la clave
+subrogada; `isNew()` devuelve el indicador. Cuando el servicio está a punto de
+guardar una solicitud completamente nueva llama a `markNew()`, R2DBC ve
+`isNew() == true`, y se emite un `INSERT` independientemente del id no nulo. En
+cualquier `save` posterior la entidad cargada tiene `newEntity == false`, así que se
+emite un `UPDATE` — que es exactamente lo correcto.
 
-!!! warning "Default the flag to false, not true"
-    The flag defaults to `false` so that an application *loaded* from the database
-    — which never calls `markNew()` — is correctly treated as an update. Only the
-    create path opts into INSERT. Defaulting to `true` would make every save after
-    a read try to re-insert a row that already exists, and you would get duplicate-
-    key errors instead of updates.
+!!! warning "Pon el indicador en false por defecto, no en true"
+    El indicador es `false` por defecto para que una solicitud *cargada* desde la base
+    de datos — que nunca llama a `markNew()` — se trate correctamente como una
+    actualización. Solo el camino de creación opta por INSERT. Ponerlo en `true` por
+    defecto haría que cada save tras una lectura intentara reinsertar una fila que ya
+    existe, y obtendrías errores de clave duplicada en lugar de actualizaciones.
 
-!!! spring "Spring parity"
-    This is pure Spring Data, not a Firefly addition. In Spring Data JPA you rarely
-    meet this problem because Hibernate tracks entity state in its persistence
-    context. R2DBC has no session and no dirty-checking, so when *you* own the key
-    you must own the insert/update decision too — and `Persistable<T>` is Spring
-    Data's standard, documented hook for doing exactly that. Firefly changes none of
-    this; it just keeps the reactive stack underneath it non-blocking.
+!!! spring "Equivalente en Spring"
+    Esto es Spring Data puro, no una añadidura de Firefly. En Spring Data JPA rara vez
+    te topas con este problema porque Hibernate rastrea el estado de la entidad en su
+    contexto de persistencia. R2DBC no tiene sesión ni dirty-checking, así que cuando
+    eres *tú* el dueño de la clave debes ser también el dueño de la decisión de
+    insertar/actualizar — y `Persistable<T>` es el enganche estándar y documentado de
+    Spring Data para hacer exactamente eso. Firefly no cambia nada de esto; solo
+    mantiene la pila reactiva subyacente sin bloqueos.
 
-## The reactive repository
+## El repositorio reactivo
 
-With the entity in place, the repository is a one-liner plus two derived queries.
-Extend `ReactiveCrudRepository<LoanApplication, UUID>` and Spring Data generates a
-reactive implementation at runtime: `save` returns `Mono<LoanApplication>`,
-`findById` returns `Mono<LoanApplication>`, `findAll` returns
-`Flux<LoanApplication>`. You add finder methods by *naming* them, and Spring Data
-parses the name into a query.
+Con la entidad en su sitio, el repositorio es una sola línea más dos consultas
+derivadas. Extiende `ReactiveCrudRepository<LoanApplication, UUID>` y Spring Data
+genera una implementación reactiva en tiempo de ejecución: `save` devuelve
+`Mono<LoanApplication>`, `findById` devuelve `Mono<LoanApplication>`, `findAll`
+devuelve `Flux<LoanApplication>`. Añades métodos de búsqueda *nombrándolos*, y Spring
+Data analiza el nombre para construir una consulta.
 
-::: listing core-lending-loan-origination/src/main/java/com/firefly/lumen/core/persistence/LoanApplicationRepository.java | Listing 8.4 — a reactive repository with derived queries
+::: listing core-lending-loan-origination/src/main/java/com/firefly/lumen/core/persistence/LoanApplicationRepository.java | Listado 8.4 — un repositorio reactivo con consultas derivadas
 public interface LoanApplicationRepository
         extends ReactiveCrudRepository<LoanApplication, UUID> {
 
@@ -241,28 +250,31 @@ public interface LoanApplicationRepository
 }
 :::
 
-`findByStatus` returns a `Flux` because many applications can share a status;
-`findByApplicationNumber` returns a `Mono` because the business key is unique. You
-write no SQL and no implementation class — the method names *are* the query, and
-Spring Data builds `WHERE status = ?` and `WHERE application_number = ?` for you.
+`findByStatus` devuelve un `Flux` porque muchas solicitudes pueden compartir un
+estado; `findByApplicationNumber` devuelve un `Mono` porque la clave de negocio es
+única. No escribes SQL ni una clase de implementación — los nombres de los métodos
+*son* la consulta, y Spring Data construye `WHERE status = ?` y
+`WHERE application_number = ?` por ti.
 
-!!! note "Key term — derived query"
-    A **derived query** is a repository method whose name Spring Data parses into a
-    query: `findBy` + property names + optional keywords (`And`, `OrderBy`,
-    `Between`). It is the fastest way to add a finder, with no SQL to maintain — at
-    the cost of long method names once the criteria grow. For anything richer, you
-    annotate the method with `@Query`, or — for open-ended list filtering — you
-    reach for the filter engine described at the end of this chapter.
+!!! note "Termino clave — consulta derivada"
+    Una **consulta derivada** es un método de repositorio cuyo nombre Spring Data
+    analiza para construir una consulta: `findBy` + nombres de propiedades + palabras
+    clave opcionales (`And`, `OrderBy`, `Between`). Es la forma más rápida de añadir
+    un buscador, sin SQL que mantener — a costa de nombres de método largos cuando los
+    criterios crecen. Para algo más rico, anotas el método con `@Query`, o — para
+    filtrado de listas abierto — recurres al motor de filtrado que se describe al
+    final de este capítulo.
 
-## The schema: a Flyway migration
+## El esquema: una migración Flyway
 
-R2DBC maps to a table; something has to *create* that table. Lumen uses **Flyway**,
-which applies versioned SQL migration scripts in order and records which have run, so
-the schema is reproducible from an empty database and evolves in tracked steps. A
-migration file is named `V<version>__<description>.sql`; Flyway runs `V1` before
-`V2`, once each, and refuses to silently change one that has already been applied.
+R2DBC mapea a una tabla; algo tiene que *crear* esa tabla. Lumen usa **Flyway**, que
+aplica scripts de migración SQL versionados en orden y registra cuáles se han
+ejecutado, de modo que el esquema es reproducible desde una base de datos vacía y
+evoluciona en pasos rastreados. Un archivo de migración se nombra
+`V<version>__<description>.sql`; Flyway ejecuta `V1` antes que `V2`, cada uno una sola
+vez, y se niega a cambiar en silencio uno que ya se ha aplicado.
 
-::: listing core-lending-loan-origination/src/main/resources/db/migration/V1__loan_application.sql | Listing 8.5 — the first migration creates the table
+::: listing core-lending-loan-origination/src/main/resources/db/migration/V1__loan_application.sql | Listado 8.5 — la primera migración crea la tabla
 CREATE TABLE loan_application (
     loan_application_id UUID PRIMARY KEY,
     application_number  UUID NOT NULL,
@@ -284,34 +296,37 @@ CREATE INDEX ix_loan_application_status
     ON loan_application (status);
 :::
 
-Read this against Listing 8.1 column by column: every `@Column("...")` maps to a
-column here. The `loan_application_id` is the `PRIMARY KEY` (the surrogate);
-`application_number` carries a `UNIQUE` index because the business key must not
-repeat; `status` gets a plain index because `findByStatus` filters on it. The enum
-lands in `VARCHAR(32)`, the amount in `NUMERIC(19, 2)` to hold money without
-floating-point error, and the two audit timestamps are `NOT NULL`.
+Lee esto frente al Listado 8.1 columna por columna: cada `@Column("...")` mapea a una
+columna de aquí. `loan_application_id` es la `PRIMARY KEY` (la subrogada);
+`application_number` lleva un índice `UNIQUE` porque la clave de negocio no debe
+repetirse; `status` recibe un índice simple porque `findByStatus` filtra por él. El
+enum aterriza en `VARCHAR(32)`, el importe en `NUMERIC(19, 2)` para guardar dinero
+sin error de coma flotante, y las dos marcas de tiempo de auditoría son `NOT NULL`.
 
-This same script runs unchanged against in-memory H2 in tests and against
-production-shaped Postgres — it is deliberately written in portable, H2-compatible
-DDL so the test you run in a moment exercises the *real* migration, not a mock.
+Este mismo script se ejecuta sin cambios contra H2 en memoria en las pruebas y contra
+un Postgres con forma de producción — está escrito deliberadamente en DDL portable y
+compatible con H2, de modo que la prueba que ejecutarás dentro de un momento ejercita
+la migración *real*, no un mock.
 
-!!! spring "Spring parity"
-    This is stock Spring Boot. Flyway auto-configuration sees `flyway-core` on the
-    classpath and runs anything under `src/main/resources/db/migration` on startup.
-    On the reactive stack Flyway still uses a short-lived blocking JDBC connection
-    *at boot only* to apply migrations — that is fine, because it happens once
-    before the event loop starts serving traffic; the request path stays R2DBC and
-    non-blocking. Firefly leaves this wiring exactly as Spring Boot ships it.
+!!! spring "Equivalente en Spring"
+    Esto es Spring Boot de serie. La autoconfiguración de Flyway ve `flyway-core` en
+    el classpath y ejecuta al arrancar todo lo que haya bajo
+    `src/main/resources/db/migration`. En la pila reactiva, Flyway sigue usando una
+    conexión JDBC bloqueante de vida corta *solo al arrancar* para aplicar las
+    migraciones — y eso está bien, porque ocurre una vez antes de que el bucle de
+    eventos empiece a atender tráfico; el camino de la petición sigue siendo R2DBC y
+    sin bloqueos. Firefly deja este cableado exactamente como lo entrega Spring Boot.
 
-## The mapper: entity to DTO with MapStruct
+## El mapeador: de entidad a DTO con MapStruct
 
-The repository deals in entities; the web layer deals in DTOs. **MapStruct**
-generates the conversion code at compile time from an interface you declare, so you
-get fast, allocation-light mapping with no reflection and no hand-written copy loops.
-Declaring `componentModel = SPRING` makes the generated implementation a Spring bean
-you can inject like any other.
+El repositorio trata con entidades; la capa web trata con DTOs. **MapStruct** genera
+el código de conversión en tiempo de compilación a partir de una interfaz que
+declaras, de modo que obtienes un mapeo rápido y de bajo consumo de memoria, sin
+reflexión y sin bucles de copia escritos a mano. Declarar `componentModel = SPRING`
+hace que la implementación generada sea un bean de Spring que puedes inyectar como
+cualquier otro.
 
-::: listing core-lending-loan-origination/src/main/java/com/firefly/lumen/core/mapper/LoanApplicationMapper.java | Listing 8.6 — a MapStruct mapper, half generated and half hand-written
+::: listing core-lending-loan-origination/src/main/java/com/firefly/lumen/core/mapper/LoanApplicationMapper.java | Listado 8.6 — un mapeador MapStruct, mitad generado y mitad escrito a mano
 @Mapper(
         componentModel = MappingConstants.ComponentModel.SPRING,
         unmappedTargetPolicy = ReportingPolicy.IGNORE
@@ -347,24 +362,26 @@ public interface LoanApplicationMapper {
 }
 :::
 
-`toResponse` is fully generated: MapStruct matches entity fields to DTO fields by
-name and writes the implementation for you, so the mechanical entity-to-response
-projection costs you one method signature. `toNewEntity` is a `default` method you
-write by hand, because building a new application is not a field-for-field copy — it
-normalizes the currency to upper case and deliberately leaves the id, status, and
-timestamps unset, because the *service* owns those defaults. Mixing generated and
-hand-written methods in one mapper is idiomatic MapStruct: let it generate the dull
-copies, take over where there is real logic.
+`toResponse` está completamente generado: MapStruct empareja los campos de la entidad
+con los del DTO por nombre y escribe la implementación por ti, así que la proyección
+mecánica de entidad a respuesta te cuesta una firma de método. `toNewEntity` es un
+método `default` que escribes a mano, porque construir una solicitud nueva no es una
+copia campo a campo — normaliza la moneda a mayúsculas y deja deliberadamente sin
+asignar el id, el estado y las marcas de tiempo, porque es el *servicio* quien es
+dueño de esos valores por defecto. Mezclar métodos generados y escritos a mano en un
+mismo mapeador es MapStruct idiomático: deja que genere las copias aburridas y toma el
+control donde hay lógica real.
 
-## The service: tying it together reactively
+## El servicio: uniéndolo todo de forma reactiva
 
-The application service is where the pieces compose. It is constructor-injected with
-the repository and mapper, is marked `@Transactional`, and returns reactive types
-throughout — so nothing blocks. This is also where the `Persistable` trick pays off:
-the create path mints the ids, sets the timestamps, submits the application through
-its domain method, calls `markNew()`, and only then saves.
+El servicio de aplicación es donde se componen las piezas. Recibe por constructor el
+repositorio y el mapeador, está marcado con `@Transactional`, y devuelve tipos
+reactivos en todo momento — de modo que nada se bloquea. Aquí es también donde el
+truco de `Persistable` rinde frutos: el camino de creación acuña los ids, fija las
+marcas de tiempo, envía la solicitud a través de su método de dominio, llama a
+`markNew()` y solo entonces guarda.
 
-::: listing core-lending-loan-origination/src/main/java/com/firefly/lumen/core/service/LoanApplicationService.java | Listing 8.7 — the create and read paths, fully reactive
+::: listing core-lending-loan-origination/src/main/java/com/firefly/lumen/core/service/LoanApplicationService.java | Listado 8.7 — los caminos de creación y lectura, totalmente reactivos
     /**
      * Opens a new application, submits it, persists it, and returns the view.
      *
@@ -399,23 +416,25 @@ its domain method, calls `markNew()`, and only then saves.
     }
 :::
 
-Trace the create path: build a transient entity from the request, assign both UUIDs,
-stamp the status and timestamps, run `submit()` (the domain method that moves the
-application from `DRAFT` to `SUBMITTED`), then `markNew()` so R2DBC issues an
-`INSERT`. The save returns `Mono<LoanApplication>`, and `.map(mapper::toResponse)`
-turns it into the `Mono<LoanApplicationResponse>` the controller returns. No
-`.block()`, no `subscribe()` — the framework subscribes at the edge.
+Sigue el camino de creación: construye una entidad transitoria a partir de la
+petición, asigna ambos UUIDs, estampa el estado y las marcas de tiempo, ejecuta
+`submit()` (el método de dominio que mueve la solicitud de `DRAFT` a `SUBMITTED`),
+luego `markNew()` para que R2DBC emita un `INSERT`. El save devuelve
+`Mono<LoanApplication>`, y `.map(mapper::toResponse)` lo convierte en el
+`Mono<LoanApplicationResponse>` que devuelve el controlador. Ningún `.block()`, ningún
+`subscribe()` — el framework se suscribe en el borde.
 
-The read path shows the framework's error model. `findById` returns an empty `Mono`
-when there is no row; `switchIfEmpty` turns that emptiness into a
-`ResourceNotFoundException`, and the web layer renders it as an RFC 7807 problem
-detail automatically. There is no hand-written 404 anywhere — exactly the "one error
-model, everywhere" promise from Chapter 1.
+El camino de lectura muestra el modelo de errores del framework. `findById` devuelve
+un `Mono` vacío cuando no hay fila; `switchIfEmpty` convierte ese vacío en una
+`ResourceNotFoundException`, y la capa web la renderiza automáticamente como un
+problem detail RFC 7807. No hay ningún 404 escrito a mano en ninguna parte —
+exactamente la promesa de "un único modelo de errores, en todas partes" del
+Capítulo 1.
 
-The `list` method rounds it out, switching between `findAll` and the derived
-`findByStatus` depending on whether a status filter was supplied:
+El método `list` lo completa, alternando entre `findAll` y la consulta derivada
+`findByStatus` según se haya proporcionado o no un filtro de estado:
 
-::: listing core-lending-loan-origination/src/main/java/com/firefly/lumen/core/service/LoanApplicationService.java | Listing 8.8 — listing, with and without a status filter
+::: listing core-lending-loan-origination/src/main/java/com/firefly/lumen/core/service/LoanApplicationService.java | Listado 8.8 — listado, con y sin filtro de estado
     @Transactional(readOnly = true)
     public Flux<LoanApplicationResponse> list(ApplicationStatus status) {
         Flux<LoanApplication> source = (status == null)
@@ -425,55 +444,60 @@ The `list` method rounds it out, switching between `findAll` and the derived
     }
 :::
 
-!!! spring "Spring parity"
-    `@Transactional` works on the reactive stack too, but it manages a *reactive*
-    transaction bound to the Reactor context rather than a thread-local one — which
-    is why it must never wrap a blocking call. `@Transactional(readOnly = true)` on
-    the read paths is the same hint you would give in MVC: it lets the data layer
-    skip dirty-tracking work for queries. Same annotations, reactive semantics
-    underneath.
+!!! spring "Equivalente en Spring"
+    `@Transactional` también funciona en la pila reactiva, pero gestiona una
+    transacción *reactiva* ligada al contexto de Reactor en lugar de a un
+    thread-local — razón por la cual nunca debe envolver una llamada bloqueante.
+    `@Transactional(readOnly = true)` en los caminos de lectura es la misma pista que
+    darías en MVC: permite a la capa de datos saltarse el trabajo de dirty-tracking en
+    las consultas. Las mismas anotaciones, con semántica reactiva por debajo.
 
-## Run it
+## Ejecútalo
 
-Because the migration is portable DDL and the test boots against in-memory H2 with
-the R2DBC runtime, the whole persistence layer is verifiable with no Docker and no
-external database. The controller slice test creates an application over HTTP, reads
-it back, asserts the 404 problem detail, and rejects an invalid payload — all
-against the real Flyway-migrated schema. Run it from `samples/lumen-lending`:
+Como la migración es DDL portable y la prueba arranca contra H2 en memoria con el
+runtime de R2DBC, toda la capa de persistencia es verificable sin Docker y sin una
+base de datos externa. La prueba de slice del controlador crea una solicitud por
+HTTP, la vuelve a leer, comprueba el problem detail 404 y rechaza un payload inválido
+— todo contra el esquema real migrado por Flyway. Ejecútala desde
+`samples/lumen-lending`:
 
 ```text
 mvn -q -pl core-lending-loan-origination test
 ```
 
-You should see the three tests pass:
+Deberías ver pasar las tres pruebas:
 
 ```text
 Tests run: 3, Failures: 0, Errors: 0, Skipped: 0
 ```
 
-!!! tip "Checkpoint"
-    Run `mvn -q -pl core-lending-loan-origination test` from `samples/lumen-lending`.
-    A green `Tests run: 3, Failures: 0` means Flyway applied `V1__loan_application.sql`
-    to H2, the `Persistable` flag drove a real `INSERT`, `findById` read the row
-    back, and a missing id produced an RFC 7807 404 — the entire round trip,
-    verified. If the create test fails with a duplicate-key or "0 rows updated"
-    symptom, the first thing to check is the `markNew()` call and the `isNew()`
-    flag's default.
+!!! tip "Punto de control"
+    Ejecuta `mvn -q -pl core-lending-loan-origination test` desde
+    `samples/lumen-lending`. Un `Tests run: 3, Failures: 0` en verde significa que
+    Flyway aplicó `V1__loan_application.sql` a H2, que el indicador `Persistable`
+    impulsó un `INSERT` real, que `findById` volvió a leer la fila, y que un id
+    inexistente produjo un 404 RFC 7807 — todo el viaje de ida y vuelta, verificado.
+    Si la prueba de creación falla con un síntoma de clave duplicada o "0 rows
+    updated", lo primero que hay que comprobar es la llamada a `markNew()` y el valor
+    por defecto del indicador `isNew()`.
 
-## The production path for list endpoints
+## El camino de producción para los endpoints de listado
 
-`list(status)` is honest but blunt: one optional filter, no paging, no sorting. A
-real core service exposes list endpoints with arbitrary filtering, stable
-pagination, and a consistent response envelope — and Lumen's loan-origination slice
-keeps that surface small on purpose. The framework's answer, which production
-Firefly services use, is a **generic reflective filter engine** paired with a
-`PaginationRequest`/`PaginationResponse` pair. You describe a filter DTO, annotate
-the fields that may be filtered, and the engine builds the query and the paged
-response for you — no derived-method explosion, no per-endpoint paging boilerplate.
+`list(status)` es honesto pero tosco: un único filtro opcional, sin paginación, sin
+ordenación. Un servicio core real expone endpoints de listado con filtrado
+arbitrario, paginación estable y un sobre de respuesta consistente — y el slice de
+originación de préstamos de Lumen mantiene esa superficie pequeña a propósito. La
+respuesta del framework, que usan los servicios Firefly de producción, es un **motor
+de filtrado reflexivo genérico** emparejado con un par
+`PaginationRequest`/`PaginationResponse`. Describes un DTO de filtro, anotas los
+campos que pueden filtrarse, y el motor construye la consulta y la respuesta paginada
+por ti — sin explosión de métodos derivados, sin código repetitivo de paginación por
+endpoint.
 
-Conceptually, a filterable request and a paged call look like this. (This is an
-illustrative sketch of the framework's shape — the built loan-origination slice does
-not wire the filter engine; it uses the derived queries above.)
+Conceptualmente, una petición filtrable y una llamada paginada tienen este aspecto.
+(Esto es un boceto ilustrativo de la forma del framework — el slice de originación de
+préstamos construido no cablea el motor de filtrado; usa las consultas derivadas de
+arriba.)
 
 ```java
 // Illustrative: the framework's filter + pagination surface, not Lumen's slice.
@@ -487,61 +511,67 @@ Mono<PaginationResponse<LoanApplicationResponse>> page =
                 PaginationRequest.of(/* page */ 0, /* size */ 20));
 ```
 
-The point is the *path*, not the syntax: when a list endpoint outgrows a derived
-query, you do not hand-roll page/size/sort DTOs and a bespoke query builder in every
-service — the enterprise tax Chapter 1 named. You declare the filter, annotate the
-filterable fields, and inherit a uniform, reactive, paged list endpoint. Lumen's
-slice stays with derived queries because two finders are all it needs; reach for the
-filter engine the moment a real filtering surface appears.
+Lo que importa es el *camino*, no la sintaxis: cuando un endpoint de listado supera
+una consulta derivada, no fabricas a mano DTOs de page/size/sort y un constructor de
+consultas a medida en cada servicio — el impuesto empresarial que nombró el Capítulo
+1. Declaras el filtro, anotas los campos filtrables, y heredas un endpoint de listado
+uniforme, reactivo y paginado. El slice de Lumen se queda con las consultas derivadas
+porque dos buscadores son todo lo que necesita; recurre al motor de filtrado en el
+momento en que aparezca una superficie de filtrado real.
 
-!!! note "Key term — `@FilterableId`"
-    `@FilterableId` marks an id-typed field on a filter DTO as something the engine
-    may filter by, with the right type handling for UUID keys. It is the filter
-    engine's way of saying "this field is a safe, indexed filter target" — the
-    opt-in that keeps reflective filtering from becoming an open query surface over
-    every field.
+!!! note "Termino clave — `@FilterableId`"
+    `@FilterableId` marca un campo de tipo id en un DTO de filtro como algo por lo que
+    el motor puede filtrar, con el manejo de tipos correcto para claves UUID. Es la
+    forma del motor de filtrado de decir "este campo es un objetivo de filtro seguro e
+    indexado" — la habilitación explícita que evita que el filtrado reflexivo se
+    convierta en una superficie de consulta abierta sobre todos los campos.
 
-## What you built {.recap}
+## Lo que has construido {.recap}
 
-- A Spring Data **R2DBC `@Table` entity**, `LoanApplication`, with a UUID `@Id`,
-  snake_case `@Column` mappings, and an `ApplicationStatus` enum stored as a string.
-- The **`Persistable<UUID>` trick**: a `@Transient` `newEntity` flag plus `isNew()`,
-  so R2DBC issues an `INSERT` for client-assigned keys instead of a silent,
-  zero-row `UPDATE` — and an `UPDATE` for everything loaded from the database.
-- A **reactive repository** extending `ReactiveCrudRepository` with two derived
-  queries (`findByStatus`, `findByApplicationNumber`) and no hand-written SQL.
-- A **Flyway migration**, `V1__loan_application.sql`, in portable DDL that runs on
-  H2 in tests and Postgres in production from the same file.
-- A **MapStruct mapper** that generates `toResponse` and hand-writes `toNewEntity`,
-  and a `@Transactional` **service** that composes them reactively — with a
-  `ResourceNotFoundException` that the framework renders as an RFC 7807 404.
-- A green `Tests run: 3, Failures: 0` from `mvn -q -pl core-lending-loan-origination
-  test`, proving the round trip against the real migrated schema.
+- Una **entidad `@Table` de Spring Data R2DBC**, `LoanApplication`, con un `@Id` UUID,
+  mapeos `@Column` en snake_case y un enum `ApplicationStatus` almacenado como cadena.
+- El **truco de `Persistable<UUID>`**: un indicador `@Transient` `newEntity` más
+  `isNew()`, de modo que R2DBC emite un `INSERT` para las claves asignadas por el
+  cliente en lugar de un `UPDATE` silencioso de cero filas — y un `UPDATE` para todo
+  lo cargado desde la base de datos.
+- Un **repositorio reactivo** que extiende `ReactiveCrudRepository` con dos consultas
+  derivadas (`findByStatus`, `findByApplicationNumber`) y sin SQL escrito a mano.
+- Una **migración Flyway**, `V1__loan_application.sql`, en DDL portable que se ejecuta
+  sobre H2 en las pruebas y sobre Postgres en producción desde el mismo archivo.
+- Un **mapeador MapStruct** que genera `toResponse` y escribe a mano `toNewEntity`, y
+  un **servicio** `@Transactional` que los compone de forma reactiva — con una
+  `ResourceNotFoundException` que el framework renderiza como un 404 RFC 7807.
+- Un `Tests run: 3, Failures: 0` en verde de
+  `mvn -q -pl core-lending-loan-origination test`, demostrando el viaje de ida y
+  vuelta contra el esquema real migrado.
 
-## Try it yourself {.exercises}
+## Pruebalo tu mismo {.exercises}
 
-1. **Watch the trick fail.** In `LoanApplicationService.create`, comment out the
-   `application.markNew()` line and rerun `mvn -q -pl core-lending-loan-origination
-   test`. Observe how the create test breaks, then restore the line and explain in
-   one sentence why the non-null UUID id made R2DBC choose `UPDATE`.
-2. **Add a derived finder.** Add `Flux<LoanApplication> findByApplicantId(UUID
-   applicantId)` to `LoanApplicationRepository` and a thin `list`-style service
-   method that uses it. No SQL — let the method name carry the query.
-3. **Extend the schema.** Add a `risk_band VARCHAR(16)` column to
-   `V1__loan_application.sql` and a matching `@Column("risk_band")` field on
-   `LoanApplication`, then confirm the slice test still goes green against the
-   migrated H2 schema.
-4. **Map a new field.** Surface your `risk_band` field on `LoanApplicationResponse`
-   and confirm MapStruct's generated `toResponse` picks it up automatically by
-   name — no change to the mapper interface required.
-5. **Sketch the production path.** Without wiring it, write a `LoanApplicationFilter`
-   record with a `@FilterableId` applicant id and a status, and note which existing
-   service method it would replace once the list endpoint needs paging.
+1. **Observa cómo falla el truco.** En `LoanApplicationService.create`, comenta la
+   línea `application.markNew()` y vuelve a ejecutar
+   `mvn -q -pl core-lending-loan-origination test`. Observa cómo se rompe la prueba de
+   creación, luego restaura la línea y explica en una frase por qué el id UUID no nulo
+   hizo que R2DBC eligiera `UPDATE`.
+2. **Añade un buscador derivado.** Añade `Flux<LoanApplication> findByApplicantId(UUID
+   applicantId)` a `LoanApplicationRepository` y un método de servicio fino al estilo
+   `list` que lo use. Sin SQL — deja que el nombre del método cargue la consulta.
+3. **Extiende el esquema.** Añade una columna `risk_band VARCHAR(16)` a
+   `V1__loan_application.sql` y un campo `@Column("risk_band")` correspondiente en
+   `LoanApplication`, luego confirma que la prueba de slice sigue en verde contra el
+   esquema H2 migrado.
+4. **Mapea un campo nuevo.** Expón tu campo `risk_band` en `LoanApplicationResponse` y
+   confirma que el `toResponse` generado por MapStruct lo recoge automáticamente por
+   nombre — sin necesidad de cambiar la interfaz del mapeador.
+5. **Esboza el camino de producción.** Sin cablearlo, escribe un record
+   `LoanApplicationFilter` con un id de solicitante `@FilterableId` y un estado, y
+   anota qué método de servicio existente reemplazaría una vez que el endpoint de
+   listado necesite paginación.
 
-## Where to go next
+## Adonde ir ahora
 
-The core now owns its data. The next layers up the stack put this service to work:
-the domain tier orchestrates these CRUD operations into business flows over generated
-SDKs, and a saga coordinates the multi-step decision path with compensation when a
-step fails. The persistence layer you built here is the system of record everything
-above it ultimately writes to.
+El core ahora es dueño de sus datos. Las siguientes capas hacia arriba de la pila
+ponen este servicio a trabajar: la capa de dominio orquesta estas operaciones CRUD en
+flujos de negocio sobre SDKs generados, y una saga coordina el camino de decisión de
+varios pasos con compensacion cuando un paso falla. La capa de persistencia que has
+construido aquí es el sistema de registro al que todo lo que está por encima acaba
+escribiendo.

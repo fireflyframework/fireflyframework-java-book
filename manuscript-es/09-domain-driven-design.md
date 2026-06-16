@@ -1,29 +1,32 @@
-Chapter 8 gave Lumen Lending a real persistence layer: a `loan_application` row,
-a UUID primary key, audit columns, and a reactive repository that reads and writes
-it. That row is honest about the data, but it is silent about the *rules*. Nothing
-in a `BigDecimal requestedAmount` says the amount can never be negative. Nothing in
-a `String status` column says you may not approve an application that is still a
-draft. Those rules live, today, scattered across whatever service happens to touch
-the row — exactly the anemic model that Domain-Driven Design was named to cure.
+El Capítulo 8 dotó a Lumen Lending de una capa de persistencia real: una fila
+`loan_application`, una clave primaria UUID, columnas de auditoría y un repositorio
+reactivo que la lee y la escribe. Esa fila es honesta sobre los datos, pero guarda
+silencio sobre las *reglas*. Nada en un `BigDecimal requestedAmount` dice que el
+importe nunca puede ser negativo. Nada en una columna `String status` dice que no
+puedes aprobar una solicitud que aún es un borrador. Esas reglas viven, hoy, dispersas
+por cualquier servicio que toque la fila — exactamente el modelo anémico que el Diseño
+Dirigido por el Dominio (DDD) nació para curar.
 
-This chapter promotes the row into a *rich* domain model. You will build a `Money`
-value object that makes "non-negative amount in exact minor units" a property of the
-type itself, and you will move the loan application's lifecycle — submit, review,
-approve, reject, cancel — *into the aggregate*, so the only way to change its status
-is to ask it to perform a legal transition. The persistence row does not disappear;
-it stays, and a mapper keeps it at arm's length from the API. By the end the rules
-have one home, and a plain JUnit test — no Spring, no database — proves they hold.
+Este capítulo asciende la fila a un modelo de dominio *rico*. Construirás un objeto de
+valor `Money` que convierte "importe no negativo en unidades menores exactas" en una
+propiedad del propio tipo, y moverás el ciclo de vida de la solicitud de préstamo —
+enviar, revisar, aprobar, rechazar, cancelar — *al agregado*, de modo que la única
+forma de cambiar su estado sea pedirle que realice una transición legal. La fila de
+persistencia no desaparece; permanece, y un mapeador la mantiene a distancia de la API.
+Al final, las reglas tienen un único hogar, y un sencillo test de JUnit — sin Spring,
+sin base de datos — demuestra que se cumplen.
 
-This is a conceptual chapter with a runnable payoff. Everything you slice here is
-ordinary Java and Spring Data; Firefly's contribution is the surrounding
-discipline — the finance validators from Chapter 6 guard the *edge*, and the domain
-model you build now guards the *core*. The two meet in the middle, and neither
-trusts the other to do its job.
+Este es un capítulo conceptual con una recompensa ejecutable. Todo lo que diseccionas
+aquí es Java corriente y Spring Data; la aportación de Firefly es la disciplina que lo
+rodea — los validadores financieros del Capítulo 6 protegen el *borde*, y el modelo de
+dominio que construyes ahora protege el *núcleo*. Ambos se encuentran en el medio, y
+ninguno confía en que el otro haga su trabajo.
 
-## The anemic row, and why it leaks
+## La fila anémica, y por qué tiene fugas
 
-Here is the shape most teams ship first. The entity is a bag of fields with public
-getters and setters; the rules live in a service that mutates it from the outside:
+Esta es la forma que la mayoría de los equipos entrega primero. La entidad es un saco
+de campos con getters y setters públicos; las reglas viven en un servicio que la muta
+desde fuera:
 
 ```java
 // Anemic: the entity is a data bag; rules live (and scatter) elsewhere.
@@ -37,37 +40,38 @@ public class LoanApplication {
 app.setStatus(ApplicationStatus.APPROVED);   // was it even under review? who knows.
 ```
 
-The setter does not know — *cannot* know — whether approving this application is
-legal right now. So every caller has to remember to check first, and the day one of
-them forgets, you approve a draft. The same is true of the amount: `setRequestedAmount`
-will happily store a negative number, and the invariant "money is never negative"
-becomes a code review convention instead of a guarantee.
+El setter no sabe — *no puede* saber — si aprobar esta solicitud es legal en este
+momento. Así que cada invocador tiene que acordarse de comprobarlo primero, y el día
+que uno de ellos lo olvide, aprobarás un borrador. Lo mismo ocurre con el importe:
+`setRequestedAmount` almacenará alegremente un número negativo, y el invariante "el
+dinero nunca es negativo" se convierte en una convención de revisión de código en lugar
+de una garantía.
 
-The cure has two parts. First, give the dangerous primitive a *type* that cannot
-hold an illegal value — a **value object**. Second, make the entity the only thing
-that can change its own state, through methods that encode the legal transitions — an
-**aggregate root**. We build them in that order.
+La cura tiene dos partes. Primero, dale al primitivo peligroso un *tipo* que no pueda
+albergar un valor ilegal — un **objeto de valor**. Segundo, haz que la entidad sea lo
+único que pueda cambiar su propio estado, a través de métodos que codifiquen las
+transiciones legales — una **raíz de agregado**. Los construimos en ese orden.
 
-!!! note "Key term — anemic vs. rich domain model"
-    An **anemic** model splits data (dumb entities with getters/setters) from
-    behavior (service classes that mutate them). A **rich** model puts the behavior
-    *on* the entity, so invariants are enforced wherever the object goes. DDD favors
-    the rich model precisely because it removes the "did everyone remember to check?"
-    failure mode.
+!!! note "Termino clave — modelo de dominio anémico vs. rico"
+    Un modelo **anémico** separa los datos (entidades tontas con getters/setters) del
+    comportamiento (clases de servicio que las mutan). Un modelo **rico** pone el
+    comportamiento *en* la entidad, de modo que los invariantes se imponen allá donde
+    vaya el objeto. El DDD favorece el modelo rico precisamente porque elimina el modo
+    de fallo del "¿se acordaron todos de comprobar?".
 
-## Step 1 — A Money value object with an enforced invariant
+## Paso 1 — Un objeto de valor Money con un invariante impuesto
 
-Money is the textbook value object: two amounts of the same value are
-interchangeable, it carries no identity, and it has one hard invariant — it is never
-negative. Lumen models it as a Java `record` holding an integer count of *minor
-units* (cents), never a `double` or a bare `BigDecimal`, so arithmetic is exact and
-rounding is never silently wrong.
+El dinero es el objeto de valor de manual: dos importes del mismo valor son
+intercambiables, no acarrea identidad, y tiene un invariante duro — nunca es negativo.
+Lumen lo modela como un `record` de Java que contiene un recuento entero de *unidades
+menores* (céntimos), nunca un `double` ni un `BigDecimal` desnudo, de modo que la
+aritmética es exacta y el redondeo nunca está silenciosamente equivocado.
 
-The record's canonical constructor is intentionally not where the invariant lives;
-a static factory `of` is, because it can reject illegal input with a clear message
-before any `Money` exists:
+El constructor canónico del record no es, intencionadamente, donde vive el invariante;
+sí lo es una factoría estática `of`, porque puede rechazar entradas ilegales con un
+mensaje claro antes de que exista ningún `Money`:
 
-::: listing core-lending-loan-origination/src/main/java/com/firefly/lumen/core/Money.java | Listing 9.1 — Money: a non-negative value object in exact minor units
+::: listing core-lending-loan-origination/src/main/java/com/firefly/lumen/core/Money.java | Listado 9.1 — Money: un objeto de valor no negativo en unidades menores exactas
 public record Money(long minorUnits) {
 
     /**
@@ -86,47 +90,49 @@ public record Money(long minorUnits) {
     }
 :::
 
-Because the type is a `record`, you get `equals`, `hashCode`, and `toString` for
-free — which is exactly what makes two `Money` values of `150_000` compare equal in
-a test without any ceremony. And because `minorUnits` is a `long`, there is no
-floating-point amount to round.
+Como el tipo es un `record`, obtienes `equals`, `hashCode` y `toString` gratis — que es
+exactamente lo que hace que dos valores `Money` de `150_000` se comparen como iguales
+en un test sin ninguna ceremonia. Y como `minorUnits` es un `long`, no hay ningún
+importe en coma flotante que redondear.
 
-The invariant pays off the moment you do arithmetic. Subtraction is defined in terms
-of the same factory, so a result that would dip below zero is rejected at the source
-rather than producing a nonsensical negative balance:
+El invariante da sus frutos en el momento en que haces aritmética. La resta se define
+en términos de la misma factoría, de modo que un resultado que caería por debajo de
+cero se rechaza en el origen en lugar de producir un saldo negativo sin sentido:
 
-::: listing core-lending-loan-origination/src/main/java/com/firefly/lumen/core/Money.java | Listing 9.2 — arithmetic routed through the invariant
+::: listing core-lending-loan-origination/src/main/java/com/firefly/lumen/core/Money.java | Listado 9.2 — aritmética encauzada a través del invariante
     public Money minus(Money other) {
         return Money.of(this.minorUnits - other.minorUnits);
     }
 }
 :::
 
-Notice what you did *not* write: there is no `setMinorUnits`, no way to mutate a
-`Money` after construction, and no path to a negative one. The invariant is not a
-rule you remember to apply; it is a property of the type. Any code that holds a
-`Money` holds a valid amount, full stop.
+Fíjate en lo que *no* escribiste: no hay ningún `setMinorUnits`, ninguna forma de mutar
+un `Money` tras su construcción, y ningún camino hacia uno negativo. El invariante no
+es una regla que te acuerdas de aplicar; es una propiedad del tipo. Cualquier código
+que sostenga un `Money` sostiene un importe válido, punto.
 
-!!! spring "Spring parity"
-    There is nothing Firefly-specific here — `Money` is plain Java. That is the
-    point: DDD value objects are a *modeling* technique, not a framework feature.
-    Firefly's finance validators (Chapter 6) and this value object are complementary:
-    `@ValidAmount` rejects a bad number at the HTTP edge before it ever reaches your
-    code; `Money.of` guarantees that *inside* the domain, an amount that exists is an
-    amount that is valid. Belt and suspenders, on purpose.
+!!! spring "Equivalente en Spring"
+    Aquí no hay nada específico de Firefly — `Money` es Java corriente. Esa es la
+    cuestión: los objetos de valor del DDD son una técnica de *modelado*, no una
+    característica del framework. Los validadores financieros de Firefly (Capítulo 6) y
+    este objeto de valor son complementarios: `@ValidAmount` rechaza un número erróneo
+    en el borde HTTP antes de que llegue siquiera a tu código; `Money.of` garantiza que
+    *dentro* del dominio, un importe que existe es un importe válido. Cinturón y
+    tirantes, a propósito.
 
-## Step 2 — The aggregate root owns its lifecycle
+## Paso 2 — La raíz de agregado posee su ciclo de vida
 
-Now the entity. `LoanApplication` is still a Spring Data R2DBC `@Table` — it keeps
-the UUID `@Id`, the snake_case `@Column` mappings, and the `created_at`/`updated_at`
-audit columns you built in Chapter 8. What changes is that it stops being a passive
-bag of setters and starts *enforcing its own lifecycle*.
+Ahora la entidad. `LoanApplication` sigue siendo un `@Table` de Spring Data R2DBC —
+conserva el `@Id` UUID, los mapeos `@Column` en snake_case y las columnas de auditoría
+`created_at`/`updated_at` que construiste en el Capítulo 8. Lo que cambia es que deja
+de ser un saco pasivo de setters y empieza a *imponer su propio ciclo de vida*.
 
-The lifecycle is a small state machine, named by an enum. The crucial detail is the
-last method: the enum knows which states are *terminal* — states from which no
-further transition is legal — and the aggregate consults it before allowing a change:
+El ciclo de vida es una pequeña máquina de estados, nombrada por un enum. El detalle
+crucial es el último método: el enum sabe qué estados son *terminales* — estados desde
+los que ninguna transición posterior es legal — y el agregado lo consulta antes de
+permitir un cambio:
 
-::: listing core-lending-loan-origination/src/main/java/com/firefly/lumen/core/domain/ApplicationStatus.java | Listing 9.3 — ApplicationStatus and the terminal-state predicate
+::: listing core-lending-loan-origination/src/main/java/com/firefly/lumen/core/domain/ApplicationStatus.java | Listado 9.3 — ApplicationStatus y el predicado de estado terminal
 public enum ApplicationStatus {
 
     /** Captured but not yet submitted for review. */
@@ -156,17 +162,17 @@ public enum ApplicationStatus {
 }
 :::
 
-The legal transitions form a simple graph: `DRAFT → SUBMITTED → UNDER_REVIEW →
-APPROVED`, with `REJECTED` reachable from `SUBMITTED` or `UNDER_REVIEW`, and
-`CANCELLED` reachable from any non-terminal state. The aggregate expresses each edge
-as a method. There are no public setters for `status`; the *only* way to change it
-is to ask the application to perform a transition, and each transition first checks
-that it is legal from the current state.
+Las transiciones legales forman un grafo sencillo: `DRAFT → SUBMITTED → UNDER_REVIEW →
+APPROVED`, con `REJECTED` alcanzable desde `SUBMITTED` o `UNDER_REVIEW`, y `CANCELLED`
+alcanzable desde cualquier estado no terminal. El agregado expresa cada arista como un
+método. No hay setters públicos para `status`; la *única* forma de cambiarlo es pedir a
+la solicitud que realice una transición, y cada transición comprueba primero que es
+legal desde el estado actual.
 
-The forward path uses a shared guard, `requireStatus`, that throws if the application
-is not in the expected source state:
+El camino hacia adelante usa una guarda compartida, `requireStatus`, que lanza una
+excepción si la solicitud no está en el estado de origen esperado:
 
-::: listing core-lending-loan-origination/src/main/java/com/firefly/lumen/core/domain/LoanApplication.java | Listing 9.4 — the forward transitions guard their source state
+::: listing core-lending-loan-origination/src/main/java/com/firefly/lumen/core/domain/LoanApplication.java | Listado 9.4 — las transiciones hacia adelante protegen su estado de origen
     /** Moves a {@link ApplicationStatus#DRAFT} application to {@code SUBMITTED}. */
     public void submit() {
         requireStatus(ApplicationStatus.DRAFT, "submit");
@@ -186,15 +192,15 @@ is not in the expected source state:
     }
 :::
 
-Read `approve()` again: it is impossible to approve an application that is not
-`UNDER_REVIEW`, because the method refuses before touching the state. The "did
-everyone remember to check?" failure mode is gone — the check is the method.
+Lee `approve()` de nuevo: es imposible aprobar una solicitud que no esté `UNDER_REVIEW`,
+porque el método se niega antes de tocar el estado. El modo de fallo del "¿se acordaron
+todos de comprobar?" ha desaparecido — la comprobación es el método.
 
-The decision transitions, `reject` and `cancel`, carry a little more rule: each
-accepts more than one legal source state, and each *requires a reason*, which it
-records on the aggregate as part of the same atomic change:
+Las transiciones de decisión, `reject` y `cancel`, acarrean un poco más de regla: cada
+una acepta más de un estado de origen legal, y cada una *requiere un motivo*, que
+registra en el agregado como parte del mismo cambio atómico:
 
-::: listing core-lending-loan-origination/src/main/java/com/firefly/lumen/core/domain/LoanApplication.java | Listing 9.5 — decision transitions enforce a required reason
+::: listing core-lending-loan-origination/src/main/java/com/firefly/lumen/core/domain/LoanApplication.java | Listado 9.5 — las transiciones de decisión imponen un motivo obligatorio
     public void reject(String reason) {
         if (status != ApplicationStatus.SUBMITTED && status != ApplicationStatus.UNDER_REVIEW) {
             throw illegalTransition("reject");
@@ -223,16 +229,16 @@ records on the aggregate as part of the same atomic change:
     }
 :::
 
-`cancel` is where `isTerminal()` earns its keep: rather than list every legal source
-state, it asks the enum whether the current state forbids any further change, and
-refuses if so. This is the aggregate and the value object collaborating — behavior
-distributed to where the knowledge lives.
+`cancel` es donde `isTerminal()` se gana su sueldo: en lugar de enumerar cada estado de
+origen legal, le pregunta al enum si el estado actual prohíbe cualquier cambio
+posterior, y se niega si es así. Esto es el agregado y el objeto de valor colaborando —
+comportamiento distribuido hacia donde vive el conocimiento.
 
-All three private helpers keep the public methods declarative. `transitionTo` is the
-single chokepoint that mutates state, and it stamps `updatedAt` on every change so no
-transition can forget the audit trail:
+Los tres ayudantes privados mantienen los métodos públicos declarativos. `transitionTo`
+es el único punto de estrangulamiento que muta el estado, y estampa `updatedAt` en cada
+cambio para que ninguna transición pueda olvidar el rastro de auditoría:
 
-::: listing core-lending-loan-origination/src/main/java/com/firefly/lumen/core/domain/LoanApplication.java | Listing 9.6 — one chokepoint for every state change
+::: listing core-lending-loan-origination/src/main/java/com/firefly/lumen/core/domain/LoanApplication.java | Listado 9.6 — un único punto de estrangulamiento para cada cambio de estado
     private void requireStatus(ApplicationStatus expected, String action) {
         if (status != expected) {
             throw illegalTransition(action);
@@ -250,33 +256,34 @@ transition can forget the audit trail:
     }
 :::
 
-!!! note "Key term — aggregate root"
-    An **aggregate** is a cluster of objects treated as one unit for the purpose of
-    changes, and the **aggregate root** is the single entity through which all
-    changes flow. `LoanApplication` is the root here: outside code holds a reference
-    to it, never to its `status` directly, and every modification goes through a
-    method that protects the aggregate's invariants. The root is the boundary of
-    consistency.
+!!! note "Termino clave — raíz de agregado"
+    Un **agregado** es un grupo de objetos tratados como una unidad a efectos de
+    cambios, y la **raíz de agregado** es la única entidad a través de la cual fluyen
+    todos los cambios. `LoanApplication` es la raíz aquí: el código externo sostiene una
+    referencia a ella, nunca a su `status` directamente, y toda modificación pasa por un
+    método que protege los invariantes del agregado. La raíz es la frontera de la
+    consistencia.
 
-!!! warning "An aggregate guards its state only if you remove the back doors"
-    A behavior-rich aggregate is only as safe as its narrowest mutation path. If you
-    leave a public `setStatus` in place "for the mapper" or "for tests," every
-    invariant above becomes optional — any caller can skip the transition methods and
-    set an illegal state directly. The discipline is to expose *intent* methods
-    (`submit`, `approve`) and keep raw state mutation private. Where a framework needs
-    field access (Spring Data materializing a row), let the *mapper* be the only
-    bridge, never a hand-written setter you call from business code.
+!!! warning "Un agregado protege su estado solo si eliminas las puertas traseras"
+    Un agregado rico en comportamiento es tan seguro como su camino de mutación más
+    estrecho. Si dejas un `setStatus` público "para el mapeador" o "para los tests",
+    cada invariante de arriba se vuelve opcional — cualquier invocador puede saltarse los
+    métodos de transición y fijar un estado ilegal directamente. La disciplina consiste
+    en exponer métodos de *intención* (`submit`, `approve`) y mantener privada la
+    mutación cruda del estado. Donde un framework necesite acceso a los campos (Spring
+    Data materializando una fila), deja que el *mapeador* sea el único puente, nunca un
+    setter escrito a mano que invocas desde el código de negocio.
 
-## Step 3 — Projecting the row into a value object
+## Paso 3 — Proyectar la fila en un objeto de valor
 
-The aggregate stores `requestedAmount` as a `BigDecimal` because that is the right
-persistence shape for a fixed-scale decimal column. But the *domain* wants a `Money`.
-The bridge is a small projection method on the aggregate, `requestedMoney()`, which
-converts the stored decimal into exact minor units — multiplying by 100 and taking an
-exact `long`, so a value that does not fit a whole number of cents fails loudly
-rather than rounding silently:
+El agregado almacena `requestedAmount` como un `BigDecimal` porque esa es la forma de
+persistencia correcta para una columna decimal de escala fija. Pero el *dominio* quiere
+un `Money`. El puente es un pequeño método de proyección en el agregado,
+`requestedMoney()`, que convierte el decimal almacenado en unidades menores exactas —
+multiplicando por 100 y tomando un `long` exacto, de modo que un valor que no encaje en
+un número entero de céntimos falle ruidosamente en lugar de redondear en silencio:
 
-::: listing core-lending-loan-origination/src/main/java/com/firefly/lumen/core/domain/LoanApplication.java | Listing 9.7 — projecting the persisted decimal into Money
+::: listing core-lending-loan-origination/src/main/java/com/firefly/lumen/core/domain/LoanApplication.java | Listado 9.7 — proyectar el decimal persistido en Money
     public Money requestedMoney() {
         if (requestedAmount == null) {
             return null;
@@ -285,23 +292,24 @@ rather than rounding silently:
     }
 :::
 
-`movePointRight(2)` shifts `1500.00` to `150000`, and `longValueExact()` refuses any
-amount that would lose precision. The result flows through `Money.of`, so even on the
-read path the non-negative invariant is re-asserted. The persisted column and the
-domain value object stay in sync without either one leaking into the other's concerns.
+`movePointRight(2)` desplaza `1500.00` a `150000`, y `longValueExact()` rechaza
+cualquier importe que perdería precisión. El resultado fluye a través de `Money.of`, de
+modo que incluso en el camino de lectura el invariante de no negatividad se reafirma. La
+columna persistida y el objeto de valor del dominio permanecen sincronizados sin que
+ninguno de los dos se filtre en las preocupaciones del otro.
 
-## Step 4 — A mapper isolates the domain from the wire
+## Paso 4 — Un mapeador aísla el dominio del cable
 
-The aggregate now has rules, an enforced lifecycle, and a `Money` projection. The one
-thing it must *not* do is leak directly onto the HTTP API. Construction is also a
-domain decision — a new application starts in `DRAFT`, with a normalized currency —
-not a blind field-for-field copy from the request body.
+El agregado tiene ahora reglas, un ciclo de vida impuesto y una proyección `Money`. Lo
+único que *no* debe hacer es filtrarse directamente a la API HTTP. La construcción
+también es una decisión de dominio — una nueva solicitud comienza en `DRAFT`, con una
+moneda normalizada — no una copia ciega campo por campo del cuerpo de la petición.
 
-Lumen uses a MapStruct mapper for both directions. The response side is a generated
-projection; the construction side is hand-written, precisely because it applies
-domain defaults rather than copying fields:
+Lumen usa un mapeador MapStruct para ambas direcciones. El lado de la respuesta es una
+proyección generada; el lado de la construcción está escrito a mano, precisamente
+porque aplica valores por defecto del dominio en lugar de copiar campos:
 
-::: listing core-lending-loan-origination/src/main/java/com/firefly/lumen/core/mapper/LoanApplicationMapper.java | Listing 9.8 — the mapper applies domain defaults on construction
+::: listing core-lending-loan-origination/src/main/java/com/firefly/lumen/core/mapper/LoanApplicationMapper.java | Listado 9.8 — el mapeador aplica valores por defecto del dominio en la construcción
 @Mapper(
         componentModel = MappingConstants.ComponentModel.SPRING,
         unmappedTargetPolicy = ReportingPolicy.IGNORE
@@ -337,28 +345,31 @@ public interface LoanApplicationMapper {
 }
 :::
 
-`toNewEntity` does not set a status field by hand and does not trust the request to
-supply one; the application is built and then `submit()` (and the rest of the
-lifecycle) takes it forward through legal transitions. The DTO never sees the
-aggregate, and the aggregate never sees the DTO — the mapper is the membrane between
-them. This is the same separation the persistence row gives you: the domain model is
-free to evolve its internals without dragging the API or the database schema along.
+`toNewEntity` no fija a mano un campo de estado y no confía en que la petición
+proporcione uno; la solicitud se construye y luego `submit()` (y el resto del ciclo de
+vida) la lleva adelante a través de transiciones legales. El DTO nunca ve el agregado, y
+el agregado nunca ve el DTO — el mapeador es la membrana entre ellos. Esta es la misma
+separación que te da la fila de persistencia: el modelo de dominio es libre de
+evolucionar sus interioridades sin arrastrar consigo la API ni el esquema de la base de
+datos.
 
-!!! spring "Spring parity"
-    `componentModel = SPRING` tells MapStruct to generate the implementation as a
-    Spring bean, so you inject `LoanApplicationMapper` into a service exactly as you
-    would any `@Component` — no Firefly machinery involved. The mapper pattern is
-    plain Spring; what DDD adds is the *rule* that the mapper, not business code, owns
-    the translation between persistence rows, domain aggregates, and wire DTOs.
+!!! spring "Equivalente en Spring"
+    `componentModel = SPRING` le dice a MapStruct que genere la implementación como un
+    bean de Spring, de modo que inyectas `LoanApplicationMapper` en un servicio
+    exactamente como harías con cualquier `@Component` — sin maquinaria de Firefly de
+    por medio. El patrón de mapeador es Spring puro; lo que añade el DDD es la *regla* de
+    que el mapeador, no el código de negocio, posee la traducción entre filas de
+    persistencia, agregados de dominio y DTOs del cable.
 
-## Run it
+## Ejecútalo
 
-The whole point of moving behavior onto the aggregate is that you can now test the
-*rules* with no Spring context and no database — just the objects. The test
-constructs a `DRAFT` application with a builder and exercises the lifecycle directly.
-Here is the happy path and the illegal-transition guard, side by side:
+Todo el sentido de mover el comportamiento al agregado es que ahora puedes probar las
+*reglas* sin contexto de Spring y sin base de datos — solo los objetos. El test
+construye una solicitud `DRAFT` con un builder y ejercita el ciclo de vida
+directamente. Aquí están el camino feliz y la guarda de transición ilegal, codo con
+codo:
 
-::: listing core-lending-loan-origination/src/test/java/com/firefly/lumen/core/domain/LoanApplicationTest.java | Listing 9.9 — the lifecycle is unit-testable in isolation
+::: listing core-lending-loan-origination/src/test/java/com/firefly/lumen/core/domain/LoanApplicationTest.java | Listado 9.9 — el ciclo de vida es comprobable unitariamente de forma aislada
     @Test
     void happyPathReachesApproved() {
         LoanApplication app = draft();
@@ -378,11 +389,11 @@ Here is the happy path and the illegal-transition guard, side by side:
     }
 :::
 
-The `Money` projection is just as testable: a `1500.00` requested amount projects to
-exactly `150_000` minor units, and because `Money` is a record, the assertion is a
-plain `assertEquals`:
+La proyección `Money` es igual de comprobable: un importe solicitado de `1500.00` se
+proyecta a exactamente `150_000` unidades menores, y como `Money` es un record, la
+aserción es un sencillo `assertEquals`:
 
-::: listing core-lending-loan-origination/src/test/java/com/firefly/lumen/core/domain/LoanApplicationTest.java | Listing 9.10 — the Money projection, asserted by value equality
+::: listing core-lending-loan-origination/src/test/java/com/firefly/lumen/core/domain/LoanApplicationTest.java | Listado 9.10 — la proyección Money, comprobada por igualdad de valor
     @Test
     void requestedMoneyConvertsToMinorUnits() {
         LoanApplication app = draft();
@@ -390,70 +401,77 @@ plain `assertEquals`:
     }
 :::
 
-Run the aggregate's test from the sample root:
+Ejecuta el test del agregado desde la raíz del sample:
 
 ```text
 mvn -q -pl core-lending-loan-origination -Dtest=LoanApplicationTest test
 ```
 
-You should see all six behaviors pass:
+Deberías ver pasar los seis comportamientos:
 
 ```text
 Tests run: 6, Failures: 0, Errors: 0, Skipped: 0
 BUILD SUCCESS
 ```
 
-!!! tip "Checkpoint"
-    Six green tests, no Spring, no database. That is the dividend of a rich domain
-    model: the rules live on the objects, so you verify them with the fastest test
-    there is — a plain JUnit test that constructs an aggregate and calls a method.
-    If you can run this in milliseconds, your invariants are in the right place.
+!!! tip "Punto de control"
+    Seis tests en verde, sin Spring, sin base de datos. Ese es el dividendo de un modelo
+    de dominio rico: las reglas viven en los objetos, así que las verificas con el test
+    más rápido que existe — un sencillo test de JUnit que construye un agregado e invoca
+    un método. Si puedes ejecutar esto en milisegundos, tus invariantes están en el
+    lugar correcto.
 
-## What you built {.recap}
+## Lo que has construido {.recap}
 
-- A **`Money` value object** — an immutable `record` holding exact minor units, with
-  the never-negative invariant enforced by `Money.of` and re-asserted on every
-  arithmetic operation, so an amount that exists is always valid.
-- A **`LoanApplication` aggregate root** that owns its lifecycle: `submit`,
-  `startReview`, `approve`, `reject`, and `cancel` are the *only* ways to change
-  status, each refusing an illegal transition before it touches state, with
-  `ApplicationStatus.isTerminal()` deciding when no further change is allowed.
-- A **`requestedMoney()` projection** that converts the persisted `BigDecimal` into
-  `Money` exactly — `longValueExact` fails loudly rather than rounding — keeping the
-  storage shape and the domain value object in sync without leaking either way.
-- A **MapStruct mapper** that is the membrane between persistence rows, the aggregate,
-  and the wire DTOs, applying domain defaults (`DRAFT` status, normalized currency)
-  on construction so business code never copies fields by hand.
-- A **six-case unit test** that proves all of it with no Spring and no database —
-  the payoff of putting behavior where the data lives.
+- Un **objeto de valor `Money`** — un `record` inmutable que contiene unidades menores
+  exactas, con el invariante de nunca-negativo impuesto por `Money.of` y reafirmado en
+  cada operación aritmética, de modo que un importe que existe es siempre válido.
+- Una **raíz de agregado `LoanApplication`** que posee su ciclo de vida: `submit`,
+  `startReview`, `approve`, `reject` y `cancel` son las *únicas* formas de cambiar el
+  estado, cada una negándose a una transición ilegal antes de tocar el estado, con
+  `ApplicationStatus.isTerminal()` decidiendo cuándo no se permite ningún cambio
+  posterior.
+- Una **proyección `requestedMoney()`** que convierte el `BigDecimal` persistido en
+  `Money` de forma exacta — `longValueExact` falla ruidosamente en lugar de redondear —
+  manteniendo sincronizadas la forma de almacenamiento y el objeto de valor del dominio
+  sin filtrar en ninguna dirección.
+- Un **mapeador MapStruct** que es la membrana entre las filas de persistencia, el
+  agregado y los DTOs del cable, aplicando valores por defecto del dominio (estado
+  `DRAFT`, moneda normalizada) en la construcción para que el código de negocio nunca
+  copie campos a mano.
+- Un **test unitario de seis casos** que lo demuestra todo sin Spring y sin base de
+  datos — la recompensa de poner el comportamiento donde viven los datos.
 
-## Try it yourself {.exercises}
+## Pruebalo tu mismo {.exercises}
 
-1. **Add a `plus` to `Money`.** Open `Money.java` and add a `Money plus(Money other)`
-   that mirrors `minus`, routing the result through `Money.of`. Add a test asserting
-   `Money.of(100).plus(Money.of(50))` equals `Money.of(150)`. Why does `plus` not
-   need an extra guard, while `minus` does?
-2. **Forbid re-submission.** In `LoanApplicationTest`, add a test that submits a draft
-   and then asserts a second `submit()` throws `IllegalStateException`. Confirm it
-   passes against the current `submit()` — then explain which line in
-   Listing 9.4 makes it pass.
-3. **Reinstate `startReview` coverage.** The test class exercises `submit`, `approve`,
-   `reject`, and `cancel`, but `startReview` is only hit on the happy path. Add a test
-   that calls `startReview()` on a fresh draft (before `submit`) and asserts it is
-   rejected. Run `-Dtest=LoanApplicationTest` and watch the count rise to seven.
-4. **Break an invariant on purpose.** Temporarily change `Money.of` to drop the
-   negativity check, run the suite, and observe nothing fails — none of the current
-   tests construct a negative amount. Restore the check, then add a test asserting
-   `Money.of(-1)` throws. This is why invariants need their *own* tests, not just
-   incidental coverage.
-5. **Trace the edge-to-core handoff.** Re-read Chapter 6's `@ValidAmount` validator,
-   then `Money.of` here. Sketch the two places a negative amount is rejected — at the
-   HTTP edge and inside the domain — and argue why removing either one is unsafe.
+1. **Añade un `plus` a `Money`.** Abre `Money.java` y añade un `Money plus(Money other)`
+   que refleje a `minus`, encauzando el resultado a través de `Money.of`. Añade un test
+   que afirme que `Money.of(100).plus(Money.of(50))` es igual a `Money.of(150)`. ¿Por
+   qué `plus` no necesita una guarda extra, mientras que `minus` sí?
+2. **Prohíbe el reenvío.** En `LoanApplicationTest`, añade un test que envíe un borrador
+   y luego afirme que un segundo `submit()` lanza `IllegalStateException`. Confirma que
+   pasa contra el `submit()` actual — y después explica qué línea del Listado 9.4 hace
+   que pase.
+3. **Restablece la cobertura de `startReview`.** La clase de test ejercita `submit`,
+   `approve`, `reject` y `cancel`, pero `startReview` solo se alcanza en el camino
+   feliz. Añade un test que invoque `startReview()` sobre un borrador fresco (antes de
+   `submit`) y afirme que se rechaza. Ejecuta `-Dtest=LoanApplicationTest` y observa
+   cómo el recuento sube a siete.
+4. **Rompe un invariante a propósito.** Cambia temporalmente `Money.of` para eliminar la
+   comprobación de negatividad, ejecuta la suite y observa que no falla nada — ninguno
+   de los tests actuales construye un importe negativo. Restaura la comprobación, y
+   luego añade un test que afirme que `Money.of(-1)` lanza una excepción. Por esto los
+   invariantes necesitan sus *propios* tests, no solo cobertura incidental.
+5. **Sigue el traspaso del borde al núcleo.** Vuelve a leer el validador `@ValidAmount`
+   del Capítulo 6, y luego `Money.of` aquí. Esboza los dos lugares en los que se rechaza
+   un importe negativo — en el borde HTTP y dentro del dominio — y argumenta por qué
+   eliminar cualquiera de los dos es inseguro.
 
-## Where to go next
+## Adonde ir ahora
 
-The aggregate now enforces its rules, but it still changes state through direct method
-calls inside one service. Chapter 10 introduces **CQRS**: commands and queries flow
-through a bus, and the handler that approves an application becomes a discrete,
-testable unit dispatched by `@CommandHandlerComponent`. The rich domain model you
-built here is exactly what those handlers will orchestrate.
+El agregado ahora impone sus reglas, pero todavía cambia de estado a través de
+invocaciones directas a métodos dentro de un único servicio. El Capítulo 10 introduce
+**CQRS**: los comandos y las consultas fluyen a través de un bus, y el manejador que
+aprueba una solicitud se convierte en una unidad discreta y comprobable despachada por
+`@CommandHandlerComponent`. El modelo de dominio rico que has construido aquí es
+exactamente lo que orquestarán esos manejadores.

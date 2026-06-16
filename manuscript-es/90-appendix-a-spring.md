@@ -1,66 +1,66 @@
-This appendix is a quick translation table for Spring Boot developers. For each
-thing you already know how to do in plain Spring Boot, it names the Firefly way —
-which is almost always *less* code, because the cross-cutting behavior is already
-wired. Nothing here replaces Spring Boot; every left-hand entry still works.
+Este apéndice es una tabla de traducción rápida para desarrolladores de Spring Boot. Por
+cada cosa que ya sabes hacer en Spring Boot puro, te indica la forma de hacerla en Firefly,
+que casi siempre es *menos* código, porque el comportamiento transversal ya viene
+cableado. Nada de lo que hay aquí reemplaza a Spring Boot; cada entrada de la columna izquierda sigue funcionando.
 
-## Project setup
+## Configuración del proyecto
 
-| Plain Spring Boot | Firefly |
+| Spring Boot puro | Firefly |
 |---|---|
-| `spring-boot-starter-parent` as parent | `fireflyframework-parent` (imports the Spring Boot & Cloud BOMs; coexists with a corporate parent) |
-| Pin each dependency version | Import `fireflyframework-bom`; declare framework deps with no version |
-| `spring-boot-starter-web` (servlet) | `fireflyframework-web` (reactive WebFlux; servlet stack excluded) |
-| Choose a stack per service | Add a tier starter: `starter-core` / `starter-domain` / `starter-data` / `starter-application` |
-| `spring init` / start.spring.io | `flywork create` from a tier archetype |
+| `spring-boot-starter-parent` como parent | `fireflyframework-parent` (importa los BOM de Spring Boot y Cloud; coexiste con un parent corporativo) |
+| Fijar la versión de cada dependencia | Importar `fireflyframework-bom`; declarar las dependencias del framework sin versión |
+| `spring-boot-starter-web` (servlet) | `fireflyframework-web` (WebFlux reactivo; la pila servlet queda excluida) |
+| Elegir una pila por servicio | Añadir un starter de capa: `starter-core` / `starter-domain` / `starter-data` / `starter-application` |
+| `spring init` / start.spring.io | `flywork create` a partir de un arquetipo de capa |
 
-## Web and errors
+## Web y errores
 
-| Plain Spring Boot | Firefly |
+| Spring Boot puro | Firefly |
 |---|---|
-| `@RestController` returning a value | `@RestController` returning `Mono<T>` / `Flux<T>` |
-| `@ControllerAdvice` + per-app error JSON | Throw `ResourceNotFoundException` / `BusinessException` / `ConflictException`; the framework emits RFC 7807 automatically |
-| Hand-rolled `ResponseEntity` error bodies | Standard `ProblemDetail` shape, identical fleet-wide |
-| DIY request de-duplication | `IdempotencyWebFilter` via `X-Idempotency-Key` (opt out with `@DisableIdempotency`) |
-| Manual log scrubbing | Built-in PII masking appender |
-| `springdoc` setup per service | `@EnableOpenApiGen` + generated reactive SDK |
+| `@RestController` que devuelve un valor | `@RestController` que devuelve `Mono<T>` / `Flux<T>` |
+| `@ControllerAdvice` + JSON de error por aplicación | Lanza `ResourceNotFoundException` / `BusinessException` / `ConflictException`; el framework emite RFC 7807 automáticamente |
+| Cuerpos de error con `ResponseEntity` hechos a mano | Forma `ProblemDetail` estándar, idéntica en toda la flota |
+| Deduplicación de peticiones casera | `IdempotencyWebFilter` mediante `X-Idempotency-Key` (puedes desactivarlo con `@DisableIdempotency`) |
+| Limpieza manual de logs | Appender de enmascarado de PII integrado |
+| Configuración de `springdoc` por servicio | `@EnableOpenApiGen` + SDK reactivo generado |
 
-## Validation
+## Validación
 
-| Plain Spring Boot | Firefly |
+| Spring Boot puro | Firefly |
 |---|---|
-| `@NotNull`, `@Size`, custom regex for IBANs/tax IDs | Finance constraints from `fireflyframework-validators`: `@ValidIban`, `@ValidBic`, `@ValidCreditCard`, `@ValidAmount`, `@ValidCurrencyCode`, `@ValidTaxId`, … |
+| `@NotNull`, `@Size`, regex personalizadas para IBAN/NIF | Restricciones financieras de `fireflyframework-validators`: `@ValidIban`, `@ValidBic`, `@ValidCreditCard`, `@ValidAmount`, `@ValidCurrencyCode`, `@ValidTaxId`, … |
 
-## Data
+## Datos
 
-| Plain Spring Boot | Firefly |
+| Spring Boot puro | Firefly |
 |---|---|
-| Spring Data JPA / JDBC (blocking) | Spring Data **R2DBC** (reactive) via `fireflyframework-r2dbc` |
+| Spring Data JPA / JDBC (bloqueante) | Spring Data **R2DBC** (reactivo) mediante `fireflyframework-r2dbc` |
 | `JpaRepository` | `ReactiveCrudRepository<T, ID>` |
-| Hand-written `Pageable` plumbing | `PaginationRequest` → `PaginationResponse<T>` |
-| Hand-built dynamic `Specification`s | The generic reflective filter engine (`FilterRequest<T>`, `@FilterableId`) |
-| Flyway (added manually) | Flyway, bundled |
+| Cableado de `Pageable` escrito a mano | `PaginationRequest` → `PaginationResponse<T>` |
+| `Specification`s dinámicas construidas a mano | El motor de filtros reflectivo y genérico (`FilterRequest<T>`, `@FilterableId`) |
+| Flyway (añadido manualmente) | Flyway, ya incluido |
 
-## Application logic
+## Lógica de aplicación
 
-| Plain Spring Boot | Firefly |
+| Spring Boot puro | Firefly |
 |---|---|
-| Service methods that both read and write | CQRS: `@CommandHandlerComponent` / `@QueryHandlerComponent` extending `CommandHandler<C,R>` / `QueryHandler<Q,R>`; dispatch on `CommandBus` / `QueryBus` |
-| `ApplicationEventPublisher` + `@EventListener` (in-JVM only) | `@EventPublisher` / `@PublishResult` / `@EventListener` over a pluggable transport (in-JVM, Kafka, RabbitMQ, Postgres) |
-| `@Transactional` across services (does not work) | A **saga**: `@Saga` / `@SagaStep` with compensation, run on the `SagaEngine` (or `@Tcc`, or `@Workflow`) |
-| Manual `WebClient` + Resilience4j config | The unified `ServiceClient` (REST/SOAP/gRPC/GraphQL/WS) with built-in circuit breaker, retry, and `X-Transaction-Id` propagation |
-| `@Cacheable` (Caffeine only, blocking) | `CacheAdapter` port: Caffeine L1 + Redis/Hazelcast L2, reactive, `CacheType.AUTO` |
+| Métodos de servicio que leen y escriben a la vez | CQRS: `@CommandHandlerComponent` / `@QueryHandlerComponent` que extienden `CommandHandler<C,R>` / `QueryHandler<Q,R>`; despacho en `CommandBus` / `QueryBus` |
+| `ApplicationEventPublisher` + `@EventListener` (solo dentro de la JVM) | `@EventPublisher` / `@PublishResult` / `@EventListener` sobre un transporte conectable (en la JVM, Kafka, RabbitMQ, Postgres) |
+| `@Transactional` entre servicios (no funciona) | Una **saga**: `@Saga` / `@SagaStep` con compensación, ejecutada en el `SagaEngine` (o `@Tcc`, o `@Workflow`) |
+| Configuración manual de `WebClient` + Resilience4j | El `ServiceClient` unificado (REST/SOAP/gRPC/GraphQL/WS) con circuit breaker, reintentos y propagación de `X-Transaction-Id` integrados |
+| `@Cacheable` (solo Caffeine, bloqueante) | Puerto `CacheAdapter`: Caffeine L1 + Redis/Hazelcast L2, reactivo, `CacheType.AUTO` |
 
-## Cross-cutting
+## Aspectos transversales
 
-| Plain Spring Boot | Firefly |
+| Spring Boot puro | Firefly |
 |---|---|
-| `@Scheduled` | `@ScheduledSaga` / `@ScheduledWorkflow` (durable, with recovery) |
-| Spring Security (servlet) | Spring Security on WebFlux + `@Secure` / `@RequireContext`, and an IDP port with vendor adapters |
-| Micrometer wiring per service | `firefly.{module}.{metric}` naming + OTel tracing, with Reactor context propagation enabled for you |
-| `ThreadLocal` / MDC for correlation (breaks under Reactor) | `Hooks.enableAutomaticContextPropagation()` — trace and tenant context follow every operator |
+| `@Scheduled` | `@ScheduledSaga` / `@ScheduledWorkflow` (duraderos, con recuperación) |
+| Spring Security (servlet) | Spring Security sobre WebFlux + `@Secure` / `@RequireContext`, y un puerto de IDP con adaptadores de proveedor |
+| Cableado de Micrometer por servicio | Nomenclatura `firefly.{module}.{metric}` + trazado con OTel, con la propagación de contexto de Reactor activada por ti |
+| `ThreadLocal` / MDC para correlación (se rompe con Reactor) | `Hooks.enableAutomaticContextPropagation()`: el contexto de traza y de tenant acompaña a cada operador |
 
-## The one-line summary
+## El resumen en una línea
 
-Plain Spring Boot gives you the parts and lets you assemble them. Firefly assembles
-the parts the same way in every service, and lets you change any of it by declaring
-a bean. You are always writing Spring Boot — just never the same boilerplate twice.
+Spring Boot puro te da las piezas y deja que las ensambles. Firefly ensambla
+las piezas de la misma forma en cada servicio, y te deja cambiar cualquiera de ellas declarando
+un bean. Siempre estás escribiendo Spring Boot, solo que nunca el mismo boilerplate dos veces.

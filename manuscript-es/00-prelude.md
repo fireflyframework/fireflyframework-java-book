@@ -1,36 +1,39 @@
-The chapters ahead assume you can read modern Spring Boot comfortably. This
-prelude makes sure you can — even if your last Spring was MVC and JPA, or you
-arrive from another Firefly port such as PyFly. It is **not** a Spring course.
-It teaches exactly the slice of Spring Boot, WebFlux, Project Reactor, and R2DBC
-that the later chapters lean on, in roughly the order they lean on it. Each
-section ends with a short *Coming from…* note that translates the idea from where
-you might be standing today.
+Los capítulos que vienen dan por hecho que puedes leer Spring Boot moderno con
+soltura. Este preludio se asegura de que así sea, aunque tu último contacto con
+Spring fuese con MVC y JPA, o aunque llegues desde otro port de Firefly como
+PyFly. **No** es un curso de Spring. Te enseña exactamente la porción de Spring
+Boot, WebFlux, Project Reactor y R2DBC en la que se apoyan los capítulos
+posteriores, más o menos en el orden en que se apoyan en ella. Cada sección
+termina con una breve nota *Si vienes de…* que traduce la idea desde el lugar en
+el que quizá te encuentres hoy.
 
-If you already ship reactive Spring Boot daily — WebFlux controllers, R2DBC
-repositories, `Mono`/`Flux` in your sleep — skip ahead to Chapter 1. Nothing here
-will surprise you.
+Si ya despliegas Spring Boot reactivo a diario —controladores WebFlux,
+repositorios R2DBC, `Mono`/`Flux` con los ojos cerrados—, salta directamente al
+Capítulo 1. Nada de lo que hay aquí te va a sorprender.
 
-A note on depth: the reactive model is the one idea everything else stands on, so
-this prelude introduces it just far enough to read the early chapters, and
-Chapter 5 then teaches it properly, operator by operator. You will meet `Mono`
-and `Flux` three times at increasing depth — here, in passing; in Chapter 1, as a
-key term; and in Chapter 5, in full. That repetition is deliberate.
+Una nota sobre la profundidad: el modelo reactivo es la única idea sobre la que se
+sostiene todo lo demás, así que este preludio lo introduce solo lo justo para
+leer los primeros capítulos, y el Capítulo 5 lo enseña después como es debido,
+operador a operador. Te encontrarás con `Mono` y `Flux` tres veces, con
+profundidad creciente: aquí, de pasada; en el Capítulo 1, como término clave; y
+en el Capítulo 5, por completo. Esa repetición es deliberada.
 
-## Maven and the POM
+## Maven y el POM
 
-Firefly is built and consumed with **Maven**. A Maven project is described by a
-`pom.xml` — the Project Object Model — which declares the project's coordinates
-(group, artifact, version), its dependencies, and how it is built. You rarely run
-`javac` yourself; you run `mvn verify`, and Maven compiles, runs tests, and
-packages a runnable JAR.
+Firefly se construye y se consume con **Maven**. Un proyecto Maven se describe
+mediante un `pom.xml` —el Project Object Model—, que declara las coordenadas del
+proyecto (grupo, artefacto, versión), sus dependencias y cómo se construye. Rara
+vez ejecutas `javac` tú mismo; ejecutas `mvn verify`, y Maven compila, ejecuta
+las pruebas y empaqueta un JAR ejecutable.
 
-Two ideas from Maven matter throughout this book. First, **dependency
-management**: rather than pin a version on every dependency, a project inherits a
-*parent* POM or imports a *BOM* (Bill of Materials) that pins versions centrally,
-so your own `<dependency>` entries can omit `<version>` and still agree. Second,
-**starters**: a starter is a curated dependency that pulls in everything needed
-for one capability. Adding `spring-boot-starter-webflux` brings the reactive web
-stack — server, JSON, validation — in a single line.
+Dos ideas de Maven son importantes a lo largo de todo este libro. Primera, la
+**gestión de dependencias**: en lugar de fijar una versión en cada dependencia,
+un proyecto hereda un POM *padre* o importa un *BOM* (Bill of Materials) que fija
+las versiones de forma centralizada, de modo que tus propias entradas
+`<dependency>` pueden omitir `<version>` y aun así estar de acuerdo. Segunda, los
+**starters**: un starter es una dependencia curada que arrastra todo lo necesario
+para una capacidad. Añadir `spring-boot-starter-webflux` trae la pila web
+reactiva —servidor, JSON, validación— en una sola línea.
 
 ```xml
 <dependency>
@@ -39,20 +42,21 @@ stack — server, JSON, validation — in a single line.
 </dependency>
 ```
 
-Chapter 3 is devoted to how Firefly's parent POM and BOM make an entire fleet of
-services version-coherent. For now, just hold the shape: *inherit a parent, add a
-starter, omit versions.*
+El Capítulo 3 está dedicado a cómo el POM padre y el BOM de Firefly hacen que una
+flota entera de servicios sea coherente en versiones. Por ahora, quédate solo con
+la forma: *hereda un padre, añade un starter, omite las versiones.*
 
-!!! note "Coming from PyFly or Python"
-    The `pom.xml` is the rough analog of `pyproject.toml`; a Maven *starter* is
-    like an extras group that installs a coherent set of packages; the parent/BOM
-    is the dependency-locking story. `mvn verify` is your `pytest` plus a build.
+!!! note "Si vienes de PyFly o Python"
+    El `pom.xml` es el equivalente aproximado de `pyproject.toml`; un *starter* de
+    Maven es como un grupo de extras que instala un conjunto coherente de
+    paquetes; el padre/BOM es la historia del bloqueo de dependencias. `mvn verify`
+    es tu `pytest` más una compilación.
 
-## Spring Boot in one breath
+## Spring Boot en una frase
 
-**Spring Boot** turns "assemble a Java service from parts" into "add a starter and
-run." A Spring Boot application is an ordinary Java class with one annotation and a
-`main` method:
+**Spring Boot** convierte "ensambla un servicio Java a partir de piezas" en
+"añade un starter y ejecuta". Una aplicación Spring Boot es una clase Java
+corriente con una sola anotación y un método `main`:
 
 ```java
 @SpringBootApplication
@@ -63,21 +67,23 @@ public class LumenApplication {
 }
 ```
 
-`SpringApplication.run(...)` boots the **application context** — Spring's container
-of objects — starts an embedded web server, and wires everything together. Three
-mechanisms do almost all the work:
+`SpringApplication.run(...)` arranca el **contexto de aplicación** —el contenedor
+de objetos de Spring—, levanta un servidor web embebido y conecta todo entre sí.
+Tres mecanismos hacen casi todo el trabajo:
 
-- **Auto-configuration.** Spring Boot inspects the classpath and configures sensible
-  defaults: see WebFlux on the classpath, get a reactive web server; see R2DBC, get
-  a reactive `ConnectionFactory`. Every auto-configuration backs off the moment you
-  define your own bean, so defaults are a starting point, never a cage.
-- **Externalized configuration.** Settings live in `application.yml` (or
-  `application.properties`), layered by *profile* (`dev`, `prod`, …) and overridable
-  by environment variables — so the same JAR runs everywhere.
-- **Actuator.** A set of production endpoints — health, metrics, info — that you get
-  by adding a dependency.
+- **Autoconfiguración.** Spring Boot inspecciona el classpath y configura valores
+  por defecto sensatos: si ve WebFlux en el classpath, obtienes un servidor web
+  reactivo; si ve R2DBC, obtienes un `ConnectionFactory` reactivo. Toda
+  autoconfiguración se aparta en el momento en que defines tu propio bean, así que
+  los valores por defecto son un punto de partida, nunca una jaula.
+- **Configuración externalizada.** Los ajustes viven en `application.yml` (o
+  `application.properties`), estratificados por *perfil* (`dev`, `prod`, …) y
+  sobrescribibles mediante variables de entorno, de modo que el mismo JAR se
+  ejecuta en todas partes.
+- **Actuator.** Un conjunto de endpoints de producción —salud, métricas, info— que
+  obtienes con solo añadir una dependencia.
 
-You bind configuration to typed objects with `@ConfigurationProperties`:
+Vinculas la configuración a objetos tipados con `@ConfigurationProperties`:
 
 ```java
 @ConfigurationProperties(prefix = "lumen.lending")
@@ -91,23 +97,23 @@ lumen:
     default-currency: EUR
 ```
 
-Firefly is, at bottom, *more Spring Boot* — more auto-configuration, more starters,
-more conventions — and Chapter 1 explains exactly what it adds and why.
+Firefly es, en el fondo, *más Spring Boot* —más autoconfiguración, más starters,
+más convenciones— y el Capítulo 1 explica exactamente qué añade y por qué.
 
-!!! spring "Coming from Spring MVC"
-    Everything above is identical to what you know — `@SpringBootApplication`,
-    `application.yml`, Actuator, `@ConfigurationProperties` all carry over
-    unchanged. The one thing that differs is the web and data stack underneath,
-    which is *reactive* rather than servlet-based. That difference is the subject
-    of the next three sections.
+!!! spring "Si vienes de Spring MVC"
+    Todo lo anterior es idéntico a lo que ya conoces: `@SpringBootApplication`,
+    `application.yml`, Actuator y `@ConfigurationProperties` se trasladan sin
+    cambios. Lo único que difiere es la pila web y de datos que hay debajo, que es
+    *reactiva* en lugar de basada en servlets. Esa diferencia es el tema de las
+    tres secciones siguientes.
 
-## Beans and dependency injection
+## Beans e inyección de dependencias
 
-Spring builds your objects for you and hands them their collaborators. A class
-annotated as a component — `@Component`, or the more specific `@Service`,
-`@Repository`, `@RestController` — becomes a **bean** managed by the application
-context. You declare what a bean needs as constructor parameters, and Spring
-*injects* the matching beans:
+Spring construye tus objetos por ti y les entrega sus colaboradores. Una clase
+anotada como componente —`@Component`, o las más específicas `@Service`,
+`@Repository`, `@RestController`— se convierte en un **bean** gestionado por el
+contexto de aplicación. Declaras lo que un bean necesita como parámetros del
+constructor, y Spring *inyecta* los beans correspondientes:
 
 ```java
 @Service
@@ -120,38 +126,42 @@ public class LoanApplicationService {
 }
 ```
 
-Prefer constructor injection (shown here) over field injection: it makes
-dependencies explicit, keeps fields `final`, and makes the class trivial to unit
-test by passing fakes directly. Throughout this book, Firefly's own stereotypes —
-`@CommandHandlerComponent`, `@QueryHandlerComponent`, and friends — are just
-specialized Spring components discovered the same way.
+Prefiere la inyección por constructor (la que se muestra aquí) frente a la
+inyección por campo: hace explícitas las dependencias, mantiene los campos
+`final` y vuelve trivial probar la clase de forma unitaria pasándole dobles
+directamente. A lo largo de este libro, los propios estereotipos de Firefly
+—`@CommandHandlerComponent`, `@QueryHandlerComponent` y compañía— no son más que
+componentes especializados de Spring descubiertos de la misma manera.
 
-!!! note "Coming from Spring MVC"
-    Beans, the application context, and constructor injection are unchanged in
-    the reactive world. A `@Service` is a `@Service`. Only what flows *through* the
-    beans changes — from blocking values to reactive publishers.
+!!! note "Si vienes de Spring MVC"
+    Los beans, el contexto de aplicación y la inyección por constructor no cambian
+    en el mundo reactivo. Un `@Service` es un `@Service`. Solo cambia lo que fluye
+    *a través de* los beans: de valores bloqueantes a publicadores reactivos.
 
-## Modern Java the book uses
+## El Java moderno que usa el libro
 
-The listings use a few modern Java features without ceremony:
+Los listados emplean unas cuantas características de Java moderno sin ceremonias:
 
-- **Records** — concise, immutable data carriers. `record Money(long minorUnits) {}`
-  generates the constructor, accessors, `equals`, `hashCode`, and `toString`. Value
-  objects and DTOs are records throughout.
-- **Sealed types** — a closed set of subtypes, ideal for modeling a fixed set of
-  states or events that the compiler can exhaustively check in a `switch`.
-- **`Optional<T>`** — an explicit "maybe a value" instead of a bare `null`.
-- **Lambdas and method references** — passed to the reactive operators you will
-  meet next, e.g. `.map(this::toDto)`.
+- **Records** — portadores de datos concisos e inmutables.
+  `record Money(long minorUnits) {}` genera el constructor, los accesores,
+  `equals`, `hashCode` y `toString`. Los objetos de valor y los DTO son records en
+  todo el libro.
+- **Tipos sellados** — un conjunto cerrado de subtipos, ideal para modelar un
+  conjunto fijo de estados o eventos que el compilador puede comprobar de forma
+  exhaustiva en un `switch`.
+- **`Optional<T>`** — un "quizá un valor" explícito en lugar de un `null` pelado.
+- **Lambdas y referencias a métodos** — que se pasan a los operadores reactivos
+  que conocerás a continuación, p. ej. `.map(this::toDto)`.
 
-None of these are exotic; if you have written Java 17 or later, you have used them.
+Ninguna de estas es exótica; si has escrito Java 17 o posterior, ya las has usado.
 
-## From blocking to reactive
+## De lo bloqueante a lo reactivo
 
-Classic Java I/O is **blocking**: a thread that calls a database or another service
-*waits*, doing nothing, until the answer comes back. Under load that means one
-parked thread per in-flight request, and threads are expensive. `CompletableFuture`
-softened this by letting you describe work that completes *later*:
+La E/S clásica de Java es **bloqueante**: un hilo que llama a una base de datos o
+a otro servicio *espera*, sin hacer nada, hasta que vuelve la respuesta. Bajo
+carga, eso significa un hilo aparcado por cada petición en curso, y los hilos son
+caros. `CompletableFuture` suavizó esto al permitirte describir trabajo que se
+completa *más tarde*:
 
 ```java
 CompletableFuture<Account> future = loadAccountAsync(id);
@@ -159,24 +169,25 @@ future.thenApply(Account::balance)
       .thenAccept(balance -> log.info("balance = {}", balance));
 ```
 
-Notice the shape: you do not *get* the value, you *describe what to do when it
-arrives*. Reactive programming generalizes exactly this idea — from "one value,
-later" to "zero, one, or many values, later, with backpressure and cancellation."
-That generalization is **Project Reactor**, and its two types, `Mono` and `Flux`,
-are the vocabulary of every Firefly service.
+Fíjate en la forma: no *obtienes* el valor, *describes qué hacer cuando llegue*.
+La programación reactiva generaliza exactamente esta idea: de "un valor, más
+tarde" a "cero, uno o muchos valores, más tarde, con contrapresión y
+cancelación". Esa generalización es **Project Reactor**, y sus dos tipos, `Mono` y
+`Flux`, son el vocabulario de todo servicio Firefly.
 
-!!! warning "The one rule of reactive code: never block"
-    On the reactive stack a small pool of event-loop threads serves *all* requests.
-    If you call a blocking API (a JDBC query, `Thread.sleep`, `.block()`) on one of
-    those threads, you stall every request it was serving. The whole point of the
-    chapters ahead is to stay non-blocking end to end — which is exactly why the
-    data layer is R2DBC, not JDBC.
+!!! warning "La única regla del código reactivo: nunca bloquees"
+    En la pila reactiva, un pequeño pool de hilos de bucle de eventos sirve
+    *todas* las peticiones. Si llamas a una API bloqueante (una consulta JDBC,
+    `Thread.sleep`, `.block()`) en uno de esos hilos, paralizas todas las
+    peticiones que estuviera sirviendo. Todo el sentido de los capítulos que vienen
+    es permanecer no bloqueante de extremo a extremo, que es exactamente la razón
+    por la que la capa de datos es R2DBC y no JDBC.
 
 ## Spring WebFlux
 
-**Spring WebFlux** is the reactive counterpart to Spring MVC. A controller looks
-almost identical — but instead of returning a value, it returns a *publisher* of
-that value:
+**Spring WebFlux** es la contraparte reactiva de Spring MVC. Un controlador tiene
+un aspecto casi idéntico, pero en lugar de devolver un valor, devuelve un
+*publicador* de ese valor:
 
 ```java
 @RestController
@@ -196,28 +207,29 @@ public class LoanApplicationController {
 }
 ```
 
-Returning a `Mono<LoanApplicationDto>` instead of a `LoanApplicationDto` tells the
-framework: *here is a recipe for one response; subscribe to it, and when the value
-arrives, write it out* — without parking a thread in the meantime. A collection
-endpoint returns `Flux<T>` (zero-to-many). WebFlux runs on Netty's event loop by
-default.
+Devolver un `Mono<LoanApplicationDto>` en lugar de un `LoanApplicationDto` le dice
+al framework: *aquí tienes una receta para una respuesta; suscríbete a ella y,
+cuando el valor llegue, escríbelo*, sin aparcar un hilo mientras tanto. Un
+endpoint de colección devuelve `Flux<T>` (de cero a muchos). WebFlux se ejecuta
+por defecto sobre el bucle de eventos de Netty.
 
-!!! spring "Coming from Spring MVC"
-    The annotations (`@RestController`, `@GetMapping`, `@PathVariable`,
-    `@RequestBody`) are the same. The change is the return type: `T` becomes
-    `Mono<T>`, `List<T>` becomes `Flux<T>`, and you must never block inside the
-    handler. If you have used `DeferredResult` or `CompletableFuture` return types
-    in MVC, this is that idea taken all the way down.
+!!! spring "Si vienes de Spring MVC"
+    Las anotaciones (`@RestController`, `@GetMapping`, `@PathVariable`,
+    `@RequestBody`) son las mismas. El cambio está en el tipo de retorno: `T` pasa
+    a ser `Mono<T>`, `List<T>` pasa a ser `Flux<T>`, y nunca debes bloquear dentro
+    del manejador. Si has usado los tipos de retorno `DeferredResult` o
+    `CompletableFuture` en MVC, esto es esa misma idea llevada hasta el fondo.
 
-## Project Reactor: Mono and Flux at a glance
+## Project Reactor: Mono y Flux de un vistazo
 
-`Mono<T>` is a publisher of **at most one** item (think: a single response, or
-nothing). `Flux<T>` is a publisher of **zero to many** items (think: a stream of
-rows or events). Both are **lazy**: nothing happens until something *subscribes*.
-In a Firefly service, the framework subscribes for you when it writes the HTTP
-response, so you almost never call `.subscribe()` yourself — you *compose*.
+`Mono<T>` es un publicador de **como mucho un** elemento (piensa: una única
+respuesta, o nada). `Flux<T>` es un publicador de **cero a muchos** elementos
+(piensa: un flujo de filas o de eventos). Ambos son **perezosos**: no ocurre nada
+hasta que algo *se suscribe*. En un servicio Firefly, el framework se suscribe por
+ti cuando escribe la respuesta HTTP, así que casi nunca llamas tú a `.subscribe()`:
+lo que haces es *componer*.
 
-You transform reactive values with operators that mirror the `Stream` API:
+Transformas valores reactivos con operadores que reflejan la API de `Stream`:
 
 ```java
 Mono<String> name =
@@ -227,25 +239,27 @@ Mono<String> name =
         .defaultIfEmpty("unknown");
 ```
 
-That is enough to read the early chapters: a method returns a `Mono` or `Flux`, and
-you chain `.map`, `.flatMap`, `.filter`, and friends to describe the result.
-Chapter 5 — the reactive keystone — teaches the model properly: cold versus hot
-publishers, error and retry operators, schedulers, backpressure, and how a
-correlation ID survives across operator boundaries (a problem Firefly solves for
-you, and a frequent source of bugs in hand-rolled reactive code).
+Con eso basta para leer los primeros capítulos: un método devuelve un `Mono` o un
+`Flux`, y encadenas `.map`, `.flatMap`, `.filter` y compañía para describir el
+resultado. El Capítulo 5 —la clave de bóveda reactiva— enseña el modelo como es
+debido: publicadores fríos frente a calientes, operadores de error y de reintento,
+schedulers, contrapresión, y cómo un ID de correlación sobrevive a través de las
+fronteras entre operadores (un problema que Firefly resuelve por ti, y una fuente
+frecuente de bugs en el código reactivo escrito a mano).
 
-!!! note "Coming from PyFly or Python"
-    `Mono<T>` is the spiritual cousin of an `async def` returning one value, and
-    `Flux<T>` of an async generator — but reactive, lazy, and with first-class
-    backpressure and cancellation. Where you would `await`, here you `.map`/
-    `.flatMap` and return the publisher so the framework awaits at the edge.
+!!! note "Si vienes de PyFly o Python"
+    `Mono<T>` es el primo espiritual de un `async def` que devuelve un valor, y
+    `Flux<T>` el de un generador asíncrono, pero reactivos, perezosos y con
+    contrapresión y cancelación de primera clase. Allí donde harías `await`, aquí
+    haces `.map`/`.flatMap` y devuelves el publicador para que el framework espere
+    en el borde.
 
-## R2DBC: reactive data access
+## R2DBC: acceso a datos reactivo
 
-If the web layer is non-blocking, the data layer must be too — otherwise a blocking
-database call stalls the event loop. **R2DBC** (Reactive Relational Database
-Connectivity) is the reactive answer to JDBC. With Spring Data R2DBC, a repository
-returns publishers:
+Si la capa web es no bloqueante, la capa de datos también debe serlo; de lo
+contrario, una llamada bloqueante a la base de datos paraliza el bucle de eventos.
+**R2DBC** (Reactive Relational Database Connectivity) es la respuesta reactiva a
+JDBC. Con Spring Data R2DBC, un repositorio devuelve publicadores:
 
 ```java
 public interface LoanApplicationRepository
@@ -254,23 +268,25 @@ public interface LoanApplicationRepository
 }
 ```
 
-`findById` returns `Mono<LoanApplication>`; `findAll` and derived queries return
-`Flux<LoanApplication>`. Schema is managed with Flyway migrations, and Chapter 8
-builds the real persistence layer of Lumen Lending this way.
+`findById` devuelve `Mono<LoanApplication>`; `findAll` y las consultas derivadas
+devuelven `Flux<LoanApplication>`. El esquema se gestiona con migraciones de
+Flyway, y el Capítulo 8 construye así la capa de persistencia real de Lumen
+Lending.
 
-!!! warning "JPA/Hibernate is blocking — and not used here"
-    Spring Data JPA, JDBC, and Hibernate are all blocking and have no place on the
-    reactive stack. This book uses R2DBC throughout. If your instinct is to reach
-    for `@Entity` and an `EntityManager`, that instinct belongs to the servlet
-    world; the reactive equivalents are R2DBC entities and reactive repositories.
+!!! warning "JPA/Hibernate es bloqueante, y no se usa aquí"
+    Spring Data JPA, JDBC y Hibernate son todos bloqueantes y no tienen lugar en la
+    pila reactiva. Este libro usa R2DBC en todo momento. Si tu instinto es echar
+    mano de `@Entity` y de un `EntityManager`, ese instinto pertenece al mundo de
+    los servlets; los equivalentes reactivos son las entidades R2DBC y los
+    repositorios reactivos.
 
-## Where this leaves you
+## Dónde te deja esto
 
-You now have the working vocabulary: Maven and starters; Spring Boot's
-auto-configuration, configuration, and beans; the reactive shift from blocking to
-`Mono`/`Flux`; WebFlux controllers; and R2DBC repositories. That is the platform
-Firefly is built on.
+Ya tienes el vocabulario de trabajo: Maven y los starters; la autoconfiguración,
+la configuración y los beans de Spring Boot; el salto reactivo de lo bloqueante a
+`Mono`/`Flux`; los controladores WebFlux; y los repositorios R2DBC. Esa es la
+plataforma sobre la que se construye Firefly.
 
-The very next question is the one this whole book answers: if Spring Boot already
-gives you all of this, *why build a metaframework on top of it?* Chapter 1 makes
-the case.
+La siguiente pregunta es justamente la que responde todo este libro: si Spring
+Boot ya te da todo esto, *¿por qué construir un metaframework encima de él?* El
+Capítulo 1 lo argumenta.

@@ -1,24 +1,24 @@
 Copyright (c) 2026 Firefly Software Foundation.
 
-Licensed under the Apache License, Version 2.0 (the "License"); you may not use
-this work except in compliance with the License. You may obtain a copy of the
-License at <http://www.apache.org/licenses/LICENSE-2.0>.
+Publicado bajo la Apache License, Version 2.0 (la "Licencia"); no puedes usar
+esta obra salvo en cumplimiento de la Licencia. Puedes obtener una copia de la
+Licencia en <http://www.apache.org/licenses/LICENSE-2.0>.
 
-Unless required by applicable law or agreed to in writing, the work is
-distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND,
-either express or implied.
+Salvo que lo exija la legislación aplicable o se acuerde por escrito, la obra se
+distribuye "TAL CUAL", SIN GARANTÍAS NI CONDICIONES DE NINGÚN TIPO, ya sean
+expresas o implícitas.
 
 ---
 
-First edition, 2026.
+Primera edición, 2026.
 
-Every code listing in this book is a verbatim slice of the companion Maven
-reactor `samples/lumen-lending`, verified against Firefly Framework CalVer 26.x.
-What you read is what compiles, boots, and passes its tests — the build fails if
-the prose ever drifts from the source.
+Cada listado de código de este libro es un fragmento literal del reactor Maven
+que lo acompaña, `samples/lumen-lending`, verificado contra Firefly Framework CalVer 26.x.
+Lo que lees es lo que compila, arranca y supera sus pruebas: la compilación falla si
+la prosa llega a desviarse del código fuente.
 
-Spring Boot, Spring WebFlux, Spring Cloud, Spring Data, and Project Reactor are
-trademarks of Broadcom Inc. and/or its subsidiaries. All other trademarks are
-the property of their respective owners.
+Spring Boot, Spring WebFlux, Spring Cloud, Spring Data y Project Reactor son
+marcas comerciales de Broadcom Inc. y/o sus filiales. El resto de marcas son
+propiedad de sus respectivos titulares.
 
-Published by the Firefly Software Foundation.
+Publicado por la Firefly Software Foundation.

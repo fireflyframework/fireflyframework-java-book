@@ -1,15 +1,15 @@
-`flywork` is Firefly's command-line companion — the tool that bootstraps the
-framework on a new machine and scaffolds new services so they start life on the
-right conventions. (It happens to be written in Go and shipped as a single binary;
-that is an implementation detail — you never write Go to use it, and this remains a
-book about the Java framework.)
+`flywork` es el compañero de línea de comandos de Firefly: la herramienta que
+arranca el framework en una máquina nueva y genera el andamiaje de nuevos servicios
+para que nazcan ya con las convenciones correctas. (Resulta que está escrito en Go y
+se distribuye como un único binario; eso es un detalle de implementación: nunca
+escribes Go para usarlo, y este sigue siendo un libro sobre el framework de Java.)
 
-## Bootstrapping the framework
+## Arrancar el framework
 
-The framework is many repositories, and they build in dependency order. `flywork
-setup` clones them all and installs them to your local Maven repository
-(`~/.m2`) in the right sequence, so that `fireflyframework-kernel` is built before
-the modules that depend on it, and so on up the graph.
+El framework son muchos repositorios, y se compilan en orden de dependencias.
+`flywork setup` los clona todos y los instala en tu repositorio Maven local
+(`~/.m2`) en la secuencia correcta, de modo que `fireflyframework-kernel` se compile
+antes que los módulos que dependen de él, y así sucesivamente subiendo por el grafo.
 
 ```text
 $ flywork setup
@@ -21,65 +21,73 @@ Layer 7/7  starter-core, starter-domain …         installed
 Done. Framework <version> available in ~/.m2.
 ```
 
-Once this completes, a project that inherits `fireflyframework-parent` or imports
-`fireflyframework-bom` resolves entirely offline — which is exactly why the
-companion reactor in this book builds with `mvn -o verify`, no network required.
+Una vez que esto termina, un proyecto que herede de `fireflyframework-parent` o
+importe `fireflyframework-bom` se resuelve completamente sin conexión, que es
+exactamente la razón por la que el reactor de acompañamiento de este libro se
+compila con `mvn -o verify`, sin necesidad de red.
 
-## Scaffolding a service
+## Generar el andamiaje de un servicio
 
-`flywork create` generates a new project from one of four archetypes, each aligned
-to a tier (Chapter 14):
+`flywork create` genera un nuevo proyecto a partir de uno de cuatro arquetipos, cada
+uno alineado con una capa (capítulo 14):
 
 ```text
 $ flywork create --archetype domain --name lending-loan-origination
 ```
 
-| Archetype | Produces | Starter |
+| Arquetipo | Produce | Starter |
 |---|---|---|
-| `core` | a system-of-record service (R2DBC, Flyway, web) | `starter-core` |
-| `domain` | an orchestration service (CQRS, saga, EDA) | `starter-domain` |
-| `application` | an experience/BFF service (`@Secure`, SDK clients) | `starter-application` |
-| `library` | a shared library module | — |
+| `core` | un servicio de sistema de registro (R2DBC, Flyway, web) | `starter-core` |
+| `domain` | un servicio de orquestación (CQRS, saga, EDA) | `starter-domain` |
+| `application` | un servicio de experiencia/BFF (`@Secure`, clientes SDK) | `starter-application` |
+| `library` | un módulo de biblioteca compartida | — |
 
-The generated project already has the right parent, the tier starter, a sensible
-package layout, an `application.yml`, and a passing smoke test — the same shape as
-the modules you grew across this book.
+El proyecto generado ya tiene el parent correcto, el starter de la capa, una
+disposición de paquetes sensata, un `application.yml` y una prueba de humo que pasa:
+la misma forma que los módulos que fuiste construyendo a lo largo de este libro.
 
-## Troubleshooting
+## Resolución de problemas
 
-A short field guide to the issues you are most likely to meet.
+Una breve guía de campo de los problemas con los que es más probable que te
+encuentres.
 
-!!! tip "Checkpoint — is the framework installed?"
-    If a build fails to resolve `org.fireflyframework:*`, run `flywork setup` (or
-    confirm `~/.m2/repository/org/fireflyframework/` is populated). Every other
-    problem below assumes the framework is installed.
+!!! tip "Punto de control — ¿está instalado el framework?"
+    Si una compilación falla al resolver `org.fireflyframework:*`, ejecuta `flywork
+    setup` (o confirma que `~/.m2/repository/org/fireflyframework/` está poblado).
+    Todos los demás problemas que siguen suponen que el framework está instalado.
 
-- **`BUILD FAILURE` resolving a framework artifact.** The version you declared is
-  not in `~/.m2`. Either align to the version `flywork setup` installed, or import
-  the matching `fireflyframework-bom`. Mixing two framework versions is the most
-  common cause of a confusing `NoSuchMethodError` at runtime.
-- **A reactive endpoint blocks under load / occasional stalls.** Something on the
-  request path is blocking the event loop — a JDBC call, a `.block()`, a synchronous
-  third-party SDK. Move it off the event loop (`subscribeOn(Schedulers.boundedElastic())`)
-  or replace it with a reactive client. Re-read Chapter 5's "never block" warning.
-- **A correlation or trace ID is missing in a downstream log.** Confirm
-  `fireflyframework-observability` is present — it enables automatic Reactor context
-  propagation. Without it, `ThreadLocal`/MDC values do not follow operators.
-- **An `@EventListener` never fires.** The runtime matches `eventTypes` by the
-  payload's simple class name; check the name matches and that EDA is enabled
-  (`firefly.eda.enabled=true`) with a transport configured. Chapter 11 covers this.
-- **A list endpoint ignores a filter parameter.** ID fields are excluded from the
-  generic filter engine unless annotated `@FilterableId`. See Chapter 8.
-- **`@Secure` returns 401/403 in a test.** The endpoint is genuinely secured; supply
-  a permissive test security configuration or an authenticated test context, as the
-  experience-tier slice does (Chapter 17).
-- **Tests need Docker you do not have.** Prefer the in-process defaults — H2 for
-  R2DBC, the in-JVM EDA transport, Caffeine for cache — exactly as this book's
-  reactor does. Reach for Testcontainers (Chapter 23) only when a chapter calls for
-  a real backend.
+- **`BUILD FAILURE` al resolver un artefacto del framework.** La versión que
+  declaraste no está en `~/.m2`. O bien te alineas con la versión que instaló
+  `flywork setup`, o bien importas el `fireflyframework-bom` correspondiente. Mezclar
+  dos versiones del framework es la causa más común de un confuso `NoSuchMethodError`
+  en tiempo de ejecución.
+- **Un endpoint reactivo se bloquea bajo carga / se atasca de vez en cuando.** Algo
+  en la ruta de la petición está bloqueando el bucle de eventos: una llamada JDBC, un
+  `.block()`, un SDK síncrono de terceros. Sácalo del bucle de eventos
+  (`subscribeOn(Schedulers.boundedElastic())`) o sustitúyelo por un cliente reactivo.
+  Vuelve a leer la advertencia de "nunca bloquees" del capítulo 5.
+- **Falta un ID de correlación o de traza en un log aguas abajo.** Confirma que
+  `fireflyframework-observability` está presente: habilita la propagación automática
+  del contexto de Reactor. Sin él, los valores de `ThreadLocal`/MDC no siguen a los
+  operadores.
+- **Un `@EventListener` no se dispara nunca.** El runtime hace coincidir los
+  `eventTypes` por el nombre simple de la clase del payload; comprueba que el nombre
+  coincide y que EDA está habilitado (`firefly.eda.enabled=true`) con un transporte
+  configurado. El capítulo 11 cubre esto.
+- **Un endpoint de listado ignora un parámetro de filtro.** Los campos de ID se
+  excluyen del motor de filtros genérico a menos que se anoten con `@FilterableId`.
+  Consulta el capítulo 8.
+- **`@Secure` devuelve 401/403 en una prueba.** El endpoint está genuinamente
+  protegido; proporciona una configuración de seguridad de prueba permisiva o un
+  contexto de prueba autenticado, como hace el slice de la capa de experiencia
+  (capítulo 17).
+- **Las pruebas necesitan un Docker del que no dispones.** Prefiere los valores por
+  defecto en proceso: H2 para R2DBC, el transporte EDA en la JVM, Caffeine para la
+  caché, exactamente como hace el reactor de este libro. Recurre a Testcontainers
+  (capítulo 23) solo cuando un capítulo requiera un backend real.
 
-## Where to go next
+## Adonde ir ahora
 
-With `flywork setup` done once and `flywork create` for each new service, standing
-up a correct, consistent microservice is a single command — which is the whole
-promise of Chapter 1, now at your fingertips.
+Con `flywork setup` ejecutado una sola vez y `flywork create` para cada nuevo
+servicio, levantar un microservicio correcto y consistente es un único comando, que
+es la promesa entera del capítulo 1, ahora al alcance de tu mano.

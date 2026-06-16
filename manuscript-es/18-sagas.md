@@ -1,64 +1,66 @@
-Chapter 6 gave you `@Transactional`, and inside one service against one database it
-is the right tool: the moment a step fails, the row never appears, because the
-database rolls the whole unit back. But registering a loan application is not one
-write to one database. It creates the application in the core system of record,
-attaches an applicant party, and proposes an offer — three operations that, in a
-real platform, cross three service boundaries and three datastores. There is no
-shared transaction to roll back. If the offer step fails after the application is
-already written, `@Transactional` cannot help you: the application is committed, in
-another service, and now it is an orphan.
+El capítulo 6 te dio `@Transactional`, y dentro de un único servicio contra una única
+base de datos es la herramienta adecuada: en cuanto un paso falla, la fila nunca llega
+a aparecer, porque la base de datos revierte la unidad entera. Pero registrar una
+solicitud de préstamo no es una escritura a una base de datos. Crea la solicitud en el
+sistema central de registro, adjunta una parte solicitante y propone una oferta: tres
+operaciones que, en una plataforma real, cruzan tres fronteras de servicio y tres
+almacenes de datos. No hay una transacción compartida que revertir. Si el paso de la
+oferta falla después de que la solicitud ya se haya escrito, `@Transactional` no puede
+ayudarte: la solicitud está confirmada, en otro servicio, y ahora es huérfana.
 
-This is the distributed-transaction problem, and the answer is the **saga**. A saga
-breaks a multi-step operation into discrete steps, each with a **compensation** — an
-explicit "undo" the engine runs if a later step fails. There is no global rollback;
-instead, completed steps are *compensated* in reverse, so the system is driven back
-toward a consistent state by running real business operations (delete the
-application, release the hold) rather than by reverting database rows. Compensation
-is the cross-service substitute for rollback, and it is the heart of this chapter.
+Este es el problema de las transacciones distribuidas, y la respuesta es la **saga**.
+Una saga descompone una operación de varios pasos en pasos discretos, cada uno con una
+**compensación**: un "deshacer" explícito que el motor ejecuta si un paso posterior
+falla. No hay un rollback global; en su lugar, los pasos completados se *compensan* en
+orden inverso, de modo que el sistema se conduce de vuelta hacia un estado consistente
+ejecutando operaciones de negocio reales (borrar la solicitud, liberar la retención)
+en lugar de revertir filas de la base de datos. La compensación es el sustituto del
+rollback entre servicios, y es el corazón de este capítulo.
 
-In this chapter you slice Lumen's `RegisterApplicationSaga` — a `@Saga` with a root
-`@SagaStep` that creates the application and two dependent steps that fan out from
-it — and the `LoanOriginationService` that runs it through the `SagaEngine`. Then
-you read the headline test: it forces the offer step to fail and proves the engine
-compensates the root step, so no orphaned application is left behind. Everything runs
-in the `domain-lending-loan-origination` module, with **no core service and no
-Docker**. At the end you will meet two sibling patterns — Workflow and TCC — and know
-when to reach for each.
+En este capítulo diseccionas la `RegisterApplicationSaga` de Lumen — una `@Saga` con un
+`@SagaStep` raíz que crea la solicitud y dos pasos dependientes que se abren en abanico
+a partir de él — y el `LoanOriginationService` que la ejecuta a través del `SagaEngine`.
+Luego lees el test estrella: fuerza el fallo del paso de la oferta y demuestra que el
+motor compensa el paso raíz, de modo que no queda ninguna solicitud huérfana. Todo se
+ejecuta en el módulo `domain-lending-loan-origination`, **sin servicio central y sin
+Docker**. Al final conocerás dos patrones hermanos — Workflow y TCC — y sabrás cuándo
+recurrir a cada uno.
 
-The cast of files, all under `samples/lumen-lending/domain-lending-loan-origination`:
+El reparto de archivos, todos bajo `samples/lumen-lending/domain-lending-loan-origination`:
 
-- `src/main/java/com/firefly/lumen/domain/saga/RegisterApplicationSaga.java` — the
-  `@Saga` itself: three `@SagaStep` methods, their `compensate` undos, the
-  `dependsOn` topology, and a `@StepEvent` on each step.
-- `src/main/java/com/firefly/lumen/domain/service/LoanOriginationService.java` — the
-  service that assembles `StepInputs` and calls `SagaEngine.execute(...)`, reading
-  back a `SagaResult`.
+- `src/main/java/com/firefly/lumen/domain/saga/RegisterApplicationSaga.java` — la
+  `@Saga` en sí: tres métodos `@SagaStep`, sus deshacer `compensate`, la topología
+  `dependsOn` y un `@StepEvent` en cada paso.
+- `src/main/java/com/firefly/lumen/domain/service/LoanOriginationService.java` — el
+  servicio que ensambla `StepInputs` y llama a `SagaEngine.execute(...)`, leyendo de
+  vuelta un `SagaResult`.
 - `src/test/java/com/firefly/lumen/domain/saga/RegisterApplicationSagaCompensationTest.java`
-  — the headline compensation test.
+  — el test estrella de compensación.
 - `src/test/java/com/firefly/lumen/domain/saga/RegisterApplicationSagaHappyPathTest.java`
-  — the success-path companion, one of the module's six tests.
+  — el compañero del camino de éxito, uno de los seis tests del módulo.
 
-## What a saga is, and why a method tree
+## Qué es una saga, y por qué un árbol de métodos
 
-A Firefly saga is an ordinary Spring bean — annotated `@Saga` *and* `@Service` — whose
-methods are the steps. You do not write a state machine or a workflow XML; you write
-methods, annotate each with `@SagaStep`, and declare two things per step: the name of
-its compensation method, and which other step it `dependsOn`. From those declarations
-the engine builds a **dependency DAG** and runs it: steps with no unmet dependencies
-run, their outputs flow forward, dependent steps run next, and if anything fails, the
-already-completed steps are compensated in reverse.
+Una saga de Firefly es un bean de Spring corriente — anotado con `@Saga` *y* `@Service`
+— cuyos métodos son los pasos. No escribes una máquina de estados ni un XML de workflow;
+escribes métodos, anotas cada uno con `@SagaStep` y declaras dos cosas por paso: el
+nombre de su método de compensación y de qué otro paso `dependsOn`. A partir de esas
+declaraciones el motor construye un **DAG de dependencias** y lo ejecuta: los pasos sin
+dependencias pendientes se ejecutan, sus salidas fluyen hacia adelante, los pasos
+dependientes se ejecutan a continuación y, si algo falla, los pasos ya completados se
+compensan en orden inverso.
 
-!!! note "Key term — saga"
-    A **saga** is a sequence of local steps that together accomplish a
-    distributed operation, where each step has a **compensating action** that
-    semantically undoes it. There is no two-phase commit and no global rollback;
-    consistency is restored by *compensation* — running the inverse business
-    operation for each step that already completed. A saga trades the strong
-    atomicity of `@Transactional` for the only kind of atomicity available across
-    independent services.
+!!! note "Término clave — saga"
+    Una **saga** es una secuencia de pasos locales que en conjunto llevan a cabo una
+    operación distribuida, donde cada paso tiene una **acción compensatoria** que lo
+    deshace semánticamente. No hay commit en dos fases ni rollback global; la
+    consistencia se restaura mediante *compensación*: ejecutando la operación de negocio
+    inversa para cada paso que ya se completó. Una saga cambia la fuerte atomicidad de
+    `@Transactional` por el único tipo de atomicidad disponible entre servicios
+    independientes.
 
-Lumen's saga has the smallest topology that still teaches the whole pattern: a single
-root, then two dependents that fan out from it.
+La saga de Lumen tiene la topología más pequeña que aún enseña el patrón completo: una
+única raíz, y luego dos dependientes que se abren en abanico a partir de ella.
 
 ```text
 registerLoanApplication            (root; compensate = removeLoanApplication)
@@ -66,21 +68,21 @@ registerLoanApplication            (root; compensate = removeLoanApplication)
   └── proposeOffer                 (dependsOn root)
 ```
 
-The root creates the application and must run first, because both dependents need the
-new application id. Once the root completes, `registerApplicant` and `proposeOffer`
-have their dependency satisfied and the engine fans them out. The id travels from the
-root to the dependents through the `ExecutionContext` you met in Chapter 10 — the
-request-scoped bag that flows through the whole saga.
+La raíz crea la solicitud y debe ejecutarse primero, porque ambos dependientes necesitan
+el id de la nueva solicitud. Una vez que la raíz se completa, `registerApplicant` y
+`proposeOffer` tienen satisfecha su dependencia y el motor los abre en abanico. El id
+viaja desde la raíz hasta los dependientes a través del `ExecutionContext` que conociste
+en el capítulo 10: la bolsa con alcance de petición que fluye por toda la saga.
 
-## Step 1 — The root step and its compensation
+## Paso 1 — El paso raíz y su compensación
 
-Open the saga and read the root step first. It is annotated `@SagaStep` with an `id`
-and a `compensate` — the name of the method the engine calls to undo this step — and a
-`@StepEvent` that names a domain event to emit when the step completes. The method
-dispatches a CQRS command through the `CommandBus` (the same bus from Chapter 10) and,
-crucially, writes the new application id into the `ExecutionContext`.
+Abre la saga y lee primero el paso raíz. Está anotado con `@SagaStep` con un `id` y un
+`compensate` — el nombre del método que el motor llama para deshacer este paso — y un
+`@StepEvent` que nombra un evento de dominio a emitir cuando el paso se completa. El
+método despacha un comando CQRS a través del `CommandBus` (el mismo bus del capítulo 10)
+y, crucialmente, escribe el id de la nueva solicitud en el `ExecutionContext`.
 
-::: listing domain-lending-loan-origination/src/main/java/com/firefly/lumen/domain/saga/RegisterApplicationSaga.java | Listing 18.1 — the root step writes the application and publishes its id into the context
+::: listing domain-lending-loan-origination/src/main/java/com/firefly/lumen/domain/saga/RegisterApplicationSaga.java | Listado 18.1 — el paso raíz escribe la solicitud y publica su id en el contexto
     @SagaStep(id = STEP_REGISTER_LOAN_APPLICATION, compensate = COMPENSATE_REMOVE_LOAN_APPLICATION)
     @StepEvent(type = EVENT_LOAN_APPLICATION_REGISTERED)
     public Mono<UUID> registerLoanApplication(RegisterLoanApplicationCommand command, ExecutionContext ctx) {
@@ -94,48 +96,48 @@ crucially, writes the new application id into the `ExecutionContext`.
     }
 :::
 
-Read the two methods as a pair, because that pairing *is* the saga discipline. The
-step does the work — `commandBus.send(command)` returns a `Mono<UUID>`, and
-`doOnNext` stashes that id under `CTX_LOAN_APPLICATION_ID` so later steps can read it.
-The compensation is the exact inverse: given the id the step produced, delete the
-application from the core. The engine remembers each step's output, and when it must
-compensate, it hands that output to the compensation method. So `removeLoanApplication`
-receives the very `UUID` the step returned and deletes precisely the row the step
-created. No orphan.
+Lee los dos métodos como una pareja, porque ese emparejamiento *es* la disciplina de la
+saga. El paso hace el trabajo — `commandBus.send(command)` devuelve un `Mono<UUID>`, y
+`doOnNext` guarda ese id bajo `CTX_LOAN_APPLICATION_ID` para que los pasos posteriores
+puedan leerlo. La compensación es el inverso exacto: dado el id que el paso produjo,
+borra la solicitud del core. El motor recuerda la salida de cada paso y, cuando debe
+compensar, entrega esa salida al método de compensación. Así que `removeLoanApplication`
+recibe el mismísimo `UUID` que el paso devolvió y borra precisamente la fila que el paso
+creó. Sin huérfanos.
 
-Notice that the compensation calls `client.removeLoanApplication(...)` directly — the
-`LoanOriginationClient` SDK seam from Chapter 10 — rather than dispatching another
-command. A compensation is a plain reactive method returning `Mono<Void>`; it can do
-whatever undoing the step requires. The framework's only contract is that it return
-`Mono<Void>` and accept the step's result.
+Fíjate en que la compensación llama directamente a `client.removeLoanApplication(...)` —
+la costura del SDK `LoanOriginationClient` del capítulo 10 — en lugar de despachar otro
+comando. Una compensación es un método reactivo corriente que devuelve `Mono<Void>`;
+puede hacer cualquier deshacer que el paso requiera. El único contrato del framework es
+que devuelva `Mono<Void>` y acepte el resultado del paso.
 
-!!! note "Key term — `@SagaStep` and compensate"
-    `@SagaStep(id, compensate, dependsOn)` marks a method as one step of a saga.
-    `id` names the step (and is the key you use to supply its input). `compensate`
-    names the method that undoes this step if a later step fails. `dependsOn`
-    names the step (or steps) that must complete before this one runs. The forward
-    method returns the step's result; the compensation receives that result and
-    returns `Mono<Void>`. A step without a meaningful undo can still declare a
-    `compensate` method that returns `Mono.empty()`.
+!!! note "Término clave — `@SagaStep` y compensate"
+    `@SagaStep(id, compensate, dependsOn)` marca un método como un paso de una saga.
+    `id` nombra el paso (y es la clave que usas para suministrarle su entrada).
+    `compensate` nombra el método que deshace este paso si un paso posterior falla.
+    `dependsOn` nombra el paso (o pasos) que deben completarse antes de que este se
+    ejecute. El método hacia adelante devuelve el resultado del paso; la compensación
+    recibe ese resultado y devuelve `Mono<Void>`. Un paso sin un deshacer significativo
+    aún puede declarar un método `compensate` que devuelva `Mono.empty()`.
 
-!!! spring "Spring parity"
-    `@Saga` is meta-annotated with `@Service`, so component scanning discovers the
-    saga bean exactly as it discovers any `@Service` — there is no special
-    registry to populate. The Firefly addition is the post-processing that reads
-    the `@SagaStep`/`@StepEvent` annotations, builds the dependency DAG, and
-    registers the saga with the `SagaEngine` by its `@Saga(name = ...)`. You write
-    plain Spring beans; the engine reads the annotations.
+!!! spring "Equivalente en Spring"
+    `@Saga` está meta-anotada con `@Service`, de modo que el escaneo de componentes
+    descubre el bean de la saga exactamente como descubre cualquier `@Service`: no hay
+    ningún registro especial que poblar. La aportación de Firefly es el postprocesamiento
+    que lee las anotaciones `@SagaStep`/`@StepEvent`, construye el DAG de dependencias y
+    registra la saga con el `SagaEngine` por su `@Saga(name = ...)`. Tú escribes beans de
+    Spring corrientes; el motor lee las anotaciones.
 
-## Step 2 — The dependent steps fan out
+## Paso 2 — Los pasos dependientes se abren en abanico
 
-The two dependent steps add one annotation attribute the root did not have:
-`dependsOn = STEP_REGISTER_LOAN_APPLICATION`. That single attribute is what places
-them *after* the root in the DAG, and because they depend on the same step and on
-nothing else, the engine can run them as a fan-out once the root completes. Each reads
-the application id back out of the `ExecutionContext` and stamps it onto its command
-before dispatch.
+Los dos pasos dependientes añaden un atributo de anotación que la raíz no tenía:
+`dependsOn = STEP_REGISTER_LOAN_APPLICATION`. Ese único atributo es lo que los coloca
+*después* de la raíz en el DAG y, como dependen del mismo paso y de nada más, el motor
+puede ejecutarlos como un abanico una vez que la raíz se completa. Cada uno lee de vuelta
+el id de la solicitud desde el `ExecutionContext` y lo estampa en su comando antes del
+despacho.
 
-::: listing domain-lending-loan-origination/src/main/java/com/firefly/lumen/domain/saga/RegisterApplicationSaga.java | Listing 18.2 — two dependent steps read the id from the context and dispatch
+::: listing domain-lending-loan-origination/src/main/java/com/firefly/lumen/domain/saga/RegisterApplicationSaga.java | Listado 18.2 — dos pasos dependientes leen el id del contexto y despachan
     @SagaStep(id = STEP_REGISTER_APPLICANT,
             compensate = COMPENSATE_REMOVE_APPLICANT,
             dependsOn = STEP_REGISTER_LOAN_APPLICATION)
@@ -169,71 +171,73 @@ before dispatch.
     }
 :::
 
-The `ctx.getVariableAs(CTX_LOAN_APPLICATION_ID, UUID.class)` call is the other half of
-the `putVariable` you saw in the root step. The root *wrote* the id; each dependent
-*reads* it, typed, and threads it into the command with `withLoanApplicationId(...)`.
-This is how data flows along a DAG edge without the steps holding references to one
-another — they communicate only through the `ExecutionContext`, which is exactly what
-lets the engine schedule and, when needed, compensate them independently.
+La llamada `ctx.getVariableAs(CTX_LOAN_APPLICATION_ID, UUID.class)` es la otra mitad del
+`putVariable` que viste en el paso raíz. La raíz *escribió* el id; cada dependiente lo
+*lee*, tipado, y lo enhebra en el comando con `withLoanApplicationId(...)`. Así es como
+los datos fluyen a lo largo de una arista del DAG sin que los pasos mantengan referencias
+unos a otros: se comunican solo a través del `ExecutionContext`, que es exactamente lo
+que permite al motor planificarlos y, cuando hace falta, compensarlos de forma
+independiente.
 
-Both dependent compensations return `Mono.empty()` here, and the comment is honest
-about why: in this slice, registering an applicant and proposing an offer leave
-nothing upstream that needs undoing if they themselves were the *last* thing to run.
-The compensation that does real work is the root's `removeLoanApplication`, because
-the root is the step that created the durable write the saga must not orphan. That is
-the case the test exercises.
+Ambas compensaciones dependientes devuelven aquí `Mono.empty()`, y el comentario es
+honesto sobre el porqué: en esta porción, registrar un solicitante y proponer una oferta
+no dejan nada aguas arriba que necesite deshacerse si ellos mismos fueron lo *último* en
+ejecutarse. La compensación que hace trabajo real es la `removeLoanApplication` de la
+raíz, porque la raíz es el paso que creó la escritura duradera que la saga no debe
+dejar huérfana. Ese es el caso que el test ejercita.
 
-!!! note "Key term — `ExecutionContext` in a saga"
-    The **`ExecutionContext`** is the request-scoped store that flows through every
-    step of one saga run. A step writes intermediate state with
-    `ctx.putVariable(key, value)` and a later step reads it back, typed, with
-    `ctx.getVariableAs(key, Type.class)`. In a fleet it also carries tenant and
-    correlation ids on the reactive stack, with no `ThreadLocal`. Here it carries
-    one thing that matters enormously: the new application id, from the root step to
-    the two dependents.
+!!! note "Término clave — `ExecutionContext` en una saga"
+    El **`ExecutionContext`** es el almacén con alcance de petición que fluye a través de
+    cada paso de una ejecución de saga. Un paso escribe estado intermedio con
+    `ctx.putVariable(key, value)` y un paso posterior lo lee de vuelta, tipado, con
+    `ctx.getVariableAs(key, Type.class)`. En una flota también transporta ids de tenant y
+    de correlación en la pila reactiva, sin `ThreadLocal`. Aquí transporta una cosa que
+    importa enormemente: el id de la nueva solicitud, desde el paso raíz hasta los dos
+    dependientes.
 
-## Step 3 — Step events announce each completed step
+## Paso 3 — Los eventos de paso anuncian cada paso completado
 
-Every step in this saga carries a `@StepEvent(type = ...)`. When a step completes
-successfully, the engine emits a step-level domain event of that type. This is the
-saga's tie-in to the EDA runtime from Chapter 11: `registerLoanApplication` emits
-`loanApplication.registered`, `registerApplicant` emits `applicant.registered`, and
-`proposeOffer` emits `offer.proposed`. A fraud check, a notification service, or an
-audit log can subscribe to those step events and react as the saga progresses, without
-the saga knowing they exist.
+Cada paso de esta saga lleva un `@StepEvent(type = ...)`. Cuando un paso se completa con
+éxito, el motor emite un evento de dominio a nivel de paso de ese tipo. Esta es la
+conexión de la saga con el runtime de EDA del capítulo 11: `registerLoanApplication`
+emite `loanApplication.registered`, `registerApplicant` emite `applicant.registered` y
+`proposeOffer` emite `offer.proposed`. Una comprobación de fraude, un servicio de
+notificaciones o un registro de auditoría pueden suscribirse a esos eventos de paso y
+reaccionar a medida que la saga progresa, sin que la saga sepa que existen.
 
-The event-type constants live at the top of the saga class:
+Las constantes de tipo de evento viven en la parte superior de la clase de la saga:
 
-::: listing domain-lending-loan-origination/src/main/java/com/firefly/lumen/domain/saga/RegisterApplicationSaga.java | Listing 18.3 — the step-event types each step emits
+::: listing domain-lending-loan-origination/src/main/java/com/firefly/lumen/domain/saga/RegisterApplicationSaga.java | Listado 18.3 — los tipos de evento de paso que emite cada paso
     /** Step-event types emitted by each step. */
     public static final String EVENT_LOAN_APPLICATION_REGISTERED = "loanApplication.registered";
     public static final String EVENT_APPLICANT_REGISTERED = "applicant.registered";
     public static final String EVENT_OFFER_PROPOSED = "offer.proposed";
 :::
 
-The point of `@StepEvent` is that announcement is *declarative* and *per step*: you
-do not inject an `EventPublisher` into the saga or call `publish` in the step body.
-You annotate the step, and the engine emits the event when the step succeeds. The
-forward progress of the saga and the stream of facts about it are wired together by
-the engine, so observers see exactly the steps that completed — and, by their absence,
-the steps that did not.
+El sentido de `@StepEvent` es que el anuncio es *declarativo* y *por paso*: no inyectas
+un `EventPublisher` en la saga ni llamas a `publish` en el cuerpo del paso. Anotas el
+paso, y el motor emite el evento cuando el paso tiene éxito. El avance hacia adelante de
+la saga y el flujo de hechos sobre ella quedan conectados por el motor, de modo que los
+observadores ven exactamente los pasos que se completaron y, por su ausencia, los pasos
+que no.
 
-!!! spring "Spring parity"
-    `@StepEvent` rides on the same EDA runtime as Chapter 11's `@EventListener`. A
-    step event is an ordinary domain event published by the engine on the configured
-    transport; in Lumen that is the in-JVM `APPLICATION_EVENT` bus, so the saga emits
-    step events with no broker. Swapping to Kafka is the same `PublisherType` and
-    `firefly.eda.*` change you saw before — the saga code does not move.
+!!! spring "Equivalente en Spring"
+    `@StepEvent` cabalga sobre el mismo runtime de EDA que el `@EventListener` del
+    capítulo 11. Un evento de paso es un evento de dominio corriente publicado por el
+    motor en el transporte configurado; en Lumen ese es el bus `APPLICATION_EVENT`
+    dentro de la JVM, de modo que la saga emite eventos de paso sin broker. Cambiar a
+    Kafka es el mismo cambio de `PublisherType` y `firefly.eda.*` que viste antes: el
+    código de la saga no se mueve.
 
-## Step 4 — Running the saga: StepInputs in, SagaResult out
+## Paso 4 — Ejecutar la saga: StepInputs a la entrada, SagaResult a la salida
 
-A saga bean defines the steps but does not start itself. The `SagaEngine` runs it by
-name, and the domain service is where that call lives. `LoanOriginationService`
-injects the `SagaEngine`, builds one input per step with `StepInputs`, and calls
-`execute(...)` — handing back the `SagaResult` so the caller can inspect exactly what
-happened.
+Un bean de saga define los pasos pero no se inicia a sí mismo. El `SagaEngine` lo
+ejecuta por nombre, y el servicio de dominio es donde vive esa llamada.
+`LoanOriginationService` inyecta el `SagaEngine`, construye una entrada por paso con
+`StepInputs` y llama a `execute(...)`, devolviendo el `SagaResult` para que el llamador
+pueda inspeccionar exactamente qué ocurrió.
 
-::: listing domain-lending-loan-origination/src/main/java/com/firefly/lumen/domain/service/LoanOriginationService.java | Listing 18.4 — assembling StepInputs and running the saga through the engine
+::: listing domain-lending-loan-origination/src/main/java/com/firefly/lumen/domain/service/LoanOriginationService.java | Listado 18.4 — ensamblar StepInputs y ejecutar la saga a través del motor
     public Mono<SagaResult> submitApplication(String applicantName, long amount, int annualRateBps) {
         StepInputs inputs = StepInputs.builder()
                 .forStepId(RegisterApplicationSaga.STEP_REGISTER_LOAN_APPLICATION,
@@ -248,18 +252,18 @@ happened.
     }
 :::
 
-Three moves, and each maps to something you have already seen. `StepInputs.builder()`
-attaches one input object to each step id — the command each `@SagaStep` method will
-receive as its first parameter. The step ids here (`STEP_REGISTER_LOAN_APPLICATION`
-and friends) are the same constants the `@SagaStep(id = ...)` annotations declared, so
-the builder is literally addressing each step by name. Then
-`sagaEngine.execute(SAGA_NAME, inputs)` looks the saga up by its `@Saga(name = ...)`,
-runs the DAG, and returns a `Mono<SagaResult>`.
+Tres movimientos, y cada uno se corresponde con algo que ya has visto.
+`StepInputs.builder()` adjunta un objeto de entrada a cada id de paso: el comando que
+cada método `@SagaStep` recibirá como su primer parámetro. Los ids de paso aquí
+(`STEP_REGISTER_LOAN_APPLICATION` y compañeros) son las mismas constantes que declararon
+las anotaciones `@SagaStep(id = ...)`, así que el builder está literalmente direccionando
+cada paso por nombre. Luego `sagaEngine.execute(SAGA_NAME, inputs)` busca la saga por su
+`@Saga(name = ...)`, ejecuta el DAG y devuelve un `Mono<SagaResult>`.
 
-The `SagaResult` is the whole point of getting a value back instead of a fire-and-
-forget. It tells you whether the saga succeeded or failed, and — when it failed —
-which steps failed and which were compensated. The service does not interpret the
-result; it returns it, so the caller (and, in a moment, the test) can read it:
+El `SagaResult` es todo el sentido de recuperar un valor en lugar de un fire-and-forget.
+Te dice si la saga tuvo éxito o falló y — cuando falló — qué pasos fallaron y cuáles se
+compensaron. El servicio no interpreta el resultado; lo devuelve, para que el llamador
+(y, en un momento, el test) pueda leerlo:
 
 ```java
 // Illustrative — the questions a SagaResult answers.
@@ -269,31 +273,32 @@ result.failedSteps();      // ids of the steps that threw
 result.compensatedSteps(); // ids of completed steps the engine undid
 ```
 
-!!! note "Key term — SagaEngine, StepInputs, SagaResult"
-    The **`SagaEngine`** runs a registered saga by name. **`StepInputs`** is the
-    per-step input map you hand it — `forStepId(id, input)` for each step. The engine
-    returns a **`SagaResult`**: `isSuccess()`/`isFailed()` for the overall outcome,
-    `failedSteps()` for the steps that threw, and `compensatedSteps()` for the
-    completed steps it had to undo. The result is data, not an exception, so the
-    caller decides what a partial failure means for the API response.
+!!! note "Término clave — SagaEngine, StepInputs, SagaResult"
+    El **`SagaEngine`** ejecuta una saga registrada por nombre. **`StepInputs`** es el
+    mapa de entradas por paso que le entregas — `forStepId(id, input)` para cada paso. El
+    motor devuelve un **`SagaResult`**: `isSuccess()`/`isFailed()` para el resultado
+    global, `failedSteps()` para los pasos que lanzaron excepción y `compensatedSteps()`
+    para los pasos completados que tuvo que deshacer. El resultado es dato, no una
+    excepción, de modo que el llamador decide qué significa un fallo parcial para la
+    respuesta de la API.
 
-!!! spring "Spring parity"
-    There is no plain-Spring equivalent of `SagaEngine` — this is a Firefly
-    orchestration capability, auto-configured when the orchestration module is on the
-    classpath. What *is* familiar is the seam: the engine is an injected bean, the
-    inputs are plain objects, and the result is a plain record. You orchestrate a
-    distributed transaction with the same dependency-injection ergonomics you use for
-    any service.
+!!! spring "Equivalente en Spring"
+    No hay un equivalente en Spring puro de `SagaEngine`: esta es una capacidad de
+    orquestación de Firefly, autoconfigurada cuando el módulo de orquestación está en el
+    classpath. Lo que *sí* es familiar es la costura: el motor es un bean inyectado, las
+    entradas son objetos corrientes y el resultado es un record corriente. Orquestas una
+    transacción distribuida con la misma ergonomía de inyección de dependencias que usas
+    para cualquier servicio.
 
-## Step 5 — The headline: compensation when a step fails
+## Paso 5 — El plato fuerte: compensación cuando un paso falla
 
-Now the test that justifies the whole pattern. The compensation test wires the saga
-exactly as production does — real `SagaEngine`, real `CommandBus`, real handlers — and
-changes one thing: it substitutes a stub `LoanOriginationClient` configured to make
-the `proposeOffer` step fail. Then it runs `submitApplication(...)` and asserts what
-the engine did with the failure.
+Ahora el test que justifica todo el patrón. El test de compensación cablea la saga
+exactamente como lo hace producción — `SagaEngine` real, `CommandBus` real, manejadores
+reales — y cambia una sola cosa: sustituye un stub `LoanOriginationClient` configurado
+para hacer fallar el paso `proposeOffer`. Luego ejecuta `submitApplication(...)` y afirma
+lo que el motor hizo con el fallo.
 
-::: listing domain-lending-loan-origination/src/test/java/com/firefly/lumen/domain/saga/RegisterApplicationSagaCompensationTest.java | Listing 18.5 — forcing proposeOffer to fail and asserting the root step was compensated
+::: listing domain-lending-loan-origination/src/test/java/com/firefly/lumen/domain/saga/RegisterApplicationSagaCompensationTest.java | Listado 18.5 — forzar el fallo de proposeOffer y afirmar que el paso raíz fue compensado
     @Test
     void submitApplication_failsAndCompensatesRootStep_whenDependentStepThrows() {
         StepVerifier.create(service.submitApplication("Ada Lovelace", 250_000L, 575))
@@ -317,85 +322,89 @@ the engine did with the failure.
     }
 :::
 
-Read the assertions as a story of what the engine did. First, the saga as a whole
-failed: `isSuccess()` is false, `isFailed()` is true. Second, the *specific* step that
-failed is `proposeOffer` — `failedSteps()` contains it — because the stub was
-configured to throw there. Third, and this is the payoff, `compensatedSteps()`
-contains the *root* step, `registerLoanApplication`. The root succeeded, then a
-dependent failed, so the engine ran the root's `removeLoanApplication` compensation to
-undo it.
+Lee las afirmaciones como la historia de lo que el motor hizo. Primero, la saga en su
+conjunto falló: `isSuccess()` es falso, `isFailed()` es verdadero. Segundo, el paso
+*concreto* que falló es `proposeOffer` — `failedSteps()` lo contiene — porque el stub
+estaba configurado para lanzar una excepción ahí. Tercero, y esta es la recompensa,
+`compensatedSteps()` contiene el paso *raíz*, `registerLoanApplication`. La raíz tuvo
+éxito, luego un dependiente falló, así que el motor ejecutó la compensación
+`removeLoanApplication` de la raíz para deshacerla.
 
-The final two assertions prove the compensation was not merely *recorded* but
-*effective*. The stub remembers every application it created and every one it removed.
-After the saga, exactly one application was created (by the root step) and the set of
-removed applications equals the set of created ones — same id, accounted for. The
-write the root step made is gone. **No orphan.** That is the entire promise of a saga,
-verified: when a later step fails, the work the earlier steps committed does not leak.
+Las dos últimas afirmaciones demuestran que la compensación no solo fue *registrada*
+sino *efectiva*. El stub recuerda cada solicitud que creó y cada una que eliminó. Tras
+la saga, se creó exactamente una solicitud (por el paso raíz) y el conjunto de
+solicitudes eliminadas es igual al conjunto de las creadas — mismo id, todo cuadrado. La
+escritura que hizo el paso raíz ha desaparecido. **Sin huérfanos.** Esa es la promesa
+entera de una saga, verificada: cuando un paso posterior falla, el trabajo que los pasos
+anteriores confirmaron no se filtra.
 
-The setup that makes the offer step fail is a one-bean test configuration —
-`new StubLoanOriginationClient().failProposeOffer()` — supplied for the
-`LoanOriginationClient` port. Nothing else about the wiring changes; the saga, the
-engine, and the compensation are all the real code. This is the SDK seam from
-Chapter 10 earning its keep again: because the saga depends on the *interface*, a test
-can make any step fail by configuring the stub, and observe the engine's real
-compensation behavior with no core service and no Docker.
+La configuración que hace fallar el paso de la oferta es una configuración de test de un
+solo bean — `new StubLoanOriginationClient().failProposeOffer()` — suministrada para el
+puerto `LoanOriginationClient`. Nada más del cableado cambia; la saga, el motor y la
+compensación son todos código real. Esta es la costura del SDK del capítulo 10 ganándose
+de nuevo el sueldo: como la saga depende de la *interfaz*, un test puede hacer fallar
+cualquier paso configurando el stub, y observar el comportamiento de compensación real
+del motor sin servicio central y sin Docker.
 
-!!! tip "Checkpoint"
-    The companion `RegisterApplicationSagaHappyPathTest` runs the same saga with an
-    *unconfigured* stub, so every step succeeds, and asserts `result.isSuccess()` is
-    true with no compensations. Read the two tests side by side: same saga, same
-    engine, and the only difference is whether the stub fails the offer step. That
-    contrast is the saga pattern in two files — success runs forward, failure runs
-    forward then compensates back.
+!!! tip "Punto de control"
+    El compañero `RegisterApplicationSagaHappyPathTest` ejecuta la misma saga con un stub
+    *sin configurar*, de modo que todos los pasos tienen éxito, y afirma que
+    `result.isSuccess()` es verdadero sin compensaciones. Lee los dos tests en paralelo:
+    la misma saga, el mismo motor, y la única diferencia es si el stub hace fallar el
+    paso de la oferta. Ese contraste es el patrón de saga en dos archivos: el éxito corre
+    hacia adelante, el fallo corre hacia adelante y luego compensa de vuelta.
 
-## Run it
+## Ejecútalo
 
-The whole domain tier — CQRS handlers, the EDA listener, and both saga tests — boots
-and runs without a core service. From the `samples/lumen-lending` directory:
+Toda la capa de dominio — los manejadores CQRS, el listener de EDA y ambos tests de saga
+— arranca y se ejecuta sin un servicio central. Desde el directorio
+`samples/lumen-lending`:
 
 ```text
 mvn -q -pl domain-lending-loan-origination test
 ```
 
-The expected result:
+El resultado esperado:
 
 ```text
 Tests run: 6, Failures: 0, Errors: 0, Skipped: 0
 BUILD SUCCESS
 ```
 
-Six green tests, and two of them are the saga: `RegisterApplicationSagaHappyPathTest`
-proves the forward path completes, and `RegisterApplicationSagaCompensationTest` —
-Listing 18.5 — proves the failure path compensates the root step and leaves no orphan.
-When the compensation test runs you will see the engine log it in real time:
-`step.failed ... stepId=proposeOffer`, then `compensation.started`, then a
-`dead-lettered` entry recording the failed step. Those log lines are the engine
-narrating exactly the behavior the assertions check.
+Seis tests en verde, y dos de ellos son la saga: `RegisterApplicationSagaHappyPathTest`
+demuestra que el camino hacia adelante se completa, y `RegisterApplicationSagaCompensationTest`
+— Listado 18.5 — demuestra que el camino de fallo compensa el paso raíz y no deja
+huérfanos. Cuando se ejecuta el test de compensación verás al motor registrarlo en
+tiempo real: `step.failed ... stepId=proposeOffer`, luego `compensation.started`, luego
+una entrada `dead-lettered` que registra el paso fallido. Esas líneas de log son el
+motor narrando exactamente el comportamiento que comprueban las afirmaciones.
 
-!!! warning "A saga is eventual, not atomic — compensations must be safe to run"
-    A saga gives up the all-or-nothing atomicity of `@Transactional`. Between the
-    root step committing and a later step failing, the application *briefly exists*
-    before compensation removes it — the system is consistent only *eventually*.
-    That puts weight on your compensations: they must be idempotent (the engine may
-    retry), they must tolerate being run against a step whose effect is only
-    partially applied, and they should not themselves fail silently. Design each
-    `compensate` method as carefully as the step it undoes.
+!!! warning "Una saga es eventual, no atómica — las compensaciones deben ser seguras de ejecutar"
+    Una saga renuncia a la atomicidad de todo-o-nada de `@Transactional`. Entre que el
+    paso raíz confirma y un paso posterior falla, la solicitud *existe brevemente* antes
+    de que la compensación la elimine: el sistema es consistente solo *eventualmente*.
+    Eso pone peso sobre tus compensaciones: deben ser idempotentes (el motor puede
+    reintentar), deben tolerar ejecutarse contra un paso cuyo efecto solo se aplicó
+    parcialmente y no deberían fallar ellas mismas en silencio. Diseña cada método
+    `compensate` con tanto cuidado como el paso que deshace.
 
-## Two siblings: Workflow and TCC
+## Dos hermanos: Workflow y TCC
 
-The saga is one of three orchestration patterns Firefly's engine supports. The other
-two solve the same distributed-transaction problem with different trade-offs, and
-knowing where each fits keeps you from forcing a saga onto a job it is wrong for. Both
-are described here conceptually — the reactor verifies the saga, not these — so treat
-the snippets below as how-it-works, not as something this build runs.
+La saga es uno de los tres patrones de orquestación que soporta el motor de Firefly. Los
+otros dos resuelven el mismo problema de transacciones distribuidas con compromisos
+distintos, y saber dónde encaja cada uno te evita forzar una saga sobre un trabajo para
+el que es inadecuada. Ambos se describen aquí de forma conceptual — el reactor verifica
+la saga, no estos — así que trata los fragmentos de abajo como un cómo-funciona, no como
+algo que esta compilación ejecuta.
 
-**Workflow — fire forward, no compensation.** A workflow is a saga's optimistic
-cousin: a sequence of steps that run forward to completion, *without* compensating
-on failure. You use it when the steps have no meaningful undo — sending a sequence of
-notifications, running an enrichment pipeline, fanning out read-only calls — or when a
-failed step should simply stop the flow and be retried later rather than rolled back.
-A workflow keeps the DAG, the `ExecutionContext`, and the step events, and drops the
-compensation half:
+**Workflow — dispara hacia adelante, sin compensación.** Un workflow es el primo
+optimista de una saga: una secuencia de pasos que corren hacia adelante hasta
+completarse, *sin* compensar ante un fallo. Lo usas cuando los pasos no tienen un
+deshacer significativo — enviar una secuencia de notificaciones, ejecutar un pipeline de
+enriquecimiento, abrir en abanico llamadas de solo lectura — o cuando un paso fallido
+debería simplemente detener el flujo y reintentarse más tarde en lugar de revertirse. Un
+workflow conserva el DAG, el `ExecutionContext` y los eventos de paso, y descarta la
+mitad de compensación:
 
 ```java
 // Illustrative — a workflow step: forward-only, no compensate attribute.
@@ -405,15 +414,15 @@ public Mono<Void> notifyApplicant(NotifyCommand command, ExecutionContext ctx) {
 }
 ```
 
-**TCC — Try, Confirm, Cancel.** TCC is the saga's stricter cousin, for resources that
-support *reservation*. Each participant exposes three operations: **Try** reserves the
-resource (place a hold on funds, reserve inventory) without committing it; **Confirm**
-makes every reservation permanent once all Tries succeed; **Cancel** releases the
-reservations if any Try fails. Where a saga commits each step and compensates after
-the fact, TCC holds everything in a reserved state until the whole operation is known
-to succeed — so there is no window where a committed step must be visibly undone. It
-costs more (every resource must support the three-phase protocol) and buys tighter
-consistency:
+**TCC — Try, Confirm, Cancel.** TCC es el primo más estricto de la saga, para recursos
+que soportan *reserva*. Cada participante expone tres operaciones: **Try** reserva el
+recurso (poner una retención sobre fondos, reservar inventario) sin confirmarlo;
+**Confirm** hace permanente cada reserva una vez que todos los Try tienen éxito;
+**Cancel** libera las reservas si algún Try falla. Donde una saga confirma cada paso y
+compensa después, TCC mantiene todo en un estado reservado hasta que se sabe que la
+operación entera tendrá éxito — de modo que no hay ninguna ventana en la que un paso
+confirmado deba deshacerse de forma visible. Cuesta más (cada recurso debe soportar el
+protocolo de tres fases) y compra una consistencia más estrecha:
 
 ```java
 // Illustrative — a TCC participant exposes try / confirm / cancel.
@@ -425,65 +434,70 @@ class ReserveFunds {
 }
 ```
 
-!!! note "Key term — Saga vs. Workflow vs. TCC"
-    All three orchestrate multi-step distributed operations through the same engine
-    and `ExecutionContext`. A **Saga** commits each step and *compensates* completed
-    steps in reverse on failure — best when steps have a clean semantic undo. A
-    **Workflow** runs forward with *no* compensation — best when steps cannot or need
-    not be undone. **TCC** (Try-Confirm-Cancel) *reserves* each resource, then
-    confirms all or cancels all — best when participants support reservations and you
-    want to avoid a visible committed-then-undone window. Pick by how your resources
-    behave: undoable, fire-forward, or reservable.
+!!! note "Término clave — Saga vs. Workflow vs. TCC"
+    Los tres orquestan operaciones distribuidas de varios pasos a través del mismo motor
+    y del mismo `ExecutionContext`. Una **Saga** confirma cada paso y *compensa* los
+    pasos completados en orden inverso ante un fallo — mejor cuando los pasos tienen un
+    deshacer semántico limpio. Un **Workflow** corre hacia adelante *sin* compensación —
+    mejor cuando los pasos no pueden o no necesitan deshacerse. **TCC**
+    (Try-Confirm-Cancel) *reserva* cada recurso, y luego los confirma todos o los cancela
+    todos — mejor cuando los participantes soportan reservas y quieres evitar una ventana
+    visible de confirmado-y-luego-deshecho. Elige según cómo se comporten tus recursos:
+    reversibles, dispara-hacia-adelante o reservables.
 
-## What you built {.recap}
+## Lo que has construido {.recap}
 
-- A **`@Saga`** bean, `RegisterApplicationSaga`, whose methods are `@SagaStep`s: a
-  root `registerLoanApplication` and two dependents, `registerApplicant` and
-  `proposeOffer`, that `dependsOn` the root and fan out once it completes.
-- A **compensation** for each step — the root's `removeLoanApplication` deletes the
-  application the step created, given the very id the step returned — which is the
-  cross-service substitute for `@Transactional` rollback.
-- The **`ExecutionContext`** carrying the new application id from the root step
-  (`putVariable`) to the dependents (`getVariableAs`), so steps share data along DAG
-  edges without referencing one another.
-- A **`@StepEvent`** on every step, so the engine emits a step-level domain event on
-  the EDA runtime as the saga progresses.
-- The **`SagaEngine`** run from `LoanOriginationService`: `StepInputs` in, a
-  `SagaResult` out, exposing `isSuccess`/`isFailed`/`failedSteps`/`compensatedSteps`.
-- The **headline compensation test** (`Tests run: 6, Failures: 0`): forcing
-  `proposeOffer` to fail proves the root step is compensated and the created
-  application is removed — **no orphan** — with no core service and no Docker.
+- Un bean **`@Saga`**, `RegisterApplicationSaga`, cuyos métodos son `@SagaStep`s: una
+  raíz `registerLoanApplication` y dos dependientes, `registerApplicant` y
+  `proposeOffer`, que `dependsOn` de la raíz y se abren en abanico una vez que se
+  completa.
+- Una **compensación** para cada paso — la `removeLoanApplication` de la raíz borra la
+  solicitud que el paso creó, dado el mismísimo id que el paso devolvió — que es el
+  sustituto entre servicios del rollback de `@Transactional`.
+- El **`ExecutionContext`** transportando el id de la nueva solicitud desde el paso raíz
+  (`putVariable`) hasta los dependientes (`getVariableAs`), de modo que los pasos
+  comparten datos a lo largo de las aristas del DAG sin referenciarse unos a otros.
+- Un **`@StepEvent`** en cada paso, de modo que el motor emite un evento de dominio a
+  nivel de paso en el runtime de EDA a medida que la saga progresa.
+- El **`SagaEngine`** ejecutado desde `LoanOriginationService`: `StepInputs` a la
+  entrada, un `SagaResult` a la salida, exponiendo
+  `isSuccess`/`isFailed`/`failedSteps`/`compensatedSteps`.
+- El **test estrella de compensación** (`Tests run: 6, Failures: 0`): forzar el fallo de
+  `proposeOffer` demuestra que el paso raíz se compensa y la solicitud creada se elimina
+  — **sin huérfanos** — sin servicio central y sin Docker.
 
-## Try it yourself {.exercises}
+## Pruébalo tú mismo {.exercises}
 
-1. **Read the failure into the API.** `submitApplication` returns the raw
-   `SagaResult`. Sketch how an experience-tier caller would turn `result.isFailed()`
-   plus `result.failedSteps()` into an HTTP response — which status code, and what
-   would you put in the RFC 7807 `detail`? You do not need to run it; argue the
-   mapping.
-2. **Fail the root instead.** In `StubLoanOriginationClient`, add a `failCreate()`
-   switch like the existing `failProposeOffer()` and write a test that makes the
-   *root* step fail. What should `compensatedSteps()` contain, and why is it empty?
-   (Hint: the root never completed, so there is nothing to undo.)
-3. **Give a dependent a real undo.** `removeOffer` returns `Mono.empty()`. Change
-   `proposeOffer` so its compensation calls a new stub method that records a removed
-   offer, then make a *third* step fail and assert both the root and the offer are
-   compensated. This proves the engine compensates *all* completed steps, in reverse.
-4. **Trace a step event.** Add an `@EventListener` (Chapter 11) for the
-   `offer.proposed` step-event type and assert, on the happy path, that it fired
-   exactly once. Then run the compensation test and confirm it did *not* fire — the
-   offer step never completed, so its `@StepEvent` never emitted.
-5. **Choose the pattern.** For each of these operations, decide Saga, Workflow, or
-   TCC and justify it in one sentence: (a) reserve seats, charge a card, issue
-   tickets; (b) send a welcome email, then a follow-up; (c) debit one account and
-   credit another across two core services.
+1. **Lleva el fallo a la API.** `submitApplication` devuelve el `SagaResult` en bruto.
+   Esboza cómo un llamador de la capa de experiencia convertiría `result.isFailed()` más
+   `result.failedSteps()` en una respuesta HTTP — qué código de estado, y qué pondrías en
+   el `detail` de RFC 7807. No necesitas ejecutarlo; argumenta el mapeo.
+2. **Haz fallar la raíz en su lugar.** En `StubLoanOriginationClient`, añade un
+   interruptor `failCreate()` como el `failProposeOffer()` existente y escribe un test que
+   haga fallar el paso *raíz*. ¿Qué debería contener `compensatedSteps()`, y por qué está
+   vacío? (Pista: la raíz nunca se completó, así que no hay nada que deshacer.)
+3. **Da a un dependiente un deshacer real.** `removeOffer` devuelve `Mono.empty()`. Cambia
+   `proposeOffer` para que su compensación llame a un nuevo método del stub que registre
+   una oferta eliminada, luego haz fallar un *tercer* paso y afirma que tanto la raíz como
+   la oferta se compensan. Esto demuestra que el motor compensa *todos* los pasos
+   completados, en orden inverso.
+4. **Rastrea un evento de paso.** Añade un `@EventListener` (capítulo 11) para el tipo de
+   evento de paso `offer.proposed` y afirma, en el camino feliz, que se disparó
+   exactamente una vez. Luego ejecuta el test de compensación y confirma que *no* se
+   disparó — el paso de la oferta nunca se completó, así que su `@StepEvent` nunca se
+   emitió.
+5. **Elige el patrón.** Para cada una de estas operaciones, decide Saga, Workflow o TCC y
+   justifícalo en una sola frase: (a) reservar asientos, cobrar una tarjeta, emitir
+   entradas; (b) enviar un correo de bienvenida, y luego uno de seguimiento; (c) debitar
+   una cuenta y abonar otra a través de dos servicios centrales.
 
-## Where to go next
+## Adónde ir ahora
 
-You now have the domain tier's hardest capability: a distributed transaction that
-either completes or cleanly undoes itself, verified without a single downstream
-service running. But the saga's steps still call the *stub* `LoanOriginationClient`.
-The next chapters replace that seam with the generated core SDK and wire the saga's
-commands to real HTTP calls against the core system of record you built earlier — at
-which point `removeLoanApplication` deletes a real row in a real service, and the
-compensation you proved here protects production data, not a stub's list.
+Ahora tienes la capacidad más difícil de la capa de dominio: una transacción distribuida
+que o bien se completa o bien se deshace limpiamente a sí misma, verificada sin un solo
+servicio aguas abajo en ejecución. Pero los pasos de la saga siguen llamando al *stub*
+`LoanOriginationClient`. Los próximos capítulos reemplazan esa costura con el SDK central
+generado y conectan los comandos de la saga a llamadas HTTP reales contra el sistema
+central de registro que construiste antes — momento en el que `removeLoanApplication`
+borra una fila real en un servicio real, y la compensación que demostraste aquí protege
+datos de producción, no la lista de un stub.
