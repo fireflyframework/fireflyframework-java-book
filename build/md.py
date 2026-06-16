@@ -1,4 +1,4 @@
-"""Markdown -> HTML for *PyFly by Example*.
+"""Markdown -> HTML for *Firefly for Java by Example*.
 
 Custom block directives on top of python-markdown:
   ::: figure <svg-path> | <caption>          (single line; inlines the SVG)
@@ -18,13 +18,17 @@ from markdown.preprocessors import Preprocessor
 from markdown.postprocessors import Postprocessor
 from markdown.extensions import Extension
 from pygments import highlight
-from pygments.lexers import get_lexer_by_name, guess_lexer
+from pygments.lexers import get_lexer_by_name
 from pygments.util import ClassNotFound
 from pygments.formatters import HtmlFormatter
 
 _FMT = HtmlFormatter(nowrap=True)  # tokens only; we supply <pre class="code">
-_EXT = {"py":"python","yaml":"yaml","yml":"yaml","toml":"toml","json":"json",
-        "sh":"bash","bash":"bash","sql":"sql","xml":"xml","html":"html","txt":"text"}
+# Java is the primary language of this book, so it is the default. We never fall
+# back to guess_lexer: a mis-detected listing silently highlighted as the wrong
+# language is worse than highlighting it as Java.
+_EXT = {"java":"java","kt":"kotlin","py":"python","yaml":"yaml","yml":"yaml",
+        "toml":"toml","json":"json","sh":"bash","bash":"bash","sql":"sql",
+        "xml":"xml","html":"html","properties":"properties","txt":"text"}
 
 class _Directives(Preprocessor):
     FIG = re.compile(r'^:::\s*figure\s+(?P<src>\S+)\s*\|\s*(?P<cap>.+?)\s*$')
@@ -66,11 +70,14 @@ class _Directives(Preprocessor):
         return f'<figure class="fig">{inner}<figcaption>{cap}</figcaption></figure>'
 
     def _listing(self, file_label: str, cap: str | None, code: str) -> str:
-        lang = _EXT.get(file_label.rsplit(".", 1)[-1].lower(), "python") if "." in file_label else "python"
+        # Map the label's extension to a Pygments lexer, defaulting to Java (this
+        # is a Java book). A dotless label (e.g. "Snippet") also defaults to Java.
+        lang = _EXT.get(file_label.rsplit(".", 1)[-1].lower(), "java") if "." in file_label else "java"
         try:
             lexer = get_lexer_by_name(lang)
         except ClassNotFound:
-            lexer = guess_lexer(code)
+            # Never guess: a wrong lexer is worse than the Java default.
+            lexer = get_lexer_by_name("java")
         body = highlight(code, lexer, _FMT)
         cap_html = f'<div class="lcap">{cap}</div>' if cap else ""
         return (f'<div class="listing"><span class="filetab">{file_label}</span>'
