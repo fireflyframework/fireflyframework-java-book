@@ -1,11 +1,11 @@
-"""Build *PyFly by Example* into EPUB + PDF from a book manifest.
+"""Build *Firefly for Java by Example* into EPUB + PDF from a book manifest.
 
 Defaults to ``book.yaml`` (English). Pass ``--config book.es.yaml`` to build the
 Spanish edition; each manifest names its own ``manuscript_dir``, ``language``,
 localized ``labels`` (e.g. the Contents heading) and ``output_basename``.
 
-    book/build/run.sh                       # English  -> pyfly-by-example.{epub,pdf}
-    book/build/run.sh --config book.es.yaml # Spanish  -> pyfly-by-example-es.{epub,pdf}
+    build/run.sh                       # English  -> firefly-java-by-example.{epub,pdf}
+    build/run.sh --config book.es.yaml # Spanish  -> firefly-java-by-example-es.{epub,pdf}
 """
 from __future__ import annotations
 import argparse
@@ -125,17 +125,17 @@ def _divider_html(eyebrow: str, ptitle: str) -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description="Build PyFly by Example (EPUB + PDF).")
+    ap = argparse.ArgumentParser(description="Build Firefly for Java by Example (EPUB + PDF).")
     ap.add_argument("--config", default="book.yaml",
-                    help="Manifest file under book/ (default: book.yaml).")
+                    help="Manifest file at the repo root (default: book.yaml).")
     ap.add_argument("--out", default=None,
-                    help="Output basename (default: manifest 'output_basename' or 'pyfly-by-example').")
+                    help="Output basename (default: manifest 'output_basename' or 'firefly-java-by-example').")
     args = ap.parse_args(argv)
 
     cfg = yaml.safe_load((BOOK / args.config).read_text())
     man = BOOK / cfg.get("manuscript_dir", "manuscript")
     contents_label = cfg.get("labels", {}).get("contents", "Contents")
-    out_base = args.out or cfg.get("output_basename") or "pyfly-by-example"
+    out_base = args.out or cfg.get("output_basename") or "firefly-java-by-example"
 
     css_text = [(THEME / "book.css").read_text(), (THEME / "tokens.css").read_text(),
                 (THEME / "pygments.css").read_text()]

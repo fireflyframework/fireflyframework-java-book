@@ -27,9 +27,16 @@ import pathlib
 from dataclasses import dataclass
 
 # Opening directive line, the body (lazily), and the lone ':::' close.
+# The open is column-0 anchored and the close tolerates leading whitespace, to
+# mirror build/md.py exactly: md.py opens on ``LST.match(line)`` (start of line)
+# and closes on the first line whose ``.strip() == ":::"``. Anchoring the close
+# at column 0 here would desync the two parsers -- an indented close would let
+# the lazy body swallow the *next* listing, mis-attributing a failure and
+# silently skipping the swallowed block. So the close pattern must be
+# indentation-tolerant: ``^[ \t]*:::[ \t]*$``.
 _LISTING = re.compile(
     r"^:::[ \t]*listing[ \t]+(?P<label>[^|\n]+?)[ \t]*(?:\|[^\n]*)?\n"
-    r"(?P<body>.*?)\n:::[ \t]*$",
+    r"(?P<body>.*?)\n[ \t]*:::[ \t]*$",
     re.S | re.M,
 )
 

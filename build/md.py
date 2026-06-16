@@ -110,13 +110,13 @@ class _AdmonitionIcons(Postprocessor):
     def run(self, text: str) -> str:
         return self._RE.sub(lambda m: m.group(1) + _ADM_ICON.get(m.group("t"), ""), text)
 
-class PyflyExtension(Extension):
+class FireflyExtension(Extension):
     def __init__(self, base: Path, **kw):
         self.base = base
         super().__init__(**kw)
     def extendMarkdown(self, md):
-        md.preprocessors.register(_Directives(md, self.base), "pyfly_directives", 28)
-        md.postprocessors.register(_AdmonitionIcons(md), "pyfly_adm_icons", 5)
+        md.preprocessors.register(_Directives(md, self.base), "firefly_directives", 28)
+        md.postprocessors.register(_AdmonitionIcons(md), "firefly_adm_icons", 5)
 
 _XML_SAFE_ENTITIES = {"amp", "lt", "gt", "quot", "apos"}
 
@@ -135,7 +135,7 @@ def _to_xml_entities(s: str) -> str:
 def render_markdown(text: str, base: Path) -> str:
     md = markdown.Markdown(
         extensions=["extra", "admonition", "sane_lists", "codehilite",
-                    PyflyExtension(base)],
+                    FireflyExtension(base)],
         extension_configs={"codehilite": {"css_class": "code", "guess_lang": False}},
         output_format="xhtml",
     )
