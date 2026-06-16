@@ -1,0 +1,13 @@
+# Python book toolchain
+build/.venv/
+__pycache__/
+*.pyc
+
+# Java / Maven
+samples/**/target/
+
+# OS
+.DS_Store
+
+# NOTE: dist/ is intentionally tracked — built EPUB/PDF artifacts are
+# committed and attached to GitHub Releases.
