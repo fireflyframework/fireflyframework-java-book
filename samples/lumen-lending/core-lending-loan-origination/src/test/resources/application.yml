@@ -1,8 +1,19 @@
-# Test configuration: in-memory H2 over R2DBC so context-load tests need no Docker.
+# Test configuration: in-memory H2 so the slice runs with no Docker.
+#
+# R2DBC is the runtime data access (reactive); Flyway migrates over JDBC. Both
+# point at the SAME in-memory H2 database (name "lumen", DB_CLOSE_DELAY=-1 keeps
+# it alive for the whole JVM) so the table Flyway creates is the one R2DBC reads.
 spring:
   application:
     name: core-lending-loan-origination
   r2dbc:
     url: r2dbc:h2:mem:///lumen;DB_CLOSE_DELAY=-1
     username: sa
+    password: ""
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+    locations: classpath:db/migration
+    url: jdbc:h2:mem:lumen;DB_CLOSE_DELAY=-1
+    user: sa
     password: ""

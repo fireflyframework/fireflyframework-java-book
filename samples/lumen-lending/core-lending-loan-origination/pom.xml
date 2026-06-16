@@ -32,6 +32,19 @@
             <groupId>org.fireflyframework</groupId>
             <artifactId>fireflyframework-web</artifactId>
         </dependency>
+        <!-- Finance-aware Jakarta validation constraints (@ValidAmount, @ValidCurrencyCode). -->
+        <dependency>
+            <groupId>org.fireflyframework</groupId>
+            <artifactId>fireflyframework-validators</artifactId>
+        </dependency>
+        <!-- Lombok is provided (compile-only): the starters expose it as the
+             annotation processor, but it must be on this module's classpath too.
+             MapStruct ships transitively from the starters. -->
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <scope>provided</scope>
+        </dependency>
 
         <!-- Test -->
         <dependency>
@@ -44,10 +57,16 @@
             <artifactId>reactor-test</artifactId>
             <scope>test</scope>
         </dependency>
-        <!-- H2 in-memory R2DBC driver: lets context-load tests run with no Docker. -->
+        <!-- H2 in-memory R2DBC driver: lets the app run on H2 with no Docker. -->
         <dependency>
             <groupId>io.r2dbc</groupId>
             <artifactId>r2dbc-h2</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- H2 JDBC driver: Flyway migrates over JDBC (R2DBC is runtime-only). -->
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
             <scope>test</scope>
         </dependency>
     </dependencies>
