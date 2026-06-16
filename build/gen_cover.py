@@ -1,15 +1,23 @@
-"""Generate book/art/cover.svg and cover.png — premium redesign."""
+"""Generate art/cover.svg and art/cover.png for *Firefly for Java by Example*.
+
+A clean, self-contained typographic cover in the firefly-green palette. There is
+NO external logo dependency: the firefly mark is drawn inline as SVG, so the
+generator needs nothing under ~/Downloads or art/logo/. The canvas is
+1500 x 2100 px (7.5 x 9.25 in at 200 dpi) — the book's trim size.
+
+Run:  build/.venv/bin/python build/gen_cover.py     (writes art/cover.{svg,png})
+"""
 from __future__ import annotations
-import base64
 import math
 from pathlib import Path
+from xml.sax.saxutils import escape as _xml_escape
 import cairosvg
 
 ART = Path(__file__).resolve().parents[1] / "art"
-W, H = 1500, 2100  # 7.5 × 9.25 in at 200 dpi
+W, H = 1500, 2100  # 7.5 x 9.25 in at 200 dpi
 
 # ---------------------------------------------------------------------------
-# Palette
+# Palette (firefly-green)
 # ---------------------------------------------------------------------------
 INK       = "#16331a"   # deep forest — background
 DEEP      = "#1e4620"   # slightly lighter ink for layering
@@ -21,6 +29,8 @@ WHITE     = "#ffffff"
 AMBER     = "#ffc24b"
 MUTED     = "#8dbd7a"   # muted green — secondary text
 MUTED_LT  = "#b5d9a0"   # lighter muted — subtitle
+
+FONT = "Avenir Next,Avenir,Helvetica Neue,Helvetica,Arial,sans-serif"
 
 
 # ---------------------------------------------------------------------------
@@ -54,22 +64,57 @@ def quad_path(x1: float, y1: float, x2: float, y2: float) -> str:
     return f"M{x1:.1f},{y1:.1f} Q{cpx:.1f},{cpy:.1f} {x2:.1f},{y2:.1f}"
 
 
+def firefly_mark(cx: float, cy: float, scale: float = 1.0) -> str:
+    """A clean, self-contained firefly/spark mark — the cover's brand emblem.
+
+    A tilted firefly with a softly glowing abdomen and swept-back wings, sitting
+    in a faint amber bloom. Drawn entirely inline (no external image), so the
+    cover is reproducible from this script alone.
+    """
+    return (
+        f'<g transform="translate({cx},{cy}) scale({scale})">'
+        # ambient bloom rings
+        f'<circle r="118" fill="{AMBER}" opacity="0.06"/>'
+        f'<circle r="78" fill="{AMBER}" opacity="0.09"/>'
+        f'<circle r="46" fill="{AMBER}" opacity="0.16"/>'
+        # light trail curving in from the lower-left (two strokes = a taper)
+        f'<path d="M-150,150 C-86,80 -44,32 -14,-4" fill="none" stroke="{AMBER}" '
+        f'stroke-width="4" opacity="0.14" stroke-linecap="round"/>'
+        f'<path d="M-150,150 C-86,80 -44,32 -14,-4" fill="none" stroke="#ffd980" '
+        f'stroke-width="1.6" opacity="0.30" stroke-linecap="round"/>'
+        # the firefly, gently tilted for life
+        '<g transform="rotate(-16)">'
+        f'<circle cx="0" cy="52" r="42" fill="{AMBER}" opacity="0.18"/>'
+        f'<circle cx="0" cy="52" r="25" fill="#ffd980" opacity="0.45"/>'
+        # wings, swept back and translucent
+        f'<path d="M-5,-10 C-72,-54 -94,-2 -28,14 Z" fill="#ddf0c4" opacity="0.22"/>'
+        f'<path d="M5,-10 C72,-54 94,-2 28,14 Z" fill="#ddf0c4" opacity="0.22"/>'
+        # glowing abdomen
+        f'<ellipse cx="0" cy="46" rx="20" ry="29" fill="{AMBER}"/>'
+        f'<ellipse cx="0" cy="49" rx="11" ry="18" fill="#fff2cf"/>'
+        # dark thorax + head with a green rim (brand)
+        f'<ellipse cx="0" cy="4" rx="16" ry="23" fill="{INK}" stroke="{GREEN}" stroke-width="2.8"/>'
+        f'<ellipse cx="0" cy="-23" rx="10" ry="12" fill="{INK}" stroke="{GREEN}" stroke-width="2.4"/>'
+        # antennae
+        f'<path d="M-5,-32 C-16,-50 -23,-54 -30,-60" fill="none" stroke="{GREEN}" '
+        f'stroke-width="2.6" stroke-linecap="round"/>'
+        f'<path d="M5,-32 C16,-50 23,-54 30,-60" fill="none" stroke="{GREEN}" '
+        f'stroke-width="2.6" stroke-linecap="round"/>'
+        '</g>'
+        # satellite motes
+        f'<circle cx="92" cy="-82" r="3.4" fill="#ffd980" opacity="0.75"/>'
+        f'<circle cx="110" cy="50" r="2.8" fill="{GREEN}" opacity="0.80"/>'
+        f'<circle cx="-96" cy="-72" r="2.8" fill="#ffd980" opacity="0.65"/>'
+        '</g>'
+    )
+
+
 # ---------------------------------------------------------------------------
 # Build SVG
 # ---------------------------------------------------------------------------
 def build_svg() -> str:
-    logo_b64 = base64.b64encode((ART / "logo" / "pyfly-logo.png").read_bytes()).decode()
-    logo_uri = f"data:image/png;base64,{logo_b64}"
-
-    # Logo: native 1648 × 748
-    # Place with 40 px bottom safe margin: logo_y + logo_h = H - 40
-    logo_w = 540
-    logo_h = int(logo_w * 748 / 1648)   # ≈ 245 px
-    logo_x = (W - logo_w) // 2
-    logo_y = H - 40 - logo_h             # ≈ 1815
-
     # -------------------------------------------------------------------------
-    # EDA Network motif  (illustration zone: y = 80 … 1080)
+    # EDA Network motif  (illustration zone: y = 80 ... 1080)
     # Hub: center, slightly above midpoint of illustration zone
     # -------------------------------------------------------------------------
     HUB_X, HUB_Y, HUB_R = 750, 580, 72
@@ -161,7 +206,6 @@ def build_svg() -> str:
         parts.append(node(ax, ay, ar, DEEP, GREEN_DIM, 1.4, opacity=0.65))
 
     # 8. Satellite nodes with outer ring + label
-    FONT_SAT = "Avenir Next,Avenir,Helvetica Neue,Helvetica,Arial,sans-serif"
     for (sx, sy, sr, lbl) in SATS:
         parts.append(node(sx, sy, sr + 9, "none", GREEN, 1.2, opacity=0.28))
         parts.append(node(sx, sy, sr, GREEN_MID, GREEN, 2.2))
@@ -170,19 +214,15 @@ def build_svg() -> str:
             f'<text x="{sx}" y="{sy + 1}" text-anchor="middle" '
             f'dominant-baseline="middle" fill="{LIGHT}" '
             f'font-size="{fs}" font-weight="700" '
-            f'font-family="{FONT_SAT}" letter-spacing="1">{lbl}</text>'
+            f'font-family="{FONT}" letter-spacing="1">{lbl}</text>'
         )
 
-    # 9. Hub node
+    # 9. Hub node — the firefly mark sits at the network's heart
     parts.append(node(HUB_X, HUB_Y, HUB_R + 16, "none", GREEN, 1.8, opacity=0.40))
     parts.append(node(HUB_X, HUB_Y, HUB_R + 4,  "none", GREEN, 2.8, opacity=0.75))
     parts.append(node(HUB_X, HUB_Y, HUB_R, GREEN_MID, AMBER, 3.8))
-    parts.append(
-        f'<text x="{HUB_X}" y="{HUB_Y + 2}" text-anchor="middle" '
-        f'dominant-baseline="middle" fill="{WHITE}" '
-        f'font-size="46" font-weight="800" '
-        f'font-family="{FONT_SAT}" letter-spacing="-1">F</text>'
-    )
+    # the drawn firefly emblem, centered on the hub
+    parts.append(firefly_mark(HUB_X, HUB_Y, scale=0.62))
 
     # 10. Atmospheric micro-labels (subtle, spaced out)
     MICRO = [
@@ -195,7 +235,7 @@ def build_svg() -> str:
         parts.append(
             f'<text x="{mx}" y="{my}" text-anchor="middle" fill="{GREEN}" '
             f'font-size="18" font-weight="400" opacity="0.50" '
-            f'font-family="{FONT_SAT}" letter-spacing="3.5">{mlbl}</text>'
+            f'font-family="{FONT}" letter-spacing="3.5">{mlbl}</text>'
         )
 
     # -------------------------------------------------------------------------
@@ -213,7 +253,6 @@ def build_svg() -> str:
     # -------------------------------------------------------------------------
     # Publisher label — top edge, small caps, generous letter-spacing
     # -------------------------------------------------------------------------
-    FONT = "Avenir Next,Avenir,Helvetica Neue,Helvetica,Arial,sans-serif"
     parts.append(
         f'<text x="{W // 2}" y="68" text-anchor="middle" '
         f'fill="{MUTED}" font-size="26" font-weight="500" '
@@ -226,46 +265,45 @@ def build_svg() -> str:
     # -------------------------------------------------------------------------
     TY = RULE_Y + 68   # baseline anchor of first title line
 
-    # "PyFly" — ultra-heavy, white
+    # "Firefly for" — heavy, white
     parts.append(
-        f'<text x="108" y="{TY + 200}" '
-        f'fill="{WHITE}" font-size="240" font-weight="800" '
-        f'font-family="{FONT}" letter-spacing="-7">PyFly</text>'
+        f'<text x="108" y="{TY + 120}" '
+        f'fill="{WHITE}" font-size="150" font-weight="800" '
+        f'font-family="{FONT}" letter-spacing="-4">Firefly for</text>'
     )
 
-    # Thin amber separator under PyFly (visual rhythm)
-    RULE2_Y = TY + 218
+    # "Java" — brand green, ultra-heavy (the standout word)
     parts.append(
-        f'<rect x="108" y="{RULE2_Y}" width="700" height="3" '
+        f'<text x="108" y="{TY + 300}" '
+        f'fill="{GREEN}" font-size="220" font-weight="800" '
+        f'font-family="{FONT}" letter-spacing="-6">Java</text>'
+    )
+
+    # Thin amber separator under "Java" (visual rhythm)
+    RULE2_Y = TY + 326
+    parts.append(
+        f'<rect x="112" y="{RULE2_Y}" width="700" height="3" '
         f'fill="{AMBER}" opacity="0.60" rx="1.5"/>'
     )
 
-    # "by Example" — brand green, demi-bold
+    # "by Example" — light green, demi-bold
     parts.append(
-        f'<text x="112" y="{RULE2_Y + 98}" '
-        f'fill="{GREEN}" font-size="94" font-weight="600" '
+        f'<text x="112" y="{RULE2_Y + 110}" '
+        f'fill="{LIGHT}" font-size="100" font-weight="600" '
         f'font-family="{FONT}" letter-spacing="-1">by Example</text>'
     )
 
     # Subtitle (two lines)
-    SUB_Y = RULE2_Y + 170
+    SUB_Y = RULE2_Y + 188
     for i, line in enumerate([
-        "Event-Driven Python Microservices",
-        "with the Firefly Framework",
+        "Reactive Microservices with Spring Boot,",
+        "WebFlux & the Firefly Framework",
     ]):
         parts.append(
-            f'<text x="112" y="{SUB_Y + i * 56}" '
-            f'fill="{MUTED_LT}" font-size="42" font-weight="400" '
-            f'font-family="{FONT}" letter-spacing="0.5">{line}</text>'
+            f'<text x="112" y="{SUB_Y + i * 50}" '
+            f'fill="{MUTED_LT}" font-size="37" font-weight="400" '
+            f'font-family="{FONT}" letter-spacing="0.5">{_xml_escape(line)}</text>'
         )
-
-    # -------------------------------------------------------------------------
-    # Logo — centered, bottom zone
-    # -------------------------------------------------------------------------
-    parts.append(
-        f'<image x="{logo_x}" y="{logo_y}" width="{logo_w}" height="{logo_h}" '
-        f'xlink:href="{logo_uri}" opacity="0.90"/>'
-    )
 
     # -------------------------------------------------------------------------
     # Assemble: hoist gradient elements into <defs>
@@ -286,6 +324,7 @@ def build_svg() -> str:
 
 
 def main() -> None:
+    ART.mkdir(parents=True, exist_ok=True)
     svg = build_svg()
     (ART / "cover.svg").write_text(svg, encoding="utf-8")
     cairosvg.svg2png(
