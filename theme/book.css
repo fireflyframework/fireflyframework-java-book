@@ -64,6 +64,19 @@ pre.code{
 .filetab + pre.code{ border-top-left-radius:0; }
 .lcap{ font-size:.76rem; color:var(--muted); margin-top:.45rem; font-style:italic; }
 
+/* Plain fenced ```lang blocks (illustrative snippets) render as
+   <div class="code"><pre><code>…</code></pre> via codehilite (css_class="code").
+   Their inner <pre> has NO class, so it missed the pre.code wrap rule and ran off
+   the page. Give them the same warm box + JetBrains Mono as pre.code, WRAP every
+   line, and neutralize the inline-`code` pill so it doesn't leak onto the spans. */
+div.code{ margin:1.2rem 0; background:var(--code-bg); border:1px solid var(--code-border);
+  border-radius:8px; padding:.85rem 1rem; max-width:100%; }
+div.code pre{ margin:0; padding:0; background:none; border:none; line-height:1.6;
+  white-space:pre-wrap; overflow-wrap:anywhere; word-break:break-word; tab-size:4; }
+div.code code{ background:none; color:#24292f; padding:0; border-radius:0;
+  font-family:"JetBrains Mono","SF Mono",Menlo,Consolas,monospace; font-size:.76rem;
+  white-space:pre-wrap; overflow-wrap:anywhere; word-break:break-word; }
+
 /* ============ figures ============ */
 figure.fig{ margin:1.45rem auto; text-align:center; }
 figure.fig svg{ max-width:100%; height:auto; }
