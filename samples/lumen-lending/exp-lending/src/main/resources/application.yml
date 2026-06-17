@@ -1,3 +1,29 @@
+# Runnable configuration for the experience (BFF) tier.
+#
+# Points the SDK seam at the domain Loan Origination service and disables security
+# *enforcement* so the BFF is reachable locally. The controllers keep their real
+# @Secure annotations; setting firefly.application.security.enabled=false makes the
+# SecurityAspect short-circuit (production keeps it true). The base-path activates
+# the WebClient-backed LoanOriginationDomainClient (@ConditionalOnProperty).
+server:
+  port: 8080
+
 spring:
   application:
     name: exp-lending
+
+firefly:
+  application:
+    security:
+      enabled: false
+
+# Domain-tier Loan Origination service the BFF calls (prefix bound by
+# LoanOriginationClientProperties).
+lumen:
+  exp:
+    loan-origination:
+      base-path: http://localhost:8082
+
+logging:
+  level:
+    org.fireflyframework: INFO

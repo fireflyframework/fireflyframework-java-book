@@ -1,3 +1,34 @@
+# Runnable configuration for the domain (orchestration) tier.
+#
+# Everything runs in-JVM: the saga engine uses the in-memory execution-persistence
+# provider (no Redis/DB) and EDA uses the in-process APPLICATION_EVENT transport
+# (no Kafka/RabbitMQ/Docker). The tier boots standalone even when the core service
+# is not up — the core SDK seam (LoanOriginationClient) is only exercised when a
+# saga actually runs, not at startup.
+server:
+  port: 8082
+
 spring:
   application:
     name: domain-lending-loan-origination
+
+# Firefly framework switches (mirrors src/test/resources/application.yml).
+firefly:
+  cqrs:
+    enabled: true
+  orchestration:
+    enabled: true
+  eda:
+    enabled: true
+    # In-JVM transport: events are delivered over Spring's ApplicationEventPublisher,
+    # so there is no Kafka/RabbitMQ/Docker. The saga emits step events through this.
+    default-publisher-type: APPLICATION_EVENT
+  # Base URL of the core system-of-record the SDK seam targets when a saga runs.
+  lumen:
+    core:
+      loan-origination:
+        base-path: http://localhost:8081
+
+logging:
+  level:
+    org.fireflyframework: INFO

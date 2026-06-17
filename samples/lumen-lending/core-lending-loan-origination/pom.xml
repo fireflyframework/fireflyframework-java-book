@@ -57,17 +57,20 @@
             <artifactId>reactor-test</artifactId>
             <scope>test</scope>
         </dependency>
-        <!-- H2 in-memory R2DBC driver: lets the app run on H2 with no Docker. -->
+        <!-- H2 in-memory R2DBC driver: lets the app run on H2 with no Docker.
+             Runtime scope so `spring-boot:run` / `java -jar` can boot on H2
+             without an external DB; still present for the test slice. -->
         <dependency>
             <groupId>io.r2dbc</groupId>
             <artifactId>r2dbc-h2</artifactId>
-            <scope>test</scope>
+            <scope>runtime</scope>
         </dependency>
-        <!-- H2 JDBC driver: Flyway migrates over JDBC (R2DBC is runtime-only). -->
+        <!-- H2 JDBC driver: Flyway migrates over JDBC (R2DBC is runtime-only).
+             Runtime scope so the app can migrate and boot standalone. -->
         <dependency>
             <groupId>com.h2database</groupId>
             <artifactId>h2</artifactId>
-            <scope>test</scope>
+            <scope>runtime</scope>
         </dependency>
     </dependencies>
 
