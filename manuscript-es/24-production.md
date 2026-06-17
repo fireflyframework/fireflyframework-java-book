@@ -1,75 +1,75 @@
-Hace veintitrés capítulos, Lumen Lending era una carpeta vacía. Ahora es una flota:
+Hace veintitrés capítulos Lumen Lending era una carpeta vacía. Ahora es una flota:
 una capa de experiencia que da forma a las peticiones de los canales, una capa de
-dominio que orquesta una saga y emite eventos, y una capa de núcleo que posee el esquema
-y sirve detalles de problema RFC 7807 — todo reactivo, todo coherente en versiones, todo
+dominio que orquesta una saga y emite eventos, y una capa core que posee el esquema y
+sirve problem details RFC 7807 — todo reactivo, todo coherente en versiones, todo
 construido a partir de starters de capa que añadiste en una sola línea. Has estado
-*consumiendo* Firefly durante todo el camino. Este capítulo de cierre gira la lente dos
-veces: primero para mostrar cómo *extiendes* el framework con tu propia capacidad, y
-luego cómo llevas cualquiera de estos servicios a producción como imagen nativa con una
-lista de materiales firmada.
+*consumiendo* Firefly durante todo el camino. Este capítulo de cierre gira la lente
+dos veces: primero para mostrar cómo *extiendes* el framework con tu propia
+capacidad, y después cómo llevas cualquiera de estos servicios a producción como una
+imagen nativa con una lista de materiales firmada.
 
 Las dos mitades riman. Extender Firefly significa escribir el mismo tipo de
-auto-configuración conmutable y amigable con las sobrescrituras que el framework escribe
-para sí mismo — de modo que tu código se comporte como una capacidad de primera clase, no
-como un añadido. Llevarlo a producción significa apoyarte en el *POM padre* que conociste
+autoconfiguración conmutable y amigable con las sustituciones que el framework escribe
+para sí mismo — de modo que tu código se comporte como una capacidad de primera clase,
+no como un añadido. Ir a producción significa apoyarse en el *POM padre* que conociste
 en el Capítulo 3, que ya lleva un perfil nativo de GraalVM y un paso de SBOM CycloneDX,
-de modo que toda la flota se entrega de la misma manera. Ninguna de las dos mitades añade
-un nuevo test compañero; este capítulo es un recorrido guiado por patrones y comandos de
-compilación sobre los que, de hecho, has estado apoyándote desde el Capítulo 3. Donde
-aparece un listado, sigue siendo una porción literal del reactor de Lumen — la junta del
-cliente de la capa de experiencia resulta ser el ejemplo más limpio de todos los patrones
+de modo que toda la flota se despliega de la misma manera. Ninguna de las dos mitades
+añade un nuevo test compañero; este capítulo es un recorrido guiado por patrones y
+comandos de build que, de hecho, has estado pisando desde el Capítulo 3. Allí donde
+aparece un listado, sigue siendo una porción literal del reactor de Lumen — la costura
+de cliente de la capa de experiencia resulta ser el ejemplo más limpio de cada patrón
 de extensión a la vez.
 
-Al final sabrás cómo añadir una capacidad al estilo Firefly, ocultar un proveedor detrás
-de un puerto, empaquetar el resultado como un starter y convertir `mvn -Pnative` en un
-contenedor que arranca en milisegundos. Luego una breve palabra sobre lo que vive *más
-allá* de este libro, y una mirada retrospectiva a todo el viaje.
+Al final sabrás cómo añadir una capacidad al estilo Firefly, ocultar un proveedor
+detrás de un port, empaquetar el resultado como un starter y convertir `mvn -Pnative`
+en un contenedor que arranca en milisegundos. Después, una breve palabra sobre lo que
+vive *más allá* de este libro, y una mirada atrás sobre todo el recorrido.
 
-## Extender Firefly es escribir auto-configuración de Spring Boot
+## Extender Firefly es escribir autoconfiguración de Spring Boot
 
-He aquí la verdad tranquilizadora hacia la que todo el libro ha estado construyendo: no
-existe una API secreta de extensión de Firefly. Una capacidad de Firefly *es* una
-auto-configuración de Spring Boot — una clase `@Configuration`, regulada por condiciones,
-registrada de modo que Spring Boot la encuentra en el classpath, que se retira en el
-instante en que defines tu propio bean. Todo lo que aprendiste sobre `@ConditionalOnProperty`
-y `@ConditionalOnMissingBean` en la lente del Capítulo 1, "superconjunto, nunca un fork",
+He aquí la verdad tranquilizadora hacia la que ha apuntado todo el libro: no hay una
+API secreta de extensión de Firefly. Una capacidad de Firefly *es* una autoconfiguración
+de Spring Boot — una clase `@Configuration`, cerrada por condiciones, registrada de modo
+que Spring Boot la encuentre en el classpath, que se retira en el instante en que defines
+tu propio bean. Todo lo que aprendiste sobre `@ConditionalOnProperty` y
+`@ConditionalOnMissingBean` en la lente del «superconjunto, nunca un fork» del Capítulo 1
 es el mecanismo de extensión. Para añadir una capacidad a la flota, escribes exactamente
 lo que el framework escribe para sí mismo.
 
 Una capacidad tiene tres piezas móviles, y el resto de esta sección recorre cada una:
 
-1. Un **puerto** — una interfaz de la que depende el código de tu aplicación, nunca un
-   SDK de proveedor.
-2. Un **adaptador** — una implementación de ese puerto, más una **`@Configuration`**
-   que lo aporta como bean, regulado para que se active por propiedad y ceda ante
+1. Un **port** — una interfaz de la que depende el código de tu aplicación, nunca un SDK
+   de proveedor.
+2. Un **adaptador** — una implementación de ese port, más una **`@Configuration`**
+   que lo aporta como bean, cerrada de modo que se active por propiedad y ceda ante
    cualquier bean que definas.
-3. Un **registro** — un fichero de importación `META-INF` para que Spring Boot descubra
-   la configuración sin un `@Import` explícito, del mismo modo en que se descubre cada
+3. Un **registro** — un fichero de import en `META-INF` para que Spring Boot descubra la
+   configuración sin un `@Import` explícito, de la misma manera que se descubre cada
    capacidad del framework.
 
-La capa de experiencia de Lumen ya demuestra las tres para la junta de su SDK de dominio.
-Es el cableado de producción que el BFF usa para alcanzar el servicio de dominio, y está
-construido precisamente como se construye una capacidad del framework — así que leerlo es
-leer el patrón de extensión.
+La capa de experiencia de Lumen ya demuestra las tres para su costura con el SDK de
+dominio. Es el cableado de producción que el BFF usa para llegar al servicio de dominio,
+y está construido precisamente como se construye una capacidad del framework — así que
+leerlo es leer el patrón de extensión.
 
-!!! note "Termino clave — auto-configuración"
-    Una **auto-configuración de Spring Boot** es una clase `@Configuration` que Spring
-    Boot aplica automáticamente cuando está en el classpath y sus condiciones se
-    cumplen — sin que la aplicación la importe explícitamente. Boot encuentra candidatas
-    leyendo un fichero de registro (ver *registro* más abajo) y luego evalúa los guardas
+!!! note "Término clave — autoconfiguración"
+    Una **autoconfiguración de Spring Boot** es una clase `@Configuration` que Spring
+    Boot aplica automáticamente cuando está en el classpath y sus condiciones pasan —
+    sin que la aplicación la importe explícitamente. Boot encuentra candidatas leyendo
+    un fichero de registro (consulta *registro* más abajo) y luego evalúa las guardas
     `@Conditional...` de cada una. Las ~70 capacidades de Firefly son todas
-    auto-configuraciones; la que escribes para extender la flota no es diferente.
+    autoconfiguraciones; la que escribes para extender la flota no es diferente.
 
-## Paso 1 — Depende de un puerto, nunca de un proveedor
+## Paso 1 — Depende de un port, nunca de un proveedor
 
-El primer movimiento es el que el Capítulo 1 llamó "proveedores detrás de puertos" y el
-Apéndice B recopiló por completo: el código de tu aplicación habla con una *interfaz*, y
-el proveedor concreto nunca aparece en un manejador ni en un servicio. El contrato de la
-capa de experiencia con el servicio de dominio es un puerto reactivo escrito a mano — dos
-métodos, ambos devolviendo `Mono`, sin `WebClient`, sin tipo de SDK, sin HTTP en ninguna
-parte de la firma:
+El primer movimiento es el que el Capítulo 1 llamó «proveedores detrás de ports» y que
+el Apéndice B recopiló por completo: el código de tu aplicación habla con una *interfaz*,
+y el proveedor concreto nunca aparece en un manejador o servicio. El contrato de la capa
+de experiencia con el servicio de dominio es un port reactivo hecho a mano — dos métodos,
+ambos devolviendo `Mono`, sin `WebClient`, sin tipo de SDK, sin HTTP en ninguna parte de
+la firma:
 
-::: listing exp-lending/src/main/java/com/firefly/lumen/exp/client/LoanOriginationDomainClient.java | Listado 24.1 — el puerto: una interfaz de la que depende tu código, libre de proveedores
+::: listing exp-lending/src/main/java/com/firefly/lumen/exp/client/LoanOriginationDomainClient.java | Listado 24.1 — el port: una interfaz de la que depende tu código, libre de proveedor
 public interface LoanOriginationDomainClient {
 
     /**
@@ -92,30 +92,30 @@ public interface LoanOriginationDomainClient {
 }
 :::
 
-Esta es la junta. El `ApplicationService` de la capa de experiencia inyecta
+Esta es la costura. El `ApplicationService` de la capa de experiencia inyecta
 `LoanOriginationDomainClient` y nunca se entera de si la llamada va por HTTP, por un stub
 en memoria o — en el servicio real de firefly-oss — por un SDK de OpenAPI generado. El
-puerto posee el *contrato*; el adaptador posee el *mecanismo*. Cuando extiendes Firefly
-con una nueva integración — un proveedor de fraude, un almacén de documentos, un motor de
-precios — empiezas aquí: escribe la interfaz que tu dominio quiere llamar, en el
+port posee el *contrato*; el adaptador posee el *mecanismo*. Cuando extiendas Firefly con
+una nueva integración — un proveedor de fraude, un almacén de documentos, un motor de
+pricing — empiezas aquí: escribe la interfaz que tu dominio quiere invocar, en el
 vocabulario de tu dominio, y resiste la tentación de dejar que un tipo de proveedor se
 filtre en ella.
 
-!!! note "Termino clave — puerto y adaptador (hexagonal)"
-    Un **puerto** es una interfaz que expresa lo que tu aplicación necesita en sus propios
-    términos; un **adaptador** es una implementación concreta que cumple el puerto contra
-    una tecnología específica. La aplicación depende solo del puerto, así que intercambiar
-    el adaptador — HTTP por un stub, un proveedor por otro — nunca toca el código de
-    negocio. Esta es la arquitectura hexagonal que Firefly usa para cada capacidad de
-    integración, y la forma que copias cuando añades la tuya.
+!!! note "Término clave — port y adaptador (hexagonal)"
+    Un **port** es una interfaz que expresa lo que tu aplicación necesita en sus propios
+    términos; un **adaptador** es una implementación concreta que cumple el port contra
+    una tecnología específica. La aplicación depende solo del port, así que cambiar el
+    adaptador — HTTP por un stub, un proveedor por otro — nunca toca el código de negocio.
+    Esta es la arquitectura hexagonal que Firefly usa para cada capacidad de integración,
+    y la forma que copias cuando añades la tuya.
 
-## Paso 2 — Aporta el adaptador como un bean regulado
+## Paso 2 — Aporta el adaptador como un bean cerrado por condiciones
 
-Ahora la implementación. El adaptador de producción es una clase ordinaria que implementa
-el puerto reenviando a un `WebClient`, propagando la clave de idempotencia determinista
-como la cabecera estándar `Idempotency-Key` en cada llamada:
+Ahora la implementación. El adaptador de producción es una clase corriente que implementa
+el port reenviando a un `WebClient`, propagando la clave de idempotencia determinista como
+la cabecera estándar `Idempotency-Key` en cada llamada:
 
-::: listing exp-lending/src/main/java/com/firefly/lumen/exp/config/WebClientLoanOriginationDomainClient.java | Listado 24.2 — el adaptador: un mecanismo detrás del puerto
+::: listing exp-lending/src/main/java/com/firefly/lumen/exp/config/WebClientLoanOriginationDomainClient.java | Listado 24.2 — el adaptador: un mecanismo detrás del port
 class WebClientLoanOriginationDomainClient implements LoanOriginationDomainClient {
 
     private static final String IDEMPOTENCY_HEADER = "Idempotency-Key";
@@ -149,16 +149,16 @@ class WebClientLoanOriginationDomainClient implements LoanOriginationDomainClien
 }
 :::
 
-Fíjate en que el adaptador es **package-private** — `class`, no `public class`. Nada
-fuera del paquete de configuración puede referenciarlo por tipo; quien llama ve solo el
-puerto. Eso es intencionado, y es exactamente cómo se entregan los propios adaptadores de
-Firefly: la implementación es un detalle interno, el puerto es la superficie pública.
+Fíjate en que el adaptador es **package-private** — `class`, no `public class`. Nada fuera
+del paquete de configuración puede referenciarlo por tipo; los llamadores solo ven el port.
+Eso es intencionado, y es exactamente como se despliegan los propios adaptadores de Firefly:
+la implementación es un detalle interno, el port es la superficie pública.
 
-El bean que aporta este adaptador es donde la capacidad se gana la frase "se comporta como
-la del propio framework". Está regulado por las mismas dos condiciones que usa cada
-auto-configuración de Firefly:
+El bean que aporta este adaptador es donde la capacidad se gana la frase «se comporta como
+la del propio framework». Está cerrado por las mismas dos condiciones que usa cada
+autoconfiguración de Firefly:
 
-::: listing exp-lending/src/main/java/com/firefly/lumen/exp/config/LoanOriginationClientConfig.java | Listado 24.3 — el cableado regulado: se activa por propiedad, cede ante tu bean
+::: listing exp-lending/src/main/java/com/firefly/lumen/exp/config/LoanOriginationClientConfig.java | Listado 24.3 — el cableado cerrado: se activa por propiedad, cede ante tu bean
     @Bean
     @ConditionalOnProperty(prefix = "lumen.exp.loan-origination", name = "base-path")
     @ConditionalOnMissingBean
@@ -185,44 +185,45 @@ auto-configuración de Firefly:
     }
 :::
 
-Lee las dos anotaciones del bean `loanOriginationDomainClient`, porque entre ambas *son*
+Lee las dos anotaciones del bean `loanOriginationDomainClient`, porque entre las dos *son*
 el contrato de Firefly:
 
 - **`@ConditionalOnProperty(prefix = "lumen.exp.loan-origination", name = "base-path")`**
   — el adaptador de producción se materializa solo cuando un operador apunta la capa de
-  experiencia a un servicio de dominio real estableciendo `lumen.exp.loan-origination.base-path`.
-  Sin base path, no hay bean. Esto es "te das de alta añadiendo configuración".
+  experiencia a un servicio de dominio real estableciendo
+  `lumen.exp.loan-origination.base-path`. Sin base path, no hay bean. Esto es «te apuntas
+  añadiendo configuración».
 - **`@ConditionalOnMissingBean`** — si *cualquier otra cosa* ya ha aportado un
   `LoanOriginationDomainClient`, este método no se ejecuta. Los tests de Lumen registran
   un stub en memoria, que gana automáticamente; un equipo aguas abajo podría declarar su
-  propio bean de cliente y sobrescribir el del framework, sin necesidad de un fork. Esto
-  es "el framework se retira en el instante en que defines tu propio bean".
+  propio bean cliente y sustituir el del framework, sin necesidad de fork. Esto es «el
+  framework se retira en el instante en que defines tu propio bean».
 
-El bean también está ligado a un record `@ConfigurationProperties` tipado,
-`LoanOriginationClientProperties`, de modo que el base path y el timeout se configuran
-bajo el espacio de nombres `lumen.exp.loan-origination.*` — el mismo árbol de propiedades
-al estilo `firefly.*` que expone cada capacidad. Una capacidad que escribas debería ligar
-sus propias `@ConfigurationProperties` por exactamente esta razón: la configuración es
-datos, no código.
+El bean también está vinculado a un record `@ConfigurationProperties` tipado,
+`LoanOriginationClientProperties`, de modo que el base path y el timeout se configuran bajo
+el namespace `lumen.exp.loan-origination.*` — el mismo árbol de propiedades estilo
+`firefly.*` que expone cada capacidad. Una capacidad que escribas debería vincular sus
+propias `@ConfigurationProperties` exactamente por esta razón: la configuración es datos,
+no código.
 
 !!! spring "Equivalente en Spring"
     No hay nada específico de Firefly en ninguno de los tres listados — `@Configuration`,
     `@Bean`, `@ConditionalOnProperty`, `@ConditionalOnMissingBean` y
-    `@EnableConfigurationProperties` son todos Spring Boot de serie. Ese es justamente el
-    propósito completo. Firefly no te da una nueva API de extensión que aprender; te da un
-    *estilo de la casa* para usar el propio mecanismo de auto-configuración de Spring Boot,
-    de modo que las capacidades de cada equipo estén reguladas, sean sobrescribibles y
+    `@EnableConfigurationProperties` son todo Spring Boot de serie. Ese es justamente el
+    propósito. Firefly no te da una nueva API de extensión que aprender; te da un *estilo
+    de la casa* para usar el propio mecanismo de autoconfiguración de Spring Boot, de modo
+    que las capacidades de cada equipo estén cerradas por condiciones, sean sustituibles y
     descubribles de la misma manera. Si sabes escribir un starter de Spring Boot, sabes
     extender Firefly.
 
-## Paso 3 — Registra la auto-configuración para que Boot la encuentre
+## Paso 3 — Registra la autoconfiguración para que Boot la encuentre
 
 El ejemplo de Lumen coloca `LoanOriginationClientConfig` en el propio paquete de la
-aplicación, así que el escaneo de componentes lo recoge directamente. Una capacidad
+aplicación, de modo que el escaneo de componentes lo recoge directamente. Una capacidad
 *reutilizable* — una que publicas como jar para que otros servicios dependan de ella — no
 puede confiar en que la aplicación consumidora escanee tu paquete. En su lugar, la
-registras del modo en que Spring Boot 3 descubre las auto-configuraciones: un fichero de
-importación en texto plano en el classpath.
+registras de la manera en que Spring Boot 3 descubre las autoconfiguraciones: un fichero de
+import en texto plano en el classpath.
 
 Crea `src/main/resources/META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports`
 y lista tu clase de configuración, un nombre completamente cualificado por línea:
@@ -232,9 +233,9 @@ y lista tu clase de configuración, un nombre completamente cualificado por lín
 com.acme.fraud.FraudCheckAutoConfiguration
 ```
 
-Anota la clase con `@AutoConfiguration` (una especialización de `@Configuration` que
-también controla la ordenación relativa a otras auto-configuraciones) y mantén los
-guardas `@ConditionalOnProperty` / `@ConditionalOnMissingBean` del Paso 2:
+Anota la clase con `@AutoConfiguration` (una especialización de `@Configuration` que además
+controla el orden relativo a otras autoconfiguraciones) y mantén las guardas
+`@ConditionalOnProperty` / `@ConditionalOnMissingBean` del Paso 2:
 
 ```java
 // Illustrative: a reusable capability, discovered by the imports file above.
@@ -251,40 +252,37 @@ public class FraudCheckAutoConfiguration {
 }
 ```
 
-Ahora cualquier servicio que añada tu jar obtiene la capacidad automáticamente: Boot lee
-el fichero de importación, evalúa las condiciones y — si `acme.fraud.enabled` es `true` y
-no existe ya un `FraudCheckPort` — aporta el adaptador. Quita el jar y la capacidad
-desaparece. Pon la propiedad a `false` y permanece dormida. Declara tu propio bean
-`FraudCheckPort` y gana el tuyo. Ese comportamiento aditivo, reversible y sobrescribible
-en cualquier punto no es algo que añadieras a la fuerza — surge de usar el mismo mecanismo
-que usa el framework.
+Ahora cualquier servicio que añada tu jar obtiene la capacidad automáticamente: Boot lee el
+fichero de imports, evalúa las condiciones y — si `acme.fraud.enabled` es `true` y no existe
+ya un `FraudCheckPort` — aporta el adaptador. Quita el jar y la capacidad desaparece. Pon la
+propiedad a `false` y permanece latente. Declara tu propio bean `FraudCheckPort` y gana el
+tuyo. Ese comportamiento aditivo, reversible y sustituible en cualquier punto no es algo que
+hayas añadido a posteriori — se desprende de usar el mismo mecanismo que usa el framework.
 
-!!! warning "La ruta y el nombre del fichero de importación son exactos"
-    Spring Boot 3 busca precisamente
+!!! warning "La ruta y el nombre del fichero de imports son exactos"
+    Spring Boot 3 busca exactamente
     `META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports`.
-    Una errata en el directorio, en el nombre del fichero o en el nombre completamente
-    cualificado de la clase falla *en silencio* — Boot sencillamente nunca encuentra tu
-    configuración, las condiciones nunca se evalúan y tu bean nunca aparece, sin ningún
-    error al que apuntar. Si una capacidad "no se activa", revisa este fichero primero.
-    (Esto sustituye al antiguo mecanismo `META-INF/spring.factories`, que Boot 3 ha
-    eliminado para la auto-configuración.)
+    Un error tipográfico en el directorio, el nombre del fichero o el nombre completamente
+    cualificado de la clase falla *en silencio* — Boot simplemente nunca encuentra tu
+    configuración, las condiciones nunca se evalúan y tu bean nunca aparece, sin ningún error
+    al que apuntar. Si una capacidad «no se activa», comprueba este fichero primero. (Esto
+    sustituye al antiguo mecanismo `META-INF/spring.factories`, que Boot 3 ha eliminado para
+    la autoconfiguración.)
 
-## Paso 4 — Empaquétala como un starter al estilo de capa
+## Paso 4 — Empaquétala como un starter al estilo de las capas
 
-Una capacidad es un jar del que un equipo puede depender. Un **starter** es la idea de
-Firefly un nivel por encima: un módulo fino, solo de dependencias, que agrupa un
-*conjunto* coherente de capacidades más sus valores por defecto sensatos, de modo que un
-servicio obtiene toda una postura desde una única dependencia. Conociste cuatro de
-ellos — `starter-core`, `starter-domain`, `starter-data`, `starter-application` — a lo
-largo del libro; cada uno arrastra el módulo web, las capacidades adecuadas y los valores
-por defecto de producción (clientes resilientes, idempotencia, enmascaramiento de PII,
-logging JSON) para su capa.
+Una capacidad es un jar del que un equipo puede depender. Un **starter** es la idea Firefly
+un nivel por encima: un módulo fino, solo de dependencias, que agrupa un *conjunto* coherente
+de capacidades más sus valores por defecto sensatos, de modo que un servicio obtenga toda una
+postura a partir de una única dependencia. Conociste cuatro de ellos — `starter-core`,
+`starter-domain`, `starter-data`, `starter-application` — a lo largo del libro; cada uno trae
+el módulo web, las capacidades adecuadas y los valores por defecto de producción (clientes
+resilientes, idempotencia, enmascarado de PII, logging en JSON) para su capa.
 
 Empaquetas tu propio starter de la misma manera: un módulo Maven cuyo `pom.xml` declara
-dependencias y no entrega *código propio* (o solo una pequeña auto-configuración). La
-convención incluso lo nombra por ti — los módulos de Firefly son
-`fireflyframework-starter-*`; una organización que extienda la flota publicaría, por
-ejemplo, `acme-starter-fraud`:
+dependencias y no despliega *código propio* (o solo una pequeña autoconfiguración). La
+convención hasta lo nombra por ti — los módulos de Firefly son `fireflyframework-starter-*`;
+una organización que extienda la flota publicaría, por ejemplo, `acme-starter-fraud`:
 
 ```xml
 <!-- Illustrative: acme-starter-fraud/pom.xml — a starter is dependencies, not code. -->
@@ -305,47 +303,46 @@ ejemplo, `acme-starter-fraud`:
 Como el reactor de Lumen hereda el **POM padre** de Firefly e importa el **BOM**
 (Capítulo 3), ni el jar de la capacidad ni el starter declaran una sola versión para una
 dependencia del framework — el BOM las fija todas en el mismo conjunto libre de conflictos.
-Un servicio consumidor añade `acme-starter-fraud`, sin versión, y hereda una verificación
-de fraude completamente cableada que se activa con una propiedad. Ese es el quinto
-movimiento Firefly del Capítulo 1 — "servicios correctos en una dependencia" — aplicado a
+Un servicio consumidor añade `acme-starter-fraud`, sin versión, y hereda una comprobación de
+fraude completamente cableada que se activa con una sola propiedad. Ese es el quinto
+movimiento Firefly del Capítulo 1 — «servicios correctos en una dependencia» — aplicado a
 *tu* capacidad en lugar de a la del framework.
 
 !!! tip "Punto de control"
-    No necesitas un nuevo test para confirmar el patrón de extensión — ya lo ejecutaste.
-    Cada capítulo a partir del 6 pasó porque las auto-configuraciones del framework se
-    activaron por presencia en el classpath y los stubs de test del ejemplo las
-    sobrescribieron mediante `@ConditionalOnMissingBean`. Abre `LoanOriginationClientConfig`
-    (Listado 24.3) junto a cualquier test en `exp-lending/src/test`, y estarás mirando el
-    bean de producción y la sobrescritura de test que demuestran la retirada — el mismo
-    mecanismo exacto que hereda tu propia capacidad.
+    No necesitas un nuevo test para confirmar el patrón de extensión — ya lo has ejecutado.
+    Cada capítulo desde el 6 en adelante pasó porque las autoconfiguraciones del framework se
+    activaban por la presencia en el classpath y los stubs de test del ejemplo las sustituían
+    vía `@ConditionalOnMissingBean`. Abre `LoanOriginationClientConfig` (Listado 24.3) junto a
+    cualquier test en `exp-lending/src/test`, y estarás mirando el bean de producción y la
+    sustitución de test que prueba la retirada — el mecanismo exacto que hereda tu propia
+    capacidad.
 
-## Hacia producción: imágenes nativas vía el `-Pnative` del padre
+## Ir a producción: imágenes nativas vía el `-Pnative` del padre
 
-Un servicio Firefly es una aplicación Spring Boot, así que se entrega como una aplicación
-Spring Boot: un fat jar ejecutable desde `mvn package`, o una imagen OCI por capas desde
-el plugin de Maven de Spring Boot. La opción de producción interesante — y una que el POM
-padre ya cablea por ti — es una **imagen nativa de GraalVM**: la aplicación compilada
-anticipadamente a un ejecutable autónomo que arranca en decenas de milisegundos y usa una
-fracción del heap, a costa de una compilación más larga y de supuestos de mundo cerrado.
+Un servicio Firefly es una aplicación Spring Boot, así que se despliega como una aplicación
+Spring Boot: un fat jar ejecutable de `mvn package`, o una imagen OCI por capas del plugin
+Maven de Spring Boot. La opción de producción interesante — y una que el POM padre ya cablea
+por ti — es una **imagen nativa de GraalVM**: la aplicación compilada de antemano a un
+ejecutable autónomo que arranca en decenas de milisegundos y usa una fracción del heap, a
+cambio de un build más largo y supuestos de mundo cerrado.
 
 No configuras nada de esto por servicio. El POM padre de Firefly que heredaste en el
-Capítulo 3 lleva un perfil `native` que activa los dos plugins que necesita una compilación
-nativa — el procesamiento AOT de Spring Boot y el `native-maven-plugin` de GraalVM — y
-apunta la compilación de imagen de Spring Boot a un buildpack de Paketo. Activarlo es un
-solo flag:
+Capítulo 3 lleva un perfil `native` que activa los dos plugins que necesita un build nativo —
+el procesamiento AOT de Spring Boot y el `native-maven-plugin` de GraalVM — y apunta el build
+de imagen de Spring Boot a un buildpack de Paketo. Activarlo es una sola bandera:
 
 ```text
 mvn -Pnative -pl core-lending-loan-origination spring-boot:build-image
 ```
 
-Ese comando hace tres cosas que el perfil precableó por ti. Primero, el objetivo
-`process-aot` de Spring Boot se ejecuta en tiempo de compilación: evalúa tus definiciones
-de bean, tus auto-configuraciones condicionales y tus enlaces de propiedades *una vez*, de
-forma anticipada, y emite las pistas de reflexión, recursos y proxies que GraalVM necesita.
-Segundo, el buildpack `builder-jammy-tiny` de Paketo construye el contenedor con
-`BP_NATIVE_IMAGE` establecido, de modo que el compilador de GraalVM produce un ejecutable
-nativo en lugar de una capa de JVM. Tercero, el resultado es una imagen OCI mínima que
-contiene un único binario casi estático — sin JVM que calentar.
+Ese comando hace tres cosas que el perfil precableó por ti. Primero, la meta `process-aot`
+de Spring Boot se ejecuta en tiempo de build: evalúa tus definiciones de bean, tus
+autoconfiguraciones condicionales y tus vinculaciones de propiedades *una vez*, de antemano,
+y emite las pistas de reflexión, recursos y proxies que GraalVM necesita. Segundo, el buildpack
+`builder-jammy-tiny` de Paketo construye el contenedor con `BP_NATIVE_IMAGE` activado, de modo
+que el compilador de GraalVM produce un ejecutable nativo en lugar de una capa de JVM. Tercero,
+el resultado es una imagen OCI mínima que contiene un único binario casi estático — sin JVM que
+calentar.
 
 ```text
 # The parent's `native` profile sets these for you; you only pass -Pnative.
@@ -356,45 +353,43 @@ image:
 ```
 
 La recompensa es operativa: un servicio Lumen nativo arranca en frío en aproximadamente el
-tiempo que un servicio JVM dedica a cargar clases, lo que hace prácticos el escalado a cero
-y el escalado horizontal rápido. El coste es real y merece nombrarse. La compilación AOT
-cierra el mundo — cualquier cosa hecha mediante reflexión en tiempo de ejecución, proxies
-dinámicos o carga de recursos que el paso AOT no pudo ver debe declararse con pistas. Como
-las capacidades de Firefly son auto-configuraciones ordinarias de Spring Boot y el motor
-AOT de Spring Boot las entiende, la mayor parte del cableado de la flota se gestiona
-automáticamente; una capacidad que *tú* escribas debería ejercitarse bajo el perfil nativo
-antes de que confíes en ella en producción.
+tiempo que un servicio JVM dedica a cargar clases, lo que hace prácticos el escalado a cero y
+el escalado horizontal rápido. El coste es real y merece nombrarse. La compilación AOT cierra
+el mundo — cualquier cosa hecha por reflexión en tiempo de ejecución, proxies dinámicos o carga
+de recursos que el paso AOT no pudo ver debe declararse con pistas. Como las capacidades de
+Firefly son autoconfiguraciones corrientes de Spring Boot y el motor AOT de Spring Boot las
+entiende, la mayor parte del cableado de la flota se gestiona automáticamente; una capacidad que
+*tú* escribas debería ejercitarse bajo el perfil nativo antes de confiar en ella en producción.
 
 !!! warning "Las imágenes nativas son de mundo cerrado; prueba el binario nativo"
-    Un servicio que pasa cada test de JVM aún puede fallar como imagen nativa, porque
-    GraalVM no puede ver la reflexión ni el acceso a recursos que ocurren solo en tiempo de
-    ejecución. El fallo aparece en el arranque o en la primera petición del binario nativo,
-    no en tus tests de JVM. Trata `-Pnative` como un objetivo de compilación distinto:
-    construye la imagen, ejecuta los tests de integración del servicio *contra el contenedor
-    nativo en ejecución*, y solo entonces entrégalo. El paso AOT más las pistas de Spring
-    Boot cubren el framework; tu propio código reflexivo es tu responsabilidad para añadir
-    pistas y verificar.
+    Un servicio que pasa todos los tests de JVM aún puede fallar como imagen nativa, porque
+    GraalVM no puede ver la reflexión o el acceso a recursos que ocurre solo en tiempo de
+    ejecución. El fallo aparece en el arranque o en la primera petición del binario nativo, no
+    en tus tests de JVM. Trata `-Pnative` como un objetivo de build distinto: construye la
+    imagen, ejecuta los tests de integración del servicio *contra el contenedor nativo en
+    ejecución* y solo entonces despliégalo. El paso AOT más las pistas de Spring Boot cubren el
+    framework; tu propio código reflexivo es tu responsabilidad de declarar con pistas y
+    verificar.
 
 !!! spring "Equivalente en Spring"
-    El perfil nativo es Spring Boot 3 puro más GraalVM — `process-aot`, el
-    `native-maven-plugin` y los buildpacks de Paketo son exactamente lo que cablearías en
-    un proyecto Spring Boot corriente. La única contribución de Firefly es que el POM padre
-    lleva el perfil una sola vez, de forma idéntica, para cada servicio de la flota, de modo
-    que no rederivas la configuración del plugin en cada `pom.xml`. Lo activas con
-    `-Pnative`; todo lo de debajo es Boot de serie.
+    El perfil nativo es Spring Boot 3 puro más GraalVM — `process-aot`, el `native-maven-plugin`
+    y los buildpacks de Paketo son exactamente lo que cablearías en un proyecto Spring Boot
+    normal. La única contribución de Firefly es que el POM padre lleva el perfil una vez, de
+    forma idéntica, para cada servicio de la flota, de modo que no vuelves a derivar la
+    configuración del plugin en cada `pom.xml`. Lo activas con `-Pnative`; todo lo de debajo es
+    Boot de serie.
 
 ## Una lista de materiales, automáticamente
 
-Las plataformas reguladas deben responder cada vez más a "¿qué hay, exactamente, dentro de
-este artefacto?" — cada dependencia transitiva y su versión — para el escaneo de
-vulnerabilidades y las auditorías de la cadena de suministro. La respuesta es una **lista
-de materiales de software (SBOM)**, y el POM padre de Firefly genera una en cada
-compilación sin que se lo pidas.
+Las plataformas reguladas deben responder cada vez más a «¿qué hay, exactamente, dentro de este
+artefacto?» — cada dependencia transitiva y su versión — para el escaneo de vulnerabilidades y
+las auditorías de cadena de suministro. La respuesta es una **lista de materiales de software
+(SBOM)**, y el POM padre de Firefly genera una en cada build sin que lo pidas.
 
-El padre vincula el plugin de Maven de CycloneDX a la fase `package`. Su ejecución
-`generate-sbom` corre `makeAggregateBom` y escribe un documento CycloneDX — JSON, llamado
-`application.cdx`, bajo `META-INF/sbom/` *dentro del artefacto compilado* — de modo que el
-SBOM viaja con el jar o la imagen en lugar de como un fichero suelto al lado:
+El padre vincula el plugin Maven de CycloneDX a la fase `package`. Su ejecución `generate-sbom`
+corre `makeAggregateBom` y escribe un documento CycloneDX — JSON, llamado `application.cdx`, bajo
+`META-INF/sbom/` *dentro del artefacto construido* — de modo que el SBOM viaja con el jar o la
+imagen en lugar de como un fichero suelto:
 
 ```text
 # Inherited from the parent POM — produced by an ordinary `mvn package`.
@@ -402,90 +397,85 @@ target/classes/META-INF/sbom/application.cdx.json
 ```
 
 Como el documento es CycloneDX, los escáneres estándar (Grype, Trivy, Dependency-Track) lo
-ingieren directamente: puedes bloquear una entrega con "ningún CVE crítico conocido en el
-SBOM" y demostrar, artefacto por artefacto, qué se entregó. Combínalo con la imagen nativa
-y tu forma de producción es un pequeño contenedor OCI que arranca en milisegundos y lleva
-un inventario legible por máquina y firmable de todo lo que contiene — la postura de
-despliegue a la que se somete una plataforma bancaria, producida por la compilación que ya
-ejecutas.
+ingieren directamente: puedes condicionar una release a «ningún CVE crítico conocido en el SBOM»
+y demostrar, artefacto a artefacto, qué se desplegó. Combínalo con la imagen nativa y tu forma de
+producción es un pequeño contenedor OCI que arranca en milisegundos y lleva un inventario legible
+por máquina y firmable de todo lo que contiene — la postura de despliegue a la que se somete una
+plataforma bancaria, producida por el build que ya ejecutas.
 
-!!! note "Termino clave — SBOM (lista de materiales de software)"
-    Un **SBOM** es un inventario completo y legible por máquina de los componentes de un
-    artefacto de software — cada dependencia, su versión y su procedencia. **CycloneDX** es
-    uno de los dos estándares comunes de SBOM (SPDX es el otro). El padre de Firefly emite
-    un SBOM CycloneDX en `package`, embebido en el artefacto, de modo que cada servicio de
-    la flota entrega un inventario auditable por defecto en lugar de por acordarse de
-    hacerlo.
+!!! note "Término clave — SBOM (software bill of materials)"
+    Un **SBOM** es un inventario completo y legible por máquina de los componentes de un artefacto
+    de software — cada dependencia, su versión y su procedencia. **CycloneDX** es uno de los dos
+    estándares comunes de SBOM (SPDX es el otro). El padre de Firefly emite un SBOM CycloneDX en
+    `package`, embebido en el artefacto, de modo que cada servicio de la flota despliega un
+    inventario auditable por defecto en lugar de por acordarse.
 
 ## Más allá de este libro
 
 Dos esfuerzos paralelos se sitúan justo fuera de estas páginas. El
-**`fireflyframework-agentic-bridge`** conecta el framework de Java con una plataforma
-agéntica de Python documentada por separado, de modo que un servicio Firefly puede
-participar en flujos de trabajo de agentes sin abandonar el modelo reactivo que aprendiste
-aquí. Y el framework tiene **ports de lenguaje** hermanos — PyFly (Python) e
-implementaciones en curso de Rust, Go y .NET — que llevan las mismas opiniones a otros
-ecosistemas. Los cuatro son sus propios proyectos con su propia documentación; este libro
-se queda en Java, en la JVM, porque ahí es donde vive el viaje que acabas de terminar.
+**`fireflyframework-agentic-bridge`** conecta el framework Java con una plataforma agéntica de
+Python documentada por separado, de modo que un servicio Firefly pueda participar en flujos de
+trabajo de agentes sin abandonar el modelo reactivo que aprendiste aquí. Y el framework tiene
+**ports a otros lenguajes** hermanos — PyFly (Python), y las implementaciones en curso de Rust,
+Go y .NET — que llevan las mismas opiniones a otros ecosistemas. Los cuatro son sus propios
+proyectos con su propia documentación; este libro se queda en Java, en la JVM, porque ahí es
+donde vive el recorrido que acabas de terminar.
 
 ## Lo que has aprendido {.recap}
 
-- **Extender Firefly es escribir auto-configuración de Spring Boot.** Una capacidad es una
-  clase `@Configuration` (o `@AutoConfiguration`) regulada por `@ConditionalOnProperty` y
-  `@ConditionalOnMissingBean` — no hay una API de extensión aparte que aprender.
-- Una capacidad tiene tres partes: un **puerto** del que depende tu código (libre de
-  proveedores), un **adaptador** que lo cumple (package-private, detrás del puerto) y un
-  **bean regulado** que se activa por propiedad y cede ante cualquier bean que definas —
-  exactamente la forma del `LoanOriginationDomainClient` de la capa de experiencia, su
-  adaptador `WebClient` y su `LoanOriginationClientConfig`.
+- **Extender Firefly es escribir autoconfiguración de Spring Boot.** Una capacidad es una clase
+  `@Configuration` (o `@AutoConfiguration`) cerrada por `@ConditionalOnProperty` y
+  `@ConditionalOnMissingBean` — no hay una API de extensión separada que aprender.
+- Una capacidad tiene tres partes: un **port** del que depende tu código (libre de proveedor), un
+  **adaptador** que lo cumple (package-private, detrás del port) y un **bean cerrado por
+  condiciones** que se activa por propiedad y cede ante cualquier bean que definas — exactamente la
+  forma del `LoanOriginationDomainClient` de la capa de experiencia, su adaptador `WebClient` y su
+  `LoanOriginationClientConfig`.
 - Una capacidad reutilizable se **registra** vía
   `META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports`
-  para que Boot la descubra; un **starter** agrupa un conjunto coherente de capacidades más
-  valores por defecto en un único módulo solo de dependencias, del modo en que lo hacen los
-  cuatro starters de capa.
-- **Producción** cabalga sobre el POM padre: `-Pnative` construye una imagen nativa de
-  GraalVM vía el AOT de Spring Boot y un buildpack de Paketo (arranque en frío rápido,
-  mundo cerrado — verifica el binario nativo), y un **SBOM CycloneDX** se emite en cada
-  artefacto en `package` para la auditoría de la cadena de suministro.
-- El **puente agéntico** y los **ports de PyFly/Rust/Go/.NET** son proyectos paralelos,
-  documentados por separado y fuera del alcance aquí.
+  para que Boot la descubra; un **starter** agrupa un conjunto coherente de capacidades más valores
+  por defecto en un único módulo solo de dependencias, igual que hacen los cuatro starters de capa.
+- La **producción** cabalga sobre el POM padre: `-Pnative` construye una imagen nativa de GraalVM
+  vía el AOT de Spring Boot y un buildpack de Paketo (arranque en frío rápido, mundo cerrado —
+  verifica el binario nativo), y un **SBOM CycloneDX** se emite en cada artefacto en `package` para
+  la auditoría de cadena de suministro.
+- El **agentic bridge** y los **ports a PyFly/Rust/Go/.NET** son proyectos paralelos, documentados
+  por separado y fuera del alcance aquí.
 
-## Pruebalo tu mismo {.exercises}
+## Pruébalo tú mismo {.exercises}
 
-1. **Añade una propiedad a la junta.** Da a `LoanOriginationClientProperties` un nuevo
-   campo ligado — digamos un `maxRetries` int con un valor por defecto — y léelo en
-   `LoanOriginationClientConfig` para configurar el `WebClient`. Confirma que se liga bajo
-   `lumen.exp.loan-origination.max-retries` y toma el valor por defecto cuando está ausente.
+1. **Añade una propiedad a la costura.** Dale a `LoanOriginationClientProperties` un nuevo campo
+   vinculado — digamos un `maxRetries` int con un valor por defecto — y léelo en
+   `LoanOriginationClientConfig` para configurar el `WebClient`. Confirma que se vincula bajo
+   `lumen.exp.loan-origination.max-retries` y que toma el valor por defecto cuando está ausente.
    Acabas de extender la superficie de configuración de una capacidad al estilo Firefly.
-2. **Demuestra la retirada.** En un test de `exp-lending`, define tu propio `@Bean`
-   `LoanOriginationDomainClient`, establece `lumen.exp.loan-origination.base-path` para que
-   el bean de producción *normalmente* se activara, y comprueba que el inyectado es el tuyo.
-   Has demostrado que `@ConditionalOnMissingBean` sobrescribe el valor por defecto del
-   framework sin un fork.
-3. **Escribe el fichero de importación.** Esboza una capacidad reutilizable diminuta — un
-   puerto, un adaptador package-private y una clase `@AutoConfiguration` — y escribe la
-   línea exacta de
+2. **Prueba la retirada.** En un test de `exp-lending`, define tu propio `@Bean`
+   `LoanOriginationDomainClient`, establece `lumen.exp.loan-origination.base-path` de modo que el
+   bean de producción *se activaría* normalmente, y afirma que el inyectado es el tuyo. Has
+   demostrado que `@ConditionalOnMissingBean` sustituye el valor por defecto del framework sin un
+   fork.
+3. **Escribe el fichero de imports.** Esboza una pequeña capacidad reutilizable — un port, un
+   adaptador package-private y una clase `@AutoConfiguration` — y escribe la línea exacta de
    `META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports`
    que la registra. Nombra el modo de fallo si escribes mal la ruta.
-4. **Inspecciona un SBOM real.** Ejecuta `mvn -q -pl core-lending-loan-origination package`
-   y abre `target/classes/META-INF/sbom/application.cdx.json`. Encuentra tres módulos de
-   Firefly y confirma que sus versiones coinciden con el BOM del Capítulo 3 — el SBOM es la
-   coherencia de versiones del Capítulo 1 hecha auditable.
-5. **Planifica una compilación nativa.** Sin ejecutarla, lista qué cambia `-Pnative` frente
-   a un `package` corriente: qué dos plugins se activan, qué produce `process-aot` y un
-   patrón reflexivo en una capacidad propia que necesitaría una pista de GraalVM.
+4. **Inspecciona un SBOM real.** Ejecuta `mvn -q -pl core-lending-loan-origination package` y abre
+   `target/classes/META-INF/sbom/application.cdx.json`. Encuentra tres módulos de Firefly y confirma
+   que sus versiones coinciden con el BOM del Capítulo 3 — el SBOM es la coherencia de versiones del
+   Capítulo 1 hecha auditable.
+5. **Planifica un build nativo.** Sin ejecutarlo, enumera qué cambia `-Pnative` frente a un
+   `package` normal: qué dos plugins se activan, qué produce `process-aot` y un patrón reflexivo en
+   una capacidad propia que necesitaría una pista de GraalVM.
 
-## Adonde ir ahora
+## Adónde ir ahora
 
-Este es el último capítulo, así que el "siguiente paso" es tu propia flota. Has construido
-Lumen Lending de principio a fin — un cliente puede **solicitar** un préstamo a través de
-la capa de experiencia, que sea **puntuado** y **decidido** por una saga de dominio,
-recibir **ofertas** y **aceptar** una, con la capa de núcleo como sistema de registro y los
-eventos de dominio anunciando cada paso — a través de cuatro capas que se integran sobre
-contratos, nunca una base de datos compartida. Cada línea que leíste fue una porción
-verificada de un reactor en ejecución, y cada preocupación transversal — errores RFC 7807,
-idempotencia, enmascaramiento de PII, propagación de transacciones, contexto que sobrevive
-a las fronteras de los operadores — vino de un starter que añadiste en una línea. El
-impuesto empresarial que el Capítulo 1 nombró se paga una vez, en el framework, y lo hereda
-cada servicio. Ahora ve a codificar las decisiones difíciles ganadas de tu propia
-plataforma de la misma manera: como una capacidad que toda la flota obtiene gratis.
+Este es el último capítulo, así que «ahora» es tu propia flota. Has construido Lumen Lending de
+extremo a extremo — un cliente puede **solicitar** un préstamo a través de la capa de experiencia,
+hacer que sea **puntuado** y **decidido** por una saga de dominio, recibir **ofertas** y **aceptar**
+una, con la capa core como sistema de registro y eventos de dominio anunciando cada paso — a través
+de cuatro capas que se integran sobre contratos, nunca una base de datos compartida. Cada línea que
+leíste fue una porción verificada de un reactor en ejecución, y cada preocupación transversal —
+errores RFC 7807, idempotencia, enmascarado de PII, propagación de transacciones, contexto que
+sobrevive a las fronteras de los operadores — vino de un starter que añadiste en una línea. El
+impuesto empresarial que el Capítulo 1 nombró se paga una vez, en el framework, y lo hereda cada
+servicio. Ahora ve a codificar las decisiones tan duramente ganadas de tu propia plataforma de la
+misma manera: como una capacidad que toda la flota obtiene gratis.
