@@ -125,40 +125,104 @@ curl -s localhost:8081/api/v1/loan-applications/00000000-0000-0000-0000-00000000
 #  "extensions":{"category":"RESOURCE","retryable":false,...}}
 ```
 
-### Experience BFF (8080) — reaches the domain over HTTP
+### Experience BFF (8080) — the live exp → domain → core submit flow
+
+With all three tiers up, a single channel `POST` to the BFF flows end to end:
+the experience tier calls the domain over HTTP, the domain runs the
+`RegisterApplicationSaga`, the saga's root step writes to the core system of
+record over HTTP, and the core-assigned id is returned all the way back.
+
+Submit an application (**201 Created**, the application flowed exp → domain
+(saga) → core):
 
 ```bash
 curl -s -X POST localhost:8080/api/v1/experience/lending/applications \
   -H 'Content-Type: application/json' \
-  -d '{"productId":"22222222-2222-2222-2222-222222222222","requestedAmount":150000.00,"term":48,"purpose":"Vehicle purchase"}'
-# 502 application/problem+json:
-# {"type":"https://api.firefly.com/errors/upstream_error","title":"Bad Gateway","status":502,
-#  "detail":"domain loan-origination call failed: 404 Not Found from POST http://localhost:8082/api/v1/applications",...}
+  -d '{"productId":"11111111-1111-1111-1111-111111111111","requestedAmount":25000.00,"term":36,"purpose":"HOME_IMPROVEMENT","simulationId":"22222222-2222-2222-2222-222222222222"}'
+# 201:
+# {"applicationId":"786544c7-2f10-4110-95fe-682d63edbace",
+#  "simulationId":"22222222-2222-2222-2222-222222222222","status":"SUBMITTED",
+#  "requestedAmount":25000.00,"term":36,"purpose":"HOME_IMPROVEMENT",
+#  "createdAt":"2026-06-17T11:46:21.186231","updatedAt":"2026-06-17T11:46:21.186231"}
 ```
 
-This proves the **exp → domain** seam is wired and live: the BFF builds a
-`WebClient` from `lumen.exp.loan-origination.base-path`, calls the domain at
-`http://localhost:8082/api/v1/applications`, and faithfully maps the upstream
-response into an RFC 7807 problem detail. In this book sample the **domain tier
-intentionally exposes no REST controller** — it is saga/CQRS/event-driven and is
-driven from tests, not over HTTP — so the call returns `404` upstream and the BFF
-surfaces it as `502`. The core's own HTTP API (above) is the fully-served REST
-surface in this reactor.
+Verify it really landed in **core** (the `applicationId` above is the id the core
+system of record assigned):
+
+```bash
+curl -s localhost:8081/api/v1/loan-applications/786544c7-2f10-4110-95fe-682d63edbace
+# 200:
+# {"loanApplicationId":"786544c7-2f10-4110-95fe-682d63edbace",
+#  "applicationNumber":"9d2e8b8c-fc64-4aae-8578-c77558a3ec4b",
+#  "applicantId":"8db1c7ab-5d74-44fd-a4c7-d9433f0ddaba",
+#  "requestedAmount":25000.00,"currency":"EUR","termMonths":12,"purpose":"GENERAL",
+#  "status":"SUBMITTED","decisionReason":null,
+#  "createdAt":"2026-06-17T11:46:21.145765","updatedAt":"2026-06-17T11:46:21.145781"}
+
+curl -s localhost:8081/api/v1/loan-applications
+# 200: [ { the same application as above } ]
+```
+
+Read it back through the BFF (**200 OK**, exp → domain → core round-trip — the
+domain GET fetches it from core):
+
+```bash
+curl -s localhost:8080/api/v1/experience/lending/applications/786544c7-2f10-4110-95fe-682d63edbace
+# 200:
+# {"applicationId":"786544c7-2f10-4110-95fe-682d63edbace","simulationId":null,
+#  "status":"SUBMITTED","requestedAmount":25000.00,"term":12,"purpose":"GENERAL",
+#  "createdAt":"2026-06-17T11:46:21.145765","updatedAt":"2026-06-17T11:46:21.145781"}
+```
+
+On the domain tier you can see the saga drive the write (root step writes to core
+over HTTP, then the two dependent steps complete in-process):
+
+```text
+[orchestration] started   name=RegisterApplicationSaga ... pattern=SAGA
+[orchestration] step.success ... stepId=registerLoanApplication latencyMs=94
+[orchestration] step.success ... stepId=proposeOffer
+[orchestration] step.success ... stepId=registerApplicant
+[orchestration] completed name=RegisterApplicationSaga ... success=true
+```
+
+This proves the **exp → domain → core** path is wired and live: the BFF builds a
+`WebClient` from `lumen.exp.loan-origination.base-path` and calls the domain at
+`http://localhost:8082/api/v1/applications`; the domain's
+`LoanOriginationController` runs the saga; the saga's root step calls the core
+`WebClient` client (`firefly.lumen.core.loan-origination.base-path`) at
+`http://localhost:8081/api/v1/loan-applications`; and the core's system-of-record
+DTO comes back through both seams. (Some core fields — `currency`, `termMonths`,
+`purpose` — show defaults because the trimmed write seam carries only the
+applicant name and amount; richer mapping is left to the generated SDK in the
+real service.)
 
 ## Notes on the runnable wiring
 
-These changes make the apps boot and serve while keeping all 33 tests green
-(tests use their own `src/test/resources/application.yml`):
+These changes make the apps boot and serve the live three-tier flow while keeping
+all 33 tests green (tests use their own `src/test/resources/application.yml`):
 
 - **`src/main/resources/application.yml`** in each module: server port, plus the
   H2/R2DBC/Flyway keys (core), the CQRS/orchestration/EDA + `APPLICATION_EVENT`
-  switches (domain), and `lumen.exp.loan-origination.base-path` +
+  switches and `firefly.lumen.core.loan-origination.base-path` (domain), and
+  `lumen.exp.loan-origination.base-path` +
   `firefly.application.security.enabled=false` (exp).
 - **core `pom.xml`**: the H2 R2DBC and JDBC drivers were moved from `test` to
   `runtime` scope so `mvn spring-boot:run` / `java -jar` can boot on H2 without an
   external DB (test behaviour is unchanged).
+- **core `LoanApplicationDeleteController`**: a small second `@RestController` adds
+  `DELETE /api/v1/loan-applications/{id}` (idempotent) for the saga's compensation
+  path, kept separate so the primary controller sliced in the book stays verbatim.
+- **domain `LoanOriginationController`**: the orchestration tier's REST face —
+  `POST`/`GET /api/v1/applications` — that the BFF calls; it drives the
+  `RegisterApplicationSaga` and maps the channel request/response.
+- **domain `WebClientLoanOriginationClient` + `LiveLoanOriginationClientConfig`**:
+  the live core SDK seam, a `WebClient`-backed `LoanOriginationClient` that writes
+  to core over HTTP (and a `CoreLoanApplicationReader` for GET-by-id). It is
+  `@ConditionalOnProperty(firefly.lumen.core.loan-origination.base-path)` and
+  `@ConditionalOnMissingBean`, so it only activates when a core base path is set
+  and never displaces the slice tests' recording stub.
 - **domain `LoanOriginationClientConfig`**: an `@AutoConfiguration` provides a
-  default in-JVM `LoanOriginationClient` bean so the domain boots standalone (the
-  command handlers and saga require that seam, whose only other implementation is
-  a test-side stub). It is `@ConditionalOnMissingBean`, so the slice tests'
-  recording stub still takes precedence and no test behaviour changes.
+  default in-JVM `LoanOriginationClient` bean so the domain still boots standalone
+  when no core base path is set. It is `@ConditionalOnMissingBean`, so both the
+  live client (when a base path is configured) and the slice tests' recording stub
+  take precedence over it and no test behaviour changes.
