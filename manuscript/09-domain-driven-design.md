@@ -18,7 +18,11 @@ This is a conceptual chapter with a runnable payoff. Everything you slice here i
 ordinary Java and Spring Data; Firefly's contribution is the surrounding
 discipline — the finance validators from Chapter 6 guard the *edge*, and the domain
 model you build now guards the *core*. The two meet in the middle, and neither
-trusts the other to do its job.
+trusts the other to do its job. The same aggregate you harden here is the one that
+the live core service (`core-lending-loan-origination`, on `:8081`) constructs,
+*submits*, and persists every time a `POST` lands — so when the quickstart's create
+call comes back stamped `SUBMITTED`, you are watching exactly one of the transition
+methods below fire in production code.
 
 ## The anemic row, and why it leaks
 
@@ -54,6 +58,16 @@ that can change its own state, through methods that encode the legal transitions
     *on* the entity, so invariants are enforced wherever the object goes. DDD favors
     the rich model precisely because it removes the "did everyone remember to check?"
     failure mode.
+
+!!! spring "Spring parity"
+    The anemic style is not a Spring requirement — it is a habit Spring makes
+    *comfortable*. `@Data`, public setters, and a JPA/R2DBC entity with no behavior
+    are the default tutorial shape, and they work right up until two services disagree
+    about when a status may change. Spring does not forbid putting behavior on the
+    entity; nothing in the container cares whether `LoanApplication` has setters or
+    transition methods. DDD is the decision to use that freedom, and Firefly's tier
+    layout (a `core` system-of-record that *owns* its aggregates) is where that
+    decision pays off.
 
 ## Step 1 — A Money value object with an enforced invariant
 
@@ -91,6 +105,15 @@ free — which is exactly what makes two `Money` values of `150_000` compare equ
 a test without any ceremony. And because `minorUnits` is a `long`, there is no
 floating-point amount to round.
 
+Why minor units and a `long`, rather than the obvious `BigDecimal`? Because money is
+counted, not measured. A `BigDecimal` of `0.1` plus `0.2` is exact, but it still
+carries a *scale* that any caller can change — `1.5`, `1.50`, and `1.500` are three
+different `BigDecimal` objects that are not `equals`, which quietly breaks every
+value-equality test you would want to write. Counting whole cents in a `long`
+collapses that ambiguity: `150_000` is `150_000`, period. The trade-off — that you
+must remember the implied scale of 100 — is a single conversion the aggregate owns
+(Step 3), not a decision scattered across the codebase.
+
 The invariant pays off the moment you do arithmetic. Subtraction is defined in terms
 of the same factory, so a result that would dip below zero is rejected at the source
 rather than producing a nonsensical negative balance:
@@ -105,7 +128,21 @@ rather than producing a nonsensical negative balance:
 Notice what you did *not* write: there is no `setMinorUnits`, no way to mutate a
 `Money` after construction, and no path to a negative one. The invariant is not a
 rule you remember to apply; it is a property of the type. Any code that holds a
-`Money` holds a valid amount, full stop.
+`Money` holds a valid amount, full stop. And notice the *self-similarity*: `minus`
+does not re-implement the negativity check — it routes its result back through
+`Money.of`, so there is exactly one place the invariant is defined and every path,
+construction and arithmetic alike, must pass through it. That is the value object's
+quiet superpower: add a `plus`, a `times`, a `percentOf` next year, and as long as
+each routes through `of`, the invariant cannot be forgotten.
+
+!!! note "Key term — value object"
+    A **value object** is a domain type defined entirely by its attributes, with no
+    identity of its own. Two `Money` instances holding `150_000` *are* the same
+    money — there is no "which one" to ask about, the way there is for two loan
+    applications with different ids. Value objects are immutable and freely
+    shareable, and they are the natural home for invariants about a *quantity*
+    (an amount, a percentage, a date range), as opposed to invariants about a
+    *thing's lifecycle*, which belong on the aggregate.
 
 !!! spring "Spring parity"
     There is nothing Firefly-specific here — `Money` is plain Java. That is the
@@ -159,9 +196,17 @@ public enum ApplicationStatus {
 The legal transitions form a simple graph: `DRAFT → SUBMITTED → UNDER_REVIEW →
 APPROVED`, with `REJECTED` reachable from `SUBMITTED` or `UNDER_REVIEW`, and
 `CANCELLED` reachable from any non-terminal state. The aggregate expresses each edge
-as a method. There are no public setters for `status`; the *only* way to change it
-is to ask the application to perform a transition, and each transition first checks
-that it is legal from the current state.
+as a method. There are no public setters for `status` *in business code*; the
+intended way to change it is to ask the application to perform a transition, and each
+transition first checks that it is legal from the current state.
+
+Why put `isTerminal()` on the enum rather than spelling out the terminal states
+inside the aggregate's `cancel` method? Because "is this a final state?" is knowledge
+*about the status*, not about cancellation specifically — and if you ever add a
+`refund()` or an `archive()` transition that also must refuse a terminal application,
+you want one definition of "terminal," not three copies of `status == APPROVED ||
+status == REJECTED || ...` drifting out of sync. The enum owns facts about itself;
+the aggregate owns the transitions; neither duplicates the other.
 
 The forward path uses a shared guard, `requireStatus`, that throws if the application
 is not in the expected source state:
@@ -189,6 +234,17 @@ is not in the expected source state:
 Read `approve()` again: it is impossible to approve an application that is not
 `UNDER_REVIEW`, because the method refuses before touching the state. The "did
 everyone remember to check?" failure mode is gone — the check is the method.
+
+`submit()` is the transition you have already seen run live. In Chapter 2's
+quickstart, a `POST /api/v1/loan-applications` came back with `"status": "SUBMITTED"`,
+*not* `"DRAFT"` — and this is the line that produces it. The core service's
+`create(...)` builds the aggregate in `DRAFT`, then calls `application.submit()`
+before saving. So the JSON you saw on the wire is the literal post-condition of
+`submit()`: `requireStatus(DRAFT, ...)` passed, then `transitionTo(SUBMITTED)` ran.
+The same `submit()` also fires at the top of the reactor's live flow — `exp-lending`
+on `:8080` posts a create that the domain tier's `RegisterApplicationSaga` forwards
+into core, which constructs, submits, and persists exactly this aggregate as its
+system of record.
 
 The decision transitions, `reject` and `cancel`, carry a little more rule: each
 accepts more than one legal source state, and each *requires a reason*, which it
@@ -223,10 +279,28 @@ records on the aggregate as part of the same atomic change:
     }
 :::
 
-`cancel` is where `isTerminal()` earns its keep: rather than list every legal source
-state, it asks the enum whether the current state forbids any further change, and
-refuses if so. This is the aggregate and the value object collaborating — behavior
-distributed to where the knowledge lives.
+Two things are worth slowing down on here. First, the *ordering* of the checks: each
+method validates the transition's legality (the wrong-state guard) **before** it
+validates the argument (the missing reason). That is deliberate — a `reject` on an
+already-`APPROVED` application is a state error (`IllegalStateException`), not an
+input error, regardless of whether a reason was supplied. The reader's likely
+question — "what if I call `reject(null)` on an approved application?" — has a precise
+answer: you get the state error, because the state is the more fundamental problem.
+
+Second, `reject` and `cancel` express their guards differently, and the difference is
+meaningful. `reject` *enumerates* its two legal source states inline, because rejection
+is only legal from precisely those two. `cancel` instead asks `isTerminal()`, because
+cancellation is legal from *any* non-terminal state — enumerating the legal sources
+would mean listing `DRAFT`, `SUBMITTED`, and `UNDER_REVIEW` and then remembering to
+extend that list every time a new non-terminal state appears. Asking the enum "are you
+final?" is the open-ended phrasing; listing states is the closed one. Each transition
+picks the phrasing that matches its rule. This is the aggregate and the value-type
+(the enum) collaborating — behavior distributed to where the knowledge lives.
+
+Note too the `status != null` guard in `cancel`: a freshly built aggregate could in
+principle have a null status before the service stamps `DRAFT`, and the method refuses
+to dereference it — defensive against the half-constructed object, not just the
+illegal transition.
 
 All three private helpers keep the public methods declarative. `transitionTo` is the
 single chokepoint that mutates state, and it stamps `updatedAt` on every change so no
@@ -250,22 +324,41 @@ transition can forget the audit trail:
     }
 :::
 
+The payoff of funnelling every mutation through `transitionTo` is the `updatedAt`
+stamp: it is impossible to change the status without also advancing the audit
+timestamp, because there is no other code path that writes `this.status`. If a future
+contributor adds a seventh transition and forgets the audit field, they cannot —
+the only way to set the status is to call the chokepoint that sets both. That is the
+same one-place-for-the-rule discipline `Money.of` gave the value object, applied to
+the aggregate.
+
 !!! note "Key term — aggregate root"
     An **aggregate** is a cluster of objects treated as one unit for the purpose of
     changes, and the **aggregate root** is the single entity through which all
     changes flow. `LoanApplication` is the root here: outside code holds a reference
     to it, never to its `status` directly, and every modification goes through a
     method that protects the aggregate's invariants. The root is the boundary of
-    consistency.
+    consistency — everything inside it is updated together, atomically, or not at all.
+
+!!! note "Key term — invariant"
+    An **invariant** is a truth about the model that must hold at every moment a
+    caller can observe it: *money is never negative*; *a terminal application never
+    transitions again*; *every status change advances `updatedAt`*. Invariants are
+    not validations you run on request — they are properties the type structurally
+    cannot violate. The whole art of this chapter is moving rules from "checked when
+    someone remembers" into "true by construction."
 
 !!! warning "An aggregate guards its state only if you remove the back doors"
-    A behavior-rich aggregate is only as safe as its narrowest mutation path. If you
-    leave a public `setStatus` in place "for the mapper" or "for tests," every
-    invariant above becomes optional — any caller can skip the transition methods and
-    set an illegal state directly. The discipline is to expose *intent* methods
-    (`submit`, `approve`) and keep raw state mutation private. Where a framework needs
-    field access (Spring Data materializing a row), let the *mapper* be the only
-    bridge, never a hand-written setter you call from business code.
+    A behavior-rich aggregate is only as safe as its narrowest mutation path. This
+    entity is a Lombok `@Data` class, so it *does* generate a public `setStatus` —
+    Spring Data R2DBC and the service's construction step need field access. The
+    discipline, then, is not "there are no setters" but "business code never calls
+    the raw setter to change a *lifecycle* state." Approving, rejecting, and
+    cancelling go through the intent methods (`approve`, `reject`, `cancel`); the only
+    legitimate callers of `setStatus` are the framework materializing a row and the
+    service seeding the initial `DRAFT` before `submit()`. If you let arbitrary
+    business code reach for `setStatus(APPROVED)`, every invariant above becomes
+    optional. The transition methods are the contract; the setter is plumbing.
 
 ## Step 3 — Projecting the row into a value object
 
@@ -285,10 +378,28 @@ rather than rounding silently:
     }
 :::
 
-`movePointRight(2)` shifts `1500.00` to `150000`, and `longValueExact()` refuses any
-amount that would lose precision. The result flows through `Money.of`, so even on the
-read path the non-negative invariant is re-asserted. The persisted column and the
-domain value object stay in sync without either one leaking into the other's concerns.
+Read that one line carefully, because it does three jobs. `movePointRight(2)` shifts
+`1500.00` to `150000` — a scale shift, not a multiply, so it is exact for any
+fixed-scale decimal. `longValueExact()` then refuses any amount that would lose
+precision: a `BigDecimal` of `1500.001` (a tenth of a cent) throws
+`ArithmeticException` rather than silently truncating to `150000`. Finally the result
+flows through `Money.of`, so even on this *read* path the non-negative invariant is
+re-asserted — a corrupt row that somehow held a negative amount would be caught here,
+not propagated. The persisted column and the domain value object stay in sync without
+either one leaking into the other's concerns.
+
+The `null` guard answers the obvious question — what about an application captured
+before an amount was set? — by returning `null` rather than throwing, because "no
+amount yet" is a legitimate state of a draft, distinct from "an illegal amount." The
+projection only asserts the invariant on amounts that actually exist.
+
+!!! spring "Spring parity"
+    A vanilla Spring Data entity would expose `getRequestedAmount()` returning a raw
+    `BigDecimal` and stop there, leaving every caller to decide how to interpret the
+    scale. `requestedMoney()` is the DDD refinement: a *domain* accessor that returns
+    a domain type. The persistence column is still a `BigDecimal` the way Spring Data
+    wants it, but the model's vocabulary is `Money`. Spring is untouched; the
+    aggregate simply offers a richer read.
 
 ## Step 4 — A mapper isolates the domain from the wire
 
@@ -337,21 +448,43 @@ public interface LoanApplicationMapper {
 }
 :::
 
-`toNewEntity` does not set a status field by hand and does not trust the request to
-supply one; the application is built and then `submit()` (and the rest of the
-lifecycle) takes it forward through legal transitions. The DTO never sees the
-aggregate, and the aggregate never sees the DTO — the mapper is the membrane between
-them. This is the same separation the persistence row gives you: the domain model is
-free to evolve its internals without dragging the API or the database schema along.
+`toNewEntity` does not set a status field from the request and does not trust the
+request to supply one; it builds the aggregate with only the applicant-supplied
+fields, normalizing currency to upper case along the way. The status is then a domain
+decision made *outside* the request body — and here is the precise hand-off to the
+running flow. The service's `create(...)` takes the transient entity from `toNewEntity`,
+stamps the surrogate id, public number, and timestamps, seeds the status to `DRAFT`,
+calls `submit()`, marks it new, and saves it. That is why the live API answers
+`SUBMITTED`: the mapper builds it, the service drives it through `submit()`, and the
+transition method from Listing 9.4 — not a field copied off the wire — sets the final
+status. The DTO never sees the aggregate's transition methods, and the aggregate never
+sees the DTO's validation annotations — the mapper is the membrane between them.
+
+This is the same separation the persistence row gives you: the domain model is free
+to evolve its internals without dragging the API or the database schema along. Three
+shapes — the wire DTO (`CreateLoanApplicationRequest`/`LoanApplicationResponse`), the
+aggregate (`LoanApplication`), and the row — meet only at the mapper and the
+repository, never directly.
+
+!!! note "Key term — DTO vs. aggregate"
+    A **DTO** (data transfer object) is a flat, behaviorless shape for crossing a
+    boundary — here, JSON on the HTTP wire. The **aggregate** is the rich domain
+    object with rules. Keeping them as separate types looks like duplication ("both
+    have a `currency` field!") but it buys independence: the request can demand
+    `@ValidAmount` and `@NotBlank`, the response can omit the `newEntity` flag, and
+    the aggregate can carry transition methods, none of which the others need to know
+    about. The mapper is where the duplication is *resolved*, once, on purpose.
 
 !!! spring "Spring parity"
     `componentModel = SPRING` tells MapStruct to generate the implementation as a
     Spring bean, so you inject `LoanApplicationMapper` into a service exactly as you
-    would any `@Component` — no Firefly machinery involved. The mapper pattern is
-    plain Spring; what DDD adds is the *rule* that the mapper, not business code, owns
-    the translation between persistence rows, domain aggregates, and wire DTOs.
+    would any `@Component` — no Firefly machinery involved. `unmappedTargetPolicy =
+    IGNORE` keeps the generated `toResponse` quiet about target fields it does not
+    populate. The mapper pattern is plain Spring; what DDD adds is the *rule* that the
+    mapper, not business code, owns the translation between persistence rows, domain
+    aggregates, and wire DTOs.
 
-## Run it
+## Step 5 — Prove the rules with no Spring and no database
 
 The whole point of moving behavior onto the aggregate is that you can now test the
 *rules* with no Spring context and no database — just the objects. The test
@@ -378,6 +511,16 @@ Here is the happy path and the illegal-transition guard, side by side:
     }
 :::
 
+`happyPathReachesApproved` walks the full forward path `DRAFT → SUBMITTED →
+UNDER_REVIEW → APPROVED` and confirms the destination is terminal;
+`cannotApproveADraft` proves the guard refuses the illegal short-cut. Between them
+they cover both halves of the state machine's contract: the edges that exist and the
+edges that do not. The test class carries four more cases beyond these two —
+`rejectRequiresAReason` (a blank reason throws `IllegalArgumentException`),
+`rejectRecordsReasonAndIsTerminal` (the reason is recorded and the state goes
+terminal), `cannotCancelATerminalApplication` (the `isTerminal()` guard fires), and
+the projection test below — for six in total.
+
 The `Money` projection is just as testable: a `1500.00` requested amount projects to
 exactly `150_000` minor units, and because `Money` is a record, the assertion is a
 plain `assertEquals`:
@@ -390,53 +533,70 @@ plain `assertEquals`:
     }
 :::
 
+That single `assertEquals` is the value object's `equals` and the projection's
+exactness, both proven in one line — there is no `BigDecimal` scale to fuss over,
+because `Money` has already collapsed the amount to a `long`.
+
 Run the aggregate's test from the sample root:
 
 ```text
-mvn -q -pl core-lending-loan-origination -Dtest=LoanApplicationTest test
+$ mvn -q -pl core-lending-loan-origination -Dtest=LoanApplicationTest test
 ```
 
 You should see all six behaviors pass:
 
 ```text
-Tests run: 6, Failures: 0, Errors: 0, Skipped: 0
-BUILD SUCCESS
+[INFO] Tests run: 6, Failures: 0, Errors: 0, Skipped: 0 -- in com.firefly.lumen.core.domain.LoanApplicationTest
+[INFO] BUILD SUCCESS
 ```
+
+Those six are a strict subset of the eighteen the whole `core` module runs (the
+quickstart's `Tests run: 18`), which in turn is part of the reactor's thirty-three
+across `core` (18), `domain` (6), and `exp` (9). The aggregate tests are the fastest
+of them all, because they touch nothing but the objects.
 
 !!! tip "Checkpoint"
     Six green tests, no Spring, no database. That is the dividend of a rich domain
     model: the rules live on the objects, so you verify them with the fastest test
     there is — a plain JUnit test that constructs an aggregate and calls a method.
-    If you can run this in milliseconds, your invariants are in the right place.
+    If you can run this in milliseconds, your invariants are in the right place. The
+    *same* aggregate, the *same* `submit()`, then runs inside the live `core` service
+    on `:8081` (start it with `mvn spring-boot:run`, or as the repackaged
+    `java -jar` per `samples/lumen-lending/README.md`) — the unit test and the
+    `SUBMITTED` you saw on the wire are two views of one model.
 
 ## What you built {.recap}
 
 - A **`Money` value object** — an immutable `record` holding exact minor units, with
   the never-negative invariant enforced by `Money.of` and re-asserted on every
-  arithmetic operation, so an amount that exists is always valid.
+  arithmetic operation, so an amount that exists is always valid. Minor-unit `long`
+  storage gives clean value equality where a `BigDecimal` scale would betray you.
 - A **`LoanApplication` aggregate root** that owns its lifecycle: `submit`,
-  `startReview`, `approve`, `reject`, and `cancel` are the *only* ways to change
+  `startReview`, `approve`, `reject`, and `cancel` are the intended ways to change
   status, each refusing an illegal transition before it touches state, with
-  `ApplicationStatus.isTerminal()` deciding when no further change is allowed.
+  `ApplicationStatus.isTerminal()` deciding when no further change is allowed and
+  `transitionTo` as the single chokepoint that also stamps `updatedAt`.
 - A **`requestedMoney()` projection** that converts the persisted `BigDecimal` into
-  `Money` exactly — `longValueExact` fails loudly rather than rounding — keeping the
-  storage shape and the domain value object in sync without leaking either way.
+  `Money` exactly — `movePointRight(2)` then `longValueExact` fails loudly rather than
+  rounding — and re-asserts the non-negative invariant even on the read path.
 - A **MapStruct mapper** that is the membrane between persistence rows, the aggregate,
-  and the wire DTOs, applying domain defaults (`DRAFT` status, normalized currency)
-  on construction so business code never copies fields by hand.
-- A **six-case unit test** that proves all of it with no Spring and no database —
-  the payoff of putting behavior where the data lives.
+  and the wire DTOs, applying domain defaults (normalized currency, `DRAFT` start) on
+  construction so the service can drive the aggregate through `submit()` rather than
+  copying a status off the wire — the very reason the live create returns `SUBMITTED`.
+- A **six-case unit test** that proves all of it with no Spring and no database — the
+  fast subset of the module's eighteen and the reactor's thirty-three.
 
 ## Try it yourself {.exercises}
 
 1. **Add a `plus` to `Money`.** Open `Money.java` and add a `Money plus(Money other)`
    that mirrors `minus`, routing the result through `Money.of`. Add a test asserting
    `Money.of(100).plus(Money.of(50))` equals `Money.of(150)`. Why does `plus` not
-   need an extra guard, while `minus` does?
+   need an extra guard, while `minus` does — and why is routing through `Money.of`
+   still the right habit even when the guard can't fire?
 2. **Forbid re-submission.** In `LoanApplicationTest`, add a test that submits a draft
    and then asserts a second `submit()` throws `IllegalStateException`. Confirm it
-   passes against the current `submit()` — then explain which line in
-   Listing 9.4 makes it pass.
+   passes against the current `submit()` — then explain which line in Listing 9.4
+   makes it pass (hint: `requireStatus(DRAFT, ...)` against a now-`SUBMITTED` app).
 3. **Reinstate `startReview` coverage.** The test class exercises `submit`, `approve`,
    `reject`, and `cancel`, but `startReview` is only hit on the happy path. Add a test
    that calls `startReview()` on a fresh draft (before `submit`) and asserts it is
@@ -446,9 +606,16 @@ BUILD SUCCESS
    tests construct a negative amount. Restore the check, then add a test asserting
    `Money.of(-1)` throws. This is why invariants need their *own* tests, not just
    incidental coverage.
-5. **Trace the edge-to-core handoff.** Re-read Chapter 6's `@ValidAmount` validator,
-   then `Money.of` here. Sketch the two places a negative amount is rejected — at the
-   HTTP edge and inside the domain — and argue why removing either one is unsafe.
+5. **Trace the edge-to-core handoff.** Re-read Chapter 6's `@ValidAmount` on
+   `CreateLoanApplicationRequest`, then `Money.of` here. A negative amount is rejected
+   in *two* places — at the HTTP edge (400, RFC 7807) and inside the domain
+   (`IllegalArgumentException`). Sketch both, then argue why removing either one is
+   unsafe even though the other still fires.
+6. **Follow the `SUBMITTED` all the way out.** Open
+   `core-lending-loan-origination/.../service/LoanApplicationService.java` and find the
+   `create(...)` method. Identify the exact line that calls `submit()`, then connect
+   it to the `"status": "SUBMITTED"` JSON from Chapter 2's quickstart. Which would
+   change the response: editing `toNewEntity`, or editing `submit()`?
 
 ## Where to go next
 
@@ -456,4 +623,5 @@ The aggregate now enforces its rules, but it still changes state through direct 
 calls inside one service. Chapter 10 introduces **CQRS**: commands and queries flow
 through a bus, and the handler that approves an application becomes a discrete,
 testable unit dispatched by `@CommandHandlerComponent`. The rich domain model you
-built here is exactly what those handlers will orchestrate.
+built here is exactly what those handlers will orchestrate — and the same aggregate
+the domain tier's `RegisterApplicationSaga` already drives across the live reactor.

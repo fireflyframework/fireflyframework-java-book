@@ -45,8 +45,13 @@ tax** — inconsistent APIs, copy-paste boilerplate, subtle production bugs, slo
 onboarding, and a fleet that is hard to reason about precisely because every member
 is a little different.
 
-You can pay this tax forever, one service at a time. Or you can encode the answers
-*once*, in a layer every service inherits. That layer is a metaframework.
+The tax is insidious because no single instance of it is expensive. Hand-rolling a
+404 handler costs an afternoon; so does the next team's, and the next. The cost is
+in the *aggregate and the drift* — a hundred almost-identical solutions that no one
+can change at once, that disagree at the edges, and that each new hire must learn
+service by service. You can pay this tax forever, one service at a time. Or you can
+encode the answers *once*, in a layer every service inherits. That layer is a
+metaframework.
 
 !!! note "Key term — framework vs. metaframework"
     A **framework** gives you building blocks and a place to put your code (Spring
@@ -64,7 +69,9 @@ book using each in anger; here is the shape of the whole.
 **1 — Version coherence in one line.** A parent POM and a calendar-versioned BOM
 pin Spring Boot, Spring Cloud, and ~70 framework modules into one conflict-free
 set. Your services declare framework dependencies with *no version* and never
-fight a dependency-convergence error again. Chapter 3 is devoted to this.
+fight a dependency-convergence error again. Chapter 3 is devoted to this — and you
+will see it firsthand in Chapter 2, where the quickstart's `pom.xml` lists Firefly
+dependencies with the `<version>` element conspicuously absent.
 
 **2 — One error model, everywhere.** A tiny kernel defines a single exception
 hierarchy with a typed error code and an immutable context. Every module throws
@@ -84,6 +91,11 @@ public ResponseEntity<Map<String, Object>> handle(LoanNotFoundException ex) {
 // Firefly: throw a semantic exception; the framework emits RFC 7807 consistently.
 throw new ResourceNotFoundException("LoanApplication", id);
 ```
+
+The payoff is concrete and you will see it in the very next chapter: an unknown id
+comes back as a 404 problem detail with a `type`, `title`, `status`, and `detail`,
+plus an `extensions` object carrying the trace IDs and a remediation `suggestion` —
+the *same* body shape, byte for byte, that every other Firefly service emits.
 
 **3 — Capabilities as toggleable auto-configuration.** The hard cross-cutting
 concerns — CQRS command/query buses, transport-agnostic event publishing,
@@ -135,6 +147,16 @@ configures, and exposes* Spring Boot — and never replaces or forks it.
   starter to gain behavior, declare a bean to change it, remove the dependency to
   drop it.
 
+That "yields to any bean you define" clause is the whole contract in miniature, and
+it is not theoretical — the companion reactor leans on it directly. The domain tier
+ships an `@AutoConfiguration` that registers a default in-JVM client so the service
+boots standalone, *and* a live `WebClient`-backed client that takes over the moment
+a core base path is configured; both step aside for the slice tests' own stub. Each
+is gated with exactly the `@ConditionalOnProperty` / `@ConditionalOnMissingBean`
+guards described above. You will read that wiring in Part II — for now, the point is
+that "overridable by a bean" is how the framework configures *itself*, not a
+courtesy bolted on for users.
+
 In short: Firefly depends on Spring Boot, auto-configures it opinionatedly, and
 exposes it transparently. You are always writing Spring Boot — just never the same
 boilerplate twice.
@@ -153,26 +175,81 @@ one of Firefly's starters:
 
 - **Experience (`exp`)** — the channel-facing Backend-for-Frontend. Stateless
   composition: shape requests for an app or web client, call downstream domain
-  services, return lightweight DTOs. Built on `starter-application`.
+  services, return lightweight DTOs. Built on `fireflyframework-starter-application`.
 - **Domain** — business orchestration. Translates coarse commands into CQRS
   commands and queries, runs compensating sagas, and emits domain events. Owns no
-  database; calls core services over generated SDKs. Built on `starter-domain`.
+  database; calls core services over reactive clients. Built on
+  `fireflyframework-starter-domain`.
 - **Core** — the system of record. Owns the schema and the data, exposes plain
-  reactive CRUD and business APIs over R2DBC. Built on `starter-core`.
+  reactive CRUD and business APIs over R2DBC. Built on
+  `fireflyframework-starter-core`.
 - **Data** — enrichment, data quality, and lineage (for example, credit-bureau
-  data). Built on `starter-data`. We meet it in Chapter 15.
+  data). Built on `fireflyframework-starter-data`. The lending slice does not need a
+  data tier, so we meet it on its own in Chapter 15, where it plugs in.
 
-Tiers never share a database; they talk over HTTP through generated, reactive SDKs.
+Tiers never share a database; they talk over HTTP through reactive client seams.
 That single rule — *integrate over contracts, not over a shared schema* — is what
-lets a fleet evolve without every change rippling everywhere.
+lets a fleet evolve without every change rippling everywhere. The dependency
+direction is strictly one-way, **exp → domain → core**: the experience tier knows
+the domain, the domain knows the core, and nothing points back upstream.
+
+!!! note "Key term — tier and starter"
+    A **tier** is a role in the architecture — experience, domain, core, or data —
+    and each tier has exactly one matching Firefly **starter** that bundles the
+    capabilities that role needs. Picking a starter is picking a tier: a `core`
+    service inherits persistence and CRUD defaults, a `domain` service inherits CQRS
+    and orchestration, an `application` (experience) service inherits the BFF stack.
+    Chapter 2 scaffolds one of these from the matching `flywork` archetype.
+
+!!! spring "Spring parity"
+    A Firefly tier starter is a Spring Boot starter, the same mechanism as
+    `spring-boot-starter-webflux` — a curated dependency that pulls in a coherent set
+    and triggers auto-configuration. The difference is altitude: a vanilla starter
+    wires *one* capability (the web stack); a Firefly tier starter wires the *whole*
+    opinionated baseline for a kind of service. Same machinery, more in the box.
 
 ## What you will build
+
+Lumen Lending is not a diagram in this book — it is a running reactor you boot on
+your own machine, with **no Docker, no external database, and no message broker**.
+All three tiers exist today and run end to end: persistence is in-memory **H2**
+(with a Flyway migration), and events flow over the in-JVM `APPLICATION_EVENT`
+transport. Each tier runs with `mvn spring-boot:run` from its module directory, or
+as a self-contained executable `java -jar` (Spring Boot repackaging is wired) — the
+**core** on port 8081, the **domain** on 8082, and the **experience** BFF on 8080.
+The exact commands live in `samples/lumen-lending/README.md`.
+
+The proof that the tiers compose is a single live request. A channel `POST` to the
+experience BFF —
+
+```text
+POST http://localhost:8080/api/v1/experience/lending/applications
+```
+
+— returns `201 Created` with a `status` of `SUBMITTED`, having flowed the whole way
+down: the experience tier calls the domain over HTTP, the domain runs the
+`RegisterApplicationSaga`, the saga's root step writes to the core system of record
+over HTTP, and the core-assigned id comes back through both seams. You can then read
+the very same record straight out of core on port 8081 and watch the saga's steps
+log on the domain tier. That end-to-end submit is the spine of everything that
+follows; Chapter 2 takes you to it one tier at a time.
 
 By the last page, Lumen Lending lets a customer **apply** for a personal loan, get
 **scored**, receive a **decision**, review **offers**, and **accept** one — flowing
 from the experience tier, through a domain saga, into the core system of record,
 emitting events along the way. You will build it tier by tier, and every line you
-read is a verbatim slice of the companion reactor, verified by the build.
+read is a verbatim slice of the companion reactor, verified by the build (33 tests
+across the reactor — 18 in core, 6 in domain, 9 in experience — all green).
+
+!!! note "Honesty — what the lending slice does and does not exercise"
+    The book builds a deliberately *minimal but real* vertical, and it says so each
+    time. The live domain → core mapping is intentionally thin — the trimmed write
+    seam carries the applicant and amount, so a few core fields (currency, term,
+    purpose) land as defaults; richer mapping is the job of the generated SDK
+    (Chapter 7). Several heavyweight capabilities are taught *where they plug in*
+    rather than forced into the slice: the rule engine (Chapter 13), the data tier
+    (Chapter 15), and event sourcing (Chapter 12). When a feature is illustrative
+    rather than wired into the running sample, the text will say so plainly.
 
 But first you need it running. Chapter 2 takes you from an empty folder to a
 booting Firefly service in a few minutes — so the rest of the book has something to
@@ -182,14 +259,21 @@ grow.
 
 - Spring Boot makes one service easy; a *fleet* of consistent reactive services is
   a different, unsolved problem — the **enterprise tax** of re-implemented
-  cross-cutting plumbing and dependency drift.
+  cross-cutting plumbing and dependency drift, whose cost lives in the aggregate and
+  the drift, not in any single instance.
 - Firefly answers it as a **metaframework**: version coherence via parent + BOM, one
   RFC 7807 error model, capabilities as toggleable auto-configuration, vendors
   behind one-property ports, and correct services from a single tier starter.
 - Firefly is a **strict superset** of Spring Boot — depends on it, configures it,
-  exposes it; every bean overridable; adoption additive and reversible.
+  exposes it; every bean overridable; adoption additive and reversible. The
+  framework even configures *itself* this way, with `@ConditionalOnProperty` /
+  `@ConditionalOnMissingBean` guards.
 - The book builds **Lumen Lending** across four tiers — experience, domain, core,
-  data — that integrate over contracts, never a shared database.
+  data — that integrate over contracts, never a shared database, in the strict
+  direction **exp → domain → core**.
+- All three lending tiers run today with **no Docker**: core on 8081, domain on
+  8082, experience on 8080, with a proven live `exp → domain (saga) → core` submit
+  that returns `201 SUBMITTED` and persists in the core system of record.
 
 ## Try it yourself {.exercises}
 
@@ -204,10 +288,15 @@ grow.
 4. **Trace a request.** Does a correlation or trace ID in your services survive
    across an async or reactive boundary into a downstream call's logs? Try to follow
    one end to end.
+5. **Map the tiers.** Open `samples/lumen-lending/README.md` and find which port
+   each tier serves on and which starter it is built on. Predict, before Chapter 2,
+   what the dependency direction `exp → domain → core` means for which tier can boot
+   without the others running.
 
 ## Where to go next
 
-Chapter 2 scaffolds and boots your first Firefly service. If the reactive `Mono`/
-`Flux` references above felt fast, that is by design — Chapter 5 is the keystone
-that teaches the reactive model in full, and the prelude has enough to carry you
-until then.
+Chapter 2 scaffolds and boots your first Firefly service — the **core** tier on port
+8081 — then drives its loan-origination API by hand and proves it with the reactor's
+own tests. If the reactive `Mono`/`Flux` references above felt fast, that is by
+design — Chapter 5 is the keystone that teaches the reactive model in full, and the
+prelude has enough to carry you until then.

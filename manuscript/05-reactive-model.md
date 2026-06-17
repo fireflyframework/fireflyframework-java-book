@@ -1,11 +1,13 @@
 Everything else in this book stands on the idea in this chapter. A Firefly handler
 returns a `Mono`. A repository returns a `Flux`. The command bus, the event
-publisher, the resilient HTTP client — all of them speak Project Reactor. If the
-reactive model is hazy, every later chapter feels like sleight of hand: values
-appear from nowhere, methods return things you can't print, and a stray `.block()`
-brings the whole service down. So before you build another service, you are going
-to learn Reactor properly — operator by operator, signal by signal — until none of
-it is magic.
+publisher, the resilient HTTP client — all of them speak Project Reactor. The live
+three-tier flow you ran in the quickstart — a channel `POST` that travels
+exp → domain → core and comes back stamped `SUBMITTED` — is, underneath, one long
+chain of `Mono`s composed across three services. If the reactive model is hazy,
+every later chapter feels like sleight of hand: values appear from nowhere, methods
+return things you can't print, and a stray `.block()` brings the whole service down.
+So before you build another service, you are going to learn Reactor properly —
+operator by operator, signal by signal — until none of it is magic.
 
 The good news: you can learn it the way you learn any code, by running it and
 watching it pass. The companion reactor ships a single self-contained test,
@@ -33,7 +35,22 @@ import java.time.Duration;
 Three imports carry the chapter. `Mono` and `Flux` are the publishers you compose.
 `StepVerifier` from the `reactor-test` artifact is how you assert what a publisher
 emits *without blocking* — it drives a subscription and checks each signal in turn.
-`Duration` shows up only at the end, for the virtual-time example.
+`Duration` shows up only at the end, for the virtual-time example. Notice what is
+*not* imported: nothing from `org.fireflyframework`, nothing from Spring. This is
+deliberate. The reactive model you are about to learn is plain Project Reactor, the
+same library a vanilla Spring WebFlux app uses; Firefly does not replace it or wrap
+it, it *builds on* it. Learn it here, context-free, and it transfers unchanged to
+every handler, repository, and client in the rest of the book.
+
+!!! note "Key term — Project Reactor"
+    **Project Reactor** is the reactive-streams library that Spring WebFlux — and
+    therefore Firefly — is built on. It provides exactly two publisher types,
+    `Mono` and `Flux`, plus the operators that transform and combine them. It is an
+    implementation of the Reactive Streams specification (the `Publisher` /
+    `Subscriber` / `Subscription` contract), which is why a Reactor `Flux` and an
+    RxJava `Observable` can interoperate. Everything in this chapter is Reactor; the
+    Firefly-specific value (Step 9) is one hook *around* Reactor, not a change *to*
+    it.
 
 ## Step 1 — Mono and Flux are lazy publishers
 
@@ -76,6 +93,14 @@ signal is `onComplete()` — and, crucially, *triggers the subscription* and blo
 the test thread until the verification finishes. Without that terminal call, nothing
 would ever run.
 
+!!! spring "Spring parity"
+    If you came from Spring MVC, the mental flip is this: a blocking controller's
+    `return service.findById(id);` *does the work and hands back a value*; a reactive
+    handler's `return service.findById(id);` *hands back a recipe and does nothing
+    yet*. Same syntax, opposite timing. The framework — never you — subscribes later,
+    at the HTTP edge (Step 8). Internalising "the method returns a plan, not a
+    result" removes most of the early confusion.
+
 A `Mono` need not carry a value at all. Emptiness is a first-class, expected outcome:
 
 ::: listing core-lending-loan-origination/src/test/java/com/firefly/lumen/core/ReactiveModelTest.java | Listing 5.3 — completion with no value at all
@@ -90,7 +115,10 @@ A `Mono` need not carry a value at all. Emptiness is a first-class, expected out
 no exception; "nothing was found" is a normal signal, not an error. This is why a
 Firefly repository's `findById` returns `Mono<LoanApplication>`: a missing row is an
 empty `Mono`, and you handle it with an operator like `switchIfEmpty` rather than a
-null check.
+null check. You saw this exact pattern pay off in the quickstart: a `GET` for an
+unknown id returned an empty `Mono` from the repository, which the handler turned
+into the RFC 7807 404 you read at
+`localhost:8081/api/v1/loan-applications/00000000-0000-0000-0000-000000000000`.
 
 !!! tip "Checkpoint"
     Before going further, make sure the test file compiles and these first methods
@@ -154,6 +182,15 @@ work happens at subscribe time, on the right thread, and re-runs on retry.
     loop. When the value comes from real work, wrap the work: `Mono.fromCallable` or
     `Mono.defer`. Reserve `Mono.just` for values you already hold in hand.
 
+The difference between `fromCallable` and `defer` is one of return type, and it
+trips people up, so name it now. `Mono.fromCallable(() -> x)` takes a supplier that
+returns a *plain value* `x` and wraps it in a `Mono`. `Mono.defer(() -> someMono)`
+takes a supplier that returns *an already-built `Mono`*, and defers building it
+until each subscription. Reach for `defer` when the recipe itself must be
+constructed fresh per subscriber — for instance, when it captures a timestamp or a
+fresh UUID that should differ on every retry. You will meet `defer` again in Step 9,
+where reading the subscription `Context` uses the same deferred-supplier shape.
+
 !!! tip "Checkpoint"
     In your scratch buffer, replace `Flux.just(1, 2, 3)` with `Flux.range(1, 3)` and
     rerun the method. It still passes — `range(1, 3)` emits `1, 2, 3`. Now try
@@ -188,6 +225,13 @@ The test demonstrates `filter` and `map` in one pipeline:
 even values through — `2, 4, 6`. `.map(n -> n * 10)` transforms each — `20, 40, 60`.
 None of this runs when you build `evensDoubled`; it is still a recipe. Only
 `StepVerifier` subscribing pulls values through the chain, one at a time.
+
+A subtlety worth internalising: each operator returns a *new* publisher and leaves
+the original untouched. `Flux.range(1, 6)` is not mutated by `.filter(...)`; the
+filter wraps it, and `.map(...)` wraps that. The chain is a stack of recipes, built
+outside-in, that runs inside-out at subscribe time. This is why a single source can
+feed two different pipelines without interference, and why re-subscribing always
+re-runs from the top — the property that makes `retry` (Step 5) work.
 
 The four operators you will use constantly:
 
@@ -224,12 +268,27 @@ Mono<Quote> quote = Mono.zip(
     .map(both -> new Quote(both.getT1(), both.getT2()));
 ```
 
+This `flatMap`-then-`map` shape is not a toy: it is *literally* what the live
+quickstart flow does across services. When you `POST` to the experience tier, the
+BFF `flatMap`s the domain client's `Mono` response; the domain handler `flatMap`s
+the saga's result, whose root step `flatMap`s the core client's
+`Mono<LoanApplicationDto>` write. Three `flatMap`s across three JVMs, and the whole
+thing is still one cold recipe that runs when the BFF's WebFlux edge subscribes.
+
 !!! spring "Spring parity"
     These operators are pure Project Reactor — Firefly adds nothing here, and a
     plain Spring WebFlux app composes the exact same way. If you came from Spring
     MVC and the Java `Stream` API, `map`/`filter` will feel familiar; the new idea is
     `flatMap` for *asynchronous* steps, which has no `Stream` equivalent because
     streams are synchronous. Think of `flatMap` as the reactive `await`-and-continue.
+
+!!! note "Key term — flatMap concurrency and ordering"
+    On a `Flux`, `flatMap` subscribes to the inner publishers **eagerly and in
+    parallel** (up to a concurrency limit), so results can arrive *out of order* —
+    fine for independent calls, wrong when order matters. When you need to preserve
+    source order, use `concatMap` (runs inner publishers one at a time, in sequence)
+    or `flatMapSequential` (runs in parallel but re-orders results). On a `Mono`
+    there is only one element, so the distinction does not arise.
 
 !!! tip "Checkpoint"
     Add a `.map(n -> n + 1)` to the end of the chain in `operatorsTransformTheStream`
@@ -259,6 +318,12 @@ just before it (you will use it for errors in the next step); `.expectComplete()
 followed by `.verify()` is the long form. Forget the terminal call and your "test"
 builds a verifier and never subscribes — so it passes by doing nothing. That is the
 most common reactive-testing bug, and it is silent.
+
+Two more `StepVerifier` steps are worth knowing now, because you will use them in the
+exercises. `.expectNextCount(n)` asserts *how many* `onNext` signals arrive without
+naming their values — handy for a `Flux` whose contents are generated. And
+`.expectError(SomeException.class)` is the terse form of the error match you are
+about to meet, asserting only the terminal error's type.
 
 !!! note "Key term — cold vs. hot publishers"
     Every publisher in this test is **cold**: it does no work until subscribed, and
@@ -303,6 +368,14 @@ message, and `.verify()` runs it. Note the terminal here is `.verify()`, not
 `.verifyComplete()` — the stream does *not* complete, it fails, and asserting
 completion would be wrong.
 
+This is the same machinery behind every RFC 7807 error you saw in the quickstart.
+When the core handler's `Mono` emits `onError` — a `ResourceNotFoundException` for an
+unknown id, or a validation failure for a negative `requestedAmount` — that terminal
+signal travels down to the WebFlux edge, where Firefly's `GlobalExceptionHandler`
+catches it and renders the `application/problem+json` body. An exception in reactive
+code is just an `onError` signal looking for an operator (or the framework) to handle
+it. Chapter 6 traces that exact path.
+
 In real code you do not just observe errors; you *recover*. The recovery operators
 are the reactive equivalents of `catch` and a retry loop:
 
@@ -334,6 +407,16 @@ pricingClient.rateFor(product)
     .retryWhen(Retry.backoff(3, Duration.ofMillis(200))   // 3 retries, exponential
         .filter(ex -> ex instanceof TimeoutException));    // only retry timeouts
 ```
+
+!!! warning "Recover on purpose, not by reflex"
+    `onErrorResume` and `retry` are powerful enough to hide real failures. A blanket
+    `.onErrorReturn(default)` that swallows *every* error turns a broken downstream
+    into silently wrong data — the reactive equivalent of `catch (Exception e) {}`.
+    Match the specific exception you know how to recover from (as the snippets above
+    do), let the rest propagate as `onError`, and let Firefly's error handler turn it
+    into an honest RFC 7807 response. A retry that re-runs a *non-idempotent* write is
+    its own foot-gun; the saga's compensation path (Chapter 11) exists for exactly
+    that reason.
 
 !!! spring "Spring parity"
     None of this is Firefly-specific — `onErrorResume`, `retry`, and `retryWhen` are
@@ -380,13 +463,25 @@ The schedulers you will actually name:
 - **`Schedulers.parallel()`** — a fixed pool sized to the CPUs, for CPU-bound work.
 - **`Schedulers.immediate()`** — run on the current thread; the default behavior.
 
+A common beginner's question: "if the default is non-blocking, why is there an
+event loop at all?" Because the event loop's strength *is* that it never waits. A
+handful of threads can serve thousands of in-flight requests precisely because each
+thread, instead of parking while the database answers, registers a callback and
+moves on to the next request. That bargain only holds if nobody blocks. One
+`Thread.sleep` or synchronous JDBC call on an event-loop thread takes that thread out
+of rotation, and throughput collapses far below what a thread-per-request server
+would manage. The schedulers above are how you keep the bargain when you have no
+choice but to call something blocking.
+
 !!! warning "Don't block the event loop"
     The cardinal sin of reactive code is a blocking call on an event-loop thread —
     a JDBC query, `Thread.sleep`, a `.block()`, a synchronous SDK. The fix is never
     "make it faster"; it is `subscribeOn(Schedulers.boundedElastic())` to move the
     blocking work to a pool built to absorb it. Better still, use a non-blocking
     client (R2DBC, `WebClient`) and avoid the blocking call entirely. This is why
-    the prelude insisted: never block.
+    the prelude insisted: never block. (The companion reactor follows its own advice
+    — core persists over **R2DBC** against H2, not blocking JDBC, so the event loop
+    stays clean even with no Docker.)
 
 !!! spring "Spring parity"
     Schedulers are pure Reactor and behave identically in plain Spring WebFlux.
@@ -423,19 +518,22 @@ in a clock you control, so you advance an hour instantly and assert what happens
 Three details make this work. First, you pass a **supplier** —
 `() -> Mono.just("done").delayElement(...)` — not a built `Mono`. `withVirtualTime`
 must install its virtual clock *before* the publisher is created, so it can only be
-given a recipe to build later. Second, `.expectSubscription()` asserts the
-subscription signal, the moment the virtual clock starts. Third, `.thenAwait(
-Duration.ofHours(1))` advances that virtual clock a full hour *immediately* — no
-real waiting — at which point the delayed element fires, so `.expectNext("done")`
-and `.verifyComplete()` succeed. The test runs in microseconds yet proves an hour of
-behavior.
+given a recipe to build later. (This is the same deferred-supplier shape as
+`Mono.defer` from Step 2 — the publisher must be born *after* the clock is in place.)
+Second, `.expectSubscription()` asserts the subscription signal, the moment the
+virtual clock starts. Third, `.thenAwait(Duration.ofHours(1))` advances that virtual
+clock a full hour *immediately* — no real waiting — at which point the delayed
+element fires, so `.expectNext("done")` and `.verifyComplete()` succeed. The test
+runs in microseconds yet proves an hour of behavior.
 
 !!! note "Key term — virtual time"
     **Virtual time** replaces the real scheduler clock with one the test advances by
     hand via `thenAwait`. It lets you assert *when* signals fire — that a timeout
     triggers at exactly 30 seconds, that a backoff waits 200 ms — deterministically
     and instantly. Any time-based operator should be tested this way; never with a
-    real `sleep`.
+    real `sleep`. The `retryWhen(Retry.backoff(...))` policy from Step 5 is a prime
+    candidate: virtual time lets you prove the backoff spacing without your test
+    suite taking the backoff's wall-clock duration.
 
 !!! tip "Checkpoint"
     Change `.thenAwait(Duration.ofHours(1))` to `.thenAwait(Duration.ofMinutes(59))`
@@ -475,6 +573,15 @@ problem response (Chapter 6); a `Flux` return becomes a JSON array or a streamin
 response. The test you just ran and the production handler are *the same model* —
 which is exactly why learning it on a six-method test transfers completely.
 
+This is no longer hypothetical for you: it is precisely what happened when you ran
+the quickstart's `mvn spring-boot:run` on the core service (port `8081`, H2 +
+Flyway, no Docker) and `POST`ed a loan application. WebFlux subscribed to the
+handler's `Mono` on a Netty thread, the recipe ran (validate → persist → submit), it
+emitted one `onNext` carrying the `SUBMITTED` DTO, and the framework serialized that
+to the `201 Created` body you read. The whole module is also a runnable
+`java -jar` — Spring Boot's repackage is wired — so the *same* subscription happens
+whether you boot via Maven or the fat jar.
+
 !!! spring "Spring parity"
     This is plain Spring WebFlux: returning `Mono<T>` or `Flux<T>` from a
     `@RestController` and letting the framework subscribe is identical with or
@@ -493,9 +600,20 @@ as it crosses `flatMap`, `publishOn`, and scheduler boundaries, and `ThreadLocal
 does **not** follow it. Your logs end up blank — or worse, stamped with another
 request's ID.
 
-Reactor's own answer is the **Context**: an immutable, subscription-scoped map that
-*does* travel with the subscription across every operator. You can read and write it
-explicitly:
+You have already *seen* the happy ending of this story without realising it. Look
+back at the request-thread log lines from the quickstart — they carry a `traceId`
+and `spanId` on every line, threaded through filters and into the handler:
+
+```json
+{"timestamp":"2026-06-17T08:21:44.132+0000","message":"Generated new transaction ID: ce0c2ede-0e81-430f-9c99-7464a1613884","logger":"o.f.core.config.TransactionFilter","level":"DEBUG","traceId":"bfa32cdc5313c5951ec124b491f07687","spanId":"78466db40897c823"}
+{"timestamp":"2026-06-17T08:21:44.134+0000","message":"IdempotencyWebFilter.filter: Processing request POST /api/v1/loan-applications","logger":"o.f.w.i.filter.IdempotencyWebFilter","level":"DEBUG","traceId":"bfa32cdc5313c5951ec124b491f07687","spanId":"78466db40897c823"}
+```
+
+That those two lines share *one* `traceId` even though the request has already moved
+from a filter into a reactive chain is not luck — it is exactly the mechanism this
+step is about. Reactor's own answer is the **Context**: an immutable,
+subscription-scoped map that *does* travel with the subscription across every
+operator. You can read and write it explicitly:
 
 ```java
 Mono.deferContextual(ctx ->
@@ -521,10 +639,17 @@ thread runs it. Your logs carry the right correlation ID across every `flatMap` 
 You will not find that call in `ReactiveModelTest` — the test is a deliberately
 context-free tour of the operators. In a Firefly service you will not write it
 either, and that is the point: the observability auto-configuration enables the hook
-and registers the trace and tenant `ThreadLocal` accessors for you, so context
-propagation simply *works* across the fleet. This is the capability the prelude and
+for you. You watched it announce itself in the quickstart boot log:
+
+```json
+{"timestamp":"2026-06-17T08:21:44.319+0000","message":"Reactor automatic context propagation enabled — ThreadLocal/MDC values will automatically bridge to Reactor Context across thread boundaries","logger":"o.f.o.t.ReactiveContextPropagationAutoConfiguration","level":"INFO"}
+```
+
+That single boot line is what makes the two `DEBUG` lines above share a `traceId`,
+and it is what would let that same trace context follow the live exp → domain → core
+flow across thread hops within each tier. This is the capability the prelude and
 Chapter 1 both flagged as the most valuable thing Firefly does on the reactive
-stack, and now you know precisely what it fixes.
+stack, and now you know precisely what it fixes and where to look for the proof.
 
 !!! warning "Without context propagation, reactive logs lie"
     A correlation ID that does not survive operator boundaries is worse than no ID:
@@ -539,7 +664,9 @@ stack, and now you know precisely what it fixes.
     hook — available to any Spring Boot 3 / WebFlux app. The difference is wiring:
     in plain Spring you enable the hook and register each `ThreadLocalAccessor`
     yourself; Firefly's observability starter does it for the trace and tenant
-    context out of the box, identically in every service.
+    context out of the box, identically in every service. The boot line above
+    (`ReactiveContextPropagationAutoConfiguration`) is that auto-configuration
+    announcing it has done the work for you.
 
 ## Run it
 
@@ -559,7 +686,10 @@ BUILD SUCCESS
 
 Six green tests — one per facet of the model: a `Mono` value, an empty `Mono`, a
 `Flux` sequence, an operator pipeline, an error signal, and a virtual-time delay.
-That is the entire reactive vocabulary the rest of the book uses.
+That is the entire reactive vocabulary the rest of the book uses. These six are part
+of the core module's eighteen tests, which are themselves part of the reactor's
+thirty-three (core 18, domain 6, exp 9) — run `mvn clean verify` from
+`samples/lumen-lending` to see them all go green at once.
 
 ## What you learned {.recap}
 
@@ -571,16 +701,19 @@ That is the entire reactive vocabulary the rest of the book uses.
   asserting that exact sequence — and the terminal call (`verifyComplete`/`verify`)
   is what actually runs it.
 - You **compose** with operators: `map`/`filter` for synchronous transforms,
-  `flatMap` for chaining asynchronous calls, `zip` for combining, and
-  `onErrorResume`/`retry`/`retryWhen` for recovery. Errors flow down the stream as a
-  terminal signal, not up a call stack.
+  `flatMap` for chaining asynchronous calls (and `concatMap` when order matters),
+  `zip` for combining, and `onErrorResume`/`retry`/`retryWhen` for recovery. Errors
+  flow down the stream as a terminal signal, not up a call stack — which is exactly
+  how the quickstart's RFC 7807 errors are born.
 - **Schedulers** control which thread runs the work; you move unavoidable blocking
   calls off the event loop with `subscribeOn(Schedulers.boundedElastic())` and never
   block the loop. **Virtual time** lets you test time-based operators instantly.
-- A handler returns a `Mono`/`Flux`; WebFlux subscribes and writes the response. The
+- A handler returns a `Mono`/`Flux`; WebFlux subscribes and writes the response —
+  the same subscription that turned your `POST` into a `201 SUBMITTED`. The
   production linchpin is **automatic context propagation** —
-  `Hooks.enableAutomaticContextPropagation()` — which keeps trace and tenant context
-  alive across operator boundaries. Firefly enables it for you.
+  `Hooks.enableAutomaticContextPropagation()` — which keeps the `traceId`/`spanId`
+  you see in the logs alive across operator boundaries. Firefly enables it for you,
+  and the boot log says so.
 
 ## Try it yourself {.exercises}
 
@@ -599,7 +732,8 @@ and keep it green.
    value and the stream completed.
 3. **Empty is not an error.** Write a test that `Mono.<String>empty()` followed by
    `.switchIfEmpty(Mono.just("fallback"))` emits `"fallback"`. This is the exact
-   pattern a handler uses to turn a missing row into a default or a 404.
+   pattern the core `GET` handler uses to turn a missing row into the RFC 7807 404
+   you saw at `localhost:8081/api/v1/loan-applications/<unknown-id>`.
 4. **Time out fast.** Using `StepVerifier.withVirtualTime`, build
    `Mono.just("late").delayElement(Duration.ofSeconds(10)).timeout(Duration.ofSeconds(2))`,
    advance virtual time, and assert it emits an `onError` of `TimeoutException` — a
@@ -608,6 +742,11 @@ and keep it green.
    `Flux.range(1, 3)` with a `.publishOn(Schedulers.parallel())` and print
    `Thread.currentThread().getName()` in a `doOnNext` before and after the
    `publishOn`. Confirm the name changes at the boundary — then delete it.
+6. **Read the live trace.** Boot the core service with `mvn spring-boot:run` (it
+   serves on `8081`), `POST` a loan application, and find the `traceId` in the
+   request-thread log lines. Confirm the *same* `traceId` appears on more than one
+   line of the same request — that shared id is automatic context propagation
+   (Step 9) doing its job across operator boundaries.
 
 ## Where to go next
 

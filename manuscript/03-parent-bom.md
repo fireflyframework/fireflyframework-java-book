@@ -10,12 +10,15 @@ Firefly's answer is the most boring kind of good engineering: pin everything,
 once, in a place every service inherits. This chapter is short because the payoff
 is short — a parent POM, a BOM, one property — and after this page your modules
 declare framework dependencies with *no version at all*. You already saw the shape
-in the prelude ("inherit a parent, add a starter, omit versions"). Here you see the
-real reactor wiring that makes it true, and you learn when to inherit and when to
-import.
+in the prelude ("inherit a parent, add a starter, omit versions") and again in
+Chapter 2's quickstart, where `core-lending-loan-origination` booted on exactly
+this wiring. Here you see the real reactor plumbing that makes it true, you learn
+when to inherit and when to import, and — new in this pass — you see the one build
+plugin that turns each module into a runnable executable jar.
 
 We work entirely in the Lumen Lending build files. By the end you will be able to
-read every `pom.xml` in the reactor and know exactly where each version comes from.
+read every `pom.xml` in the reactor and know exactly where each version comes from,
+and how each tier becomes something you can `java -jar`.
 
 ## The two coordination files
 
@@ -38,8 +41,11 @@ Here is the parent declaration at the top of the reactor root.
 
 That single block is the foundation. By inheriting `fireflyframework-parent`, the
 reactor takes on a large amount of policy it never has to spell out itself. The
-comment in the file names what the parent brings, and it is worth reading as the
-chapter's thesis.
+`<relativePath/>` empty tag is worth a second look: it tells Maven *not* to search
+the local directory tree for the parent but to resolve it from the repository like
+any other artifact — correct here because the Firefly parent is a published POM, not
+a sibling folder. The comment in the file names what the parent brings, and it is
+worth reading as the chapter's thesis.
 
 ::: listing pom.xml | Listing 3.2 — what the parent brings (reactor root comment)
     <!--
@@ -56,7 +62,12 @@ Read that list again, because it is the whole value proposition in five clauses.
 The parent supplies the Spring Boot and Spring Cloud BOMs (so Firefly stays aligned
 with the Spring releases it builds on), the build-plugin configuration (compiler,
 enforcer, Surefire), the **Java 25 baseline**, and a `java21` profile for shops not
-yet on 25. You inherit all of it by writing the five lines of Listing 3.1.
+yet on 25. You inherit all of it by writing the five lines of Listing 3.1. The
+comment also discloses an honest detail about the real world: the production
+`firefly-oss` services sit on a thin internal `firefly-parent` that *itself* inherits
+this framework parent. Lumen skips that intermediary and inherits the framework
+parent directly, because a book sample has no corporate conventions to layer in
+between — the chain is one link shorter, but the mechanics are identical.
 
 !!! spring "Spring parity"
     In a typical Spring Boot project you would write
@@ -100,6 +111,14 @@ the BOM is a long table of `groupId:artifactId → version` entries, and importi
 merges that table into yours without adding a single dependency to the build. And
 the version is `${firefly.version}`, a property declared one block up, so the parent
 version and the BOM version are stated in exactly one place each and read at a glance.
+
+A reader new to Maven often asks: if the parent already imports the Spring BOMs, why
+does importing the Firefly BOM not collide with it? It does not, because BOM imports
+are *additive*. The parent's Spring BOM pins Spring's coordinates; this Firefly BOM
+pins Firefly's coordinates; the two tables cover different artifacts and simply
+co-exist in the merged dependency-management map. When two BOMs *do* name the same
+artifact, the nearer declaration wins — and a Firefly module that re-pins, say,
+Reactor would do so deliberately and in lockstep with the Spring line the parent set.
 
 !!! note "Key term — BOM (Bill of Materials)"
     A **BOM** is a POM whose only job is its `dependencyManagement` section: a
@@ -155,7 +174,11 @@ release?" is answered by eye, and upgrading the whole stack is a one-token edit.
 Lumen that token is the `firefly.version` property from Listing 3.3 — bump it once,
 and the BOM (and through it every framework module) moves together. Because the
 parent and the BOM are the same line, you keep them in lockstep: when you raise
-`firefly.version`, raise the `<parent>` version to match.
+`firefly.version`, raise the `<parent>` version to match. (They are deliberately
+*not* folded into a single property: the parent version is read by Maven before
+properties are interpolated, so the `<parent>` block must carry a literal version.
+This is why you edit two places — Listing 3.1 and Listing 3.3 — and why exercise 2
+asks you to change both.)
 
 !!! note "Key term — CalVer (calendar versioning)"
     **CalVer** encodes *when* a release was made rather than the SemVer promise of
@@ -169,7 +192,7 @@ parent and the BOM are the same line, you keep them in lockstep: when you raise
 The parent sets the language baseline at **Java 25** (Listing 3.2). That is the
 default the reactor compiles against, and it is why the listings throughout this
 book use modern Java — records, sealed types, pattern-matching `switch` — without
-apology. The reactor you just built ran on it.
+apology. The reactor you booted in Chapter 2 ran on it.
 
 Not every shop is on Java 25 the week it ships, so the parent also defines a
 `java21` profile. Activating it with `-Pjava21` retargets the build to Java 21 — the
@@ -195,8 +218,9 @@ mvn -Pjava21 verify
 ## The payoff: version-less framework dependencies
 
 Everything so far has been setup in the root. Now open a module and see what it
-buys. `core-lending-loan-origination` is the system-of-record service you will build
-out in later chapters; here we only read its dependency block.
+buys. `core-lending-loan-origination` is the system-of-record service Chapter 2
+took for a spin and that later chapters build out; here we read its dependency
+block.
 
 ::: listing core-lending-loan-origination/pom.xml | Listing 3.4 — framework dependencies, declared with no version
     <dependencies>
@@ -236,6 +260,73 @@ information you write, until at the leaf you write almost none.
     already feels natural, Firefly asks nothing new of you; it just widens the set of
     artifacts the trick applies to.
 
+## One build block, three runnable jars
+
+Version coherence gets the right *classes* onto the classpath. It does not, by
+itself, make a module something you can hand to operations and run with `java -jar`.
+That last step is one Spring Boot plugin, and each tier in this reactor wires it. Here
+is the core module's `<build>` block, verbatim.
+
+::: listing core-lending-loan-origination/pom.xml | Listing 3.5 — the repackage goal makes an executable jar
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <goals><goal>repackage</goal></goals>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+:::
+
+The `repackage` goal is what converts the plain library jar `mvn package` would
+otherwise produce into a Spring Boot **executable (fat) jar** — the application code,
+every dependency, and a small launcher, all in one self-contained file you can run
+with `java -jar`. The plugin coordinates themselves carry no `<version>`: the
+inherited parent's plugin management pins it, the same coherence story applied to
+build plugins instead of dependencies. The `domain-lending-loan-origination` and
+`exp-lending` modules carry the *identical* block, so all three tiers package the
+same way — a uniform "this builds to a runnable artifact" guarantee across the fleet.
+
+This is why every tier offers two equivalent ways to start, the ones the reactor's
+`README.md` documents. During development you run in place with the Maven plugin;
+for a built artifact you run the jar that `repackage` produced:
+
+```text
+# run in place from the module directory
+mvn spring-boot:run
+
+# or build the executable jar and run it standalone
+mvn -q -pl core-lending-loan-origination package
+java -jar core-lending-loan-origination/target/core-lending-loan-origination-0.1.0-SNAPSHOT.jar
+```
+
+Both land on the same booting service — the core tier on port **8081**, on in-memory
+H2 with a Flyway migration, no Docker. (Chapter 2's quickstart showed the boot output
+on the default port; in the live reactor each tier takes a fixed port from its
+`application.yml`, which Chapter 4 unpacks.) The domain tier serves on **8082**, the
+experience BFF on **8080**.
+
+!!! note "Key term — executable (fat) jar"
+    A Spring Boot **executable jar** packs your compiled classes, all transitive
+    dependencies, and a thin launcher into one runnable file, so `java -jar app.jar`
+    boots the whole service with no external classpath to assemble. The
+    `spring-boot-maven-plugin`'s `repackage` goal builds it during `mvn package`.
+    It is the standard cloud-native deployment unit — one file into a container image,
+    no application server required.
+
+!!! spring "Spring parity"
+    In a `spring-boot-starter-parent` project the `repackage` goal is bound for you
+    by Spring's default plugin configuration, so you rarely write this block. Because
+    Firefly's parent imports the Spring BOM rather than extending the starter parent,
+    each runnable module declares the `spring-boot-maven-plugin` explicitly — five
+    lines that opt the module into the executable-jar lifecycle. Same goal, same
+    result; you just name it once per deployable.
+
 ## Run it
 
 You do not need to write code to prove the wiring works — building the reactor *is*
@@ -247,24 +338,32 @@ mvn -q verify
 
 Maven reads the root `pom.xml`, resolves `fireflyframework-parent` and the imported
 `fireflyframework-bom`, and uses them to give a concrete version to every
-version-less dependency in Listing 3.4. If a single artifact could not be pinned —
-a typo'd coordinate, a BOM that did not import — the build would fail at resolution,
-before any test ran. It does not. The core module compiles and runs its tests, and
-the reactor finishes green.
+version-less dependency in Listing 3.4 and to the build plugin in Listing 3.5. If a
+single artifact could not be pinned — a typo'd coordinate, a BOM that did not import —
+the build would fail at resolution, before any test ran. It does not. All three
+modules compile, the `repackage` goal produces an executable jar for each, and the
+whole reactor finishes green — 33 tests across the three tiers (core 18, domain 6,
+experience 9):
 
 ```text
 [INFO] Building Lumen Lending - Core (Loan Origination) 0.1.0-SNAPSHOT    [2/4]
 [INFO] Tests run: 18, Failures: 0, Errors: 0, Skipped: 0
 ...
+[INFO] Reactor Summary for Lumen Lending 0.1.0-SNAPSHOT:
+[INFO] Lumen Lending ...................................... SUCCESS
+[INFO] Lumen Lending - Core (Loan Origination) ............ SUCCESS
+[INFO] Lumen Lending - Domain (Loan Origination) .......... SUCCESS
+[INFO] Lumen Lending - Experience (Lending BFF) ........... SUCCESS
 [INFO] BUILD SUCCESS
 ```
 
 !!! tip "Checkpoint"
     Run `mvn -q verify` from `samples/lumen-lending` and confirm you see
-    `BUILD SUCCESS`. That single line is the version-coherence guarantee paying off:
-    a parent, a BOM, one `firefly.version`, and every framework dependency across
-    three modules resolved to one conflict-free set — with not one `<version>` on a
-    framework artifact.
+    `BUILD SUCCESS` and `Tests run: 18` for the core module (33 across the reactor).
+    That is the version-coherence guarantee paying off: a parent, a BOM, one
+    `firefly.version`, and every framework dependency across three modules resolved
+    to one conflict-free set — with not one `<version>` on a framework artifact, and
+    three runnable jars in the `target/` directories to show for it.
 
 ## What you learned {.recap}
 
@@ -276,12 +375,17 @@ the reactor finishes green.
   *only* framework-module versions when you must keep another parent. Lumen does
   both; a corporate-parent shop keeps just the import.
 - Firefly uses **CalVer** (`YY.MM.PATCH`, here `26.06.01`), so a whole release line
-  moves together and upgrading the stack is a one-token edit.
+  moves together and upgrading the stack is a one-token edit — bump `firefly.version`
+  and match the `<parent>` version.
 - The baseline is **Java 25**, with `-Pjava21` as the opt-down profile for teams on
   the previous LTS.
 - The payoff is that modules declare framework dependencies — `starter-core`,
   `fireflyframework-r2dbc`, `fireflyframework-web` — with **no `<version>`**, and the
   reactor still builds to `BUILD SUCCESS`.
+- Each tier also wires the **`spring-boot-maven-plugin` `repackage` goal**, so
+  `mvn package` produces an **executable jar** and every tier runs equally well with
+  `mvn spring-boot:run` or `java -jar` — core on **8081**, domain on **8082**,
+  experience on **8080**.
 
 ## Try it yourself {.exercises}
 
@@ -291,7 +395,8 @@ the reactor finishes green.
 2. **Bump the line.** Change `firefly.version` in `samples/lumen-lending/pom.xml`
    to a later patch (for example `26.06.02`), and update the `<parent>` version to
    match. Run `mvn -q dependency:tree` and observe how the framework artifacts move
-   together. Then revert.
+   together. Then revert. (Why did you have to edit *two* places? Re-read the CalVer
+   section.)
 3. **Resolve effective versions.** Run `mvn -q help:effective-pom` in the core
    module and search the output for `fireflyframework-starter-core`. Find the
    concrete version Maven injected from the BOM, even though the module's POM names
@@ -303,9 +408,18 @@ the reactor finishes green.
    `samples/lumen-lending/pom.xml`, delete the `<parent>` block and add explicit
    `<groupId>` and `<version>` to the reactor's own coordinates. Predict what breaks
    (hint: the Java baseline and plugin config the parent supplied) before you run it.
+6. **Build a runnable jar.** Run `mvn -q -pl core-lending-loan-origination package`,
+   then list `core-lending-loan-origination/target/` and find the executable jar.
+   Start it with `java -jar …` and confirm the core tier comes up on port 8081 with
+   `curl -s localhost:8081/actuator/health`. Which line in `pom.xml` made that jar
+   runnable? (Hint: Listing 3.5.)
 
 ## Where to go next
 
-The build is coherent; now you make it *do* something. Chapter 4 turns to
-configuration — `application.yml`, profiles, and `@ConfigurationProperties` — so the
-same version-locked JAR can run differently in dev and production without a rebuild.
+The build is coherent and every tier is runnable; now you make it *do* something.
+Chapter 4 turns to configuration — `application.yml`, profiles, and
+`@ConfigurationProperties` — so the same version-locked, repackaged JAR can run
+differently in dev and production, and so each tier knows to take port 8081, 8082, or
+8080, without a rebuild.
+</content>
+</invoke>
