@@ -1,7 +1,7 @@
 *Para **Nacho Álvarez** —*
 
-*que aguantó las locuras de un arquitecto y las ganas tercas de hacer cosas potentes.*
+*la única persona capaz de oír «¿y si lo reescribimos todo?» sin colgar el teléfono.*
 
-*Ahora hay una sola forma: eliges un starter y heredas producción.*
+*Lo reescribimos todo.*
 
-*(Un starter. Al flag de override le damos una semana.)*
+*(En cinco lenguajes. Este es el de Java.)*

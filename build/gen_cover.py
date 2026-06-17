@@ -1,17 +1,18 @@
 """Generate art/cover.svg and art/cover.png for *Firefly for Java by Example*.
 
-A clean, self-contained typographic cover in the "Reactive Java at dusk" palette:
-a warm espresso base, amber-gold as the hero color (Java's warmth) and
-firefly-green as the spark (brand continuity) — a deliberate green+amber duotone,
-distinct from PyFly (light/green) and the Rust book (navy/amber). There is NO
-external logo dependency: the firefly mark is drawn inline as SVG, so the
-generator needs nothing under ~/Downloads or art/logo/. The canvas is
-1500 x 2100 px (7.5 x 9.25 in at 200 dpi) — the book's trim size.
+A clean, self-contained typographic cover in the "firefly amber + Java-logo"
+palette: a deep Java-navy field, the official Java logo's blue and orange as the
+hero pairing, and firefly amber as the warm accent. The composition adapts
+concept2 (the reactive-stream marble diagram on deep navy): a Flux source rail of
+Java-blue marbles flows through a Java-orange ``flatMap()`` box down to a single
+amber Mono marble. The palette has no leaf tones at all, and there is NO external
+logo dependency — everything is drawn inline as SVG, so the generator needs nothing under
+~/Downloads or art/logo/. The canvas is 1500 x 2100 px (7.5 x 9.25 in at 200 dpi)
+— the book's trim size.
 
 Run:  build/.venv/bin/python build/gen_cover.py     (writes art/cover.{svg,png})
 """
 from __future__ import annotations
-import math
 from pathlib import Path
 from xml.sax.saxutils import escape as _xml_escape
 import cairosvg
@@ -20,315 +21,195 @@ ART = Path(__file__).resolve().parents[1] / "art"
 W, H = 1500, 2100  # 7.5 x 9.25 in at 200 dpi
 
 # ---------------------------------------------------------------------------
-# Palette ("Reactive Java at dusk" — espresso base, amber hero, green spark)
+# Palette ("firefly amber + Java logo" — Java navy base, Java blue + orange
+# as the hero pairing, firefly amber as the warm accent). No leaf tones.
 # ---------------------------------------------------------------------------
-INK        = "#1B1610"   # espresso base — background
-DEEP       = "#2A2014"   # deeper espresso layer — layering / accent nodes
-AMBER      = "#E8A23A"   # amber hero — Java's warmth
-AMBER_BRT  = "#F4C24E"   # bright amber — highlights / pulse glints
-AMBER_DEEP = "#C8801F"   # deep amber — dim network lines / shadowed strokes
-GREEN      = "#43B02A"   # firefly green (spark) — brand continuity
-GREEN_DEEP = "#2C8A1C"   # deep green
-GREEN_MID  = "#2C8A1C"   # mid green — node fills (kept name for callers)
-GREEN_DIM  = "#2C8A1C"   # dim green — subtle peer-ring lines
-CREAM      = "#F3ECDD"   # cream — body / title text on dark
-WHITE      = "#F3ECDD"   # title text (cream, kept name for callers)
-LIGHT      = "#F3ECDD"   # cream — "by Example" sits in green, motes in cream
-MUTED      = "#C9B896"   # warm muted — publisher / secondary text
-MUTED_LT   = "#C9B896"   # warm muted — subtitle
+NAVY        = "#0E2233"   # Java dark navy — background
+NAVY_2      = "#123047"   # lifted navy — gradient top / panel / box fill
+NAVY_DEEP   = "#0A1B29"   # deepest navy — gradient bottom
+JAVA_BLUE   = "#5382A1"   # Java-logo blue — secondary accent, marbles, "by Example"
+JAVA_BLUE_LT= "#7FB0CE"   # lighter Java blue — marble glints, separators
+JAVA_BLUE_DIM = "#3E6178" # dim blue — timeline rails
+JAVA_ORANGE = "#E76F00"   # Java-logo orange — HERO color: "Java", flatMap box
+JAVA_ORANGE_LT = "#F89820" # lighter Java orange — highlights
+AMBER       = "#E8B33A"   # firefly amber — accent rules, Mono marble, highlights
+AMBER_LT    = "#F2C961"   # bright amber — Mono marble glint
+CREAM       = "#F5EFE2"   # cream — "Firefly for" + body text on dark
+WARM_COOL   = "#A9B7C2"   # cool warm-muted — publisher / secondary text
+WARM_WARM   = "#C9B896"   # warm warm-muted — subtitle
 
-FONT = "Avenir Next,Avenir,Helvetica Neue,Helvetica,Arial,sans-serif"
+FONT = "Avenir Next,Avenir,Helvetica Neue,Segoe UI,Helvetica,Arial,sans-serif"
+SERIF = ("Iowan Old Style,Palatino,Palatino Linotype,Georgia,"
+         "Times New Roman,serif")
 
 
 # ---------------------------------------------------------------------------
-# Network motif helpers
+# Reactive-stream marble diagram flourish (adapted from concept2)
 # ---------------------------------------------------------------------------
-def hex_points(cx: float, cy: float, r: float) -> str:
-    """Return SVG polygon points string for a flat-top hexagon."""
-    pts = []
-    for i in range(6):
-        angle = math.radians(30 + 60 * i)  # flat-top orientation
-        pts.append(f"{cx + r * math.cos(angle):.2f},{cy + r * math.sin(angle):.2f}")
-    return " ".join(pts)
-
-
-def node(cx: float, cy: float, r: float, fill: str, stroke: str,
-         stroke_w: float = 2.0, opacity: float = 1.0) -> str:
-    pts = hex_points(cx, cy, r)
-    op = f' opacity="{opacity}"' if opacity < 1.0 else ""
-    return (
-        f'<polygon points="{pts}" fill="{fill}" '
-        f'stroke="{stroke}" stroke-width="{stroke_w}"{op}/>'
+def marble_diagram(y0: float) -> str:
+    """Two timelines: a Flux source (a row of Java-blue marbles) flowing through
+    a Java-orange flatMap() box down to a single amber Mono marble."""
+    g: list[str] = []
+    L, R = 150, W - 150               # rail extents
+    rails = [
+        (y0,      "Flux  source",  JAVA_BLUE,   JAVA_BLUE_LT,
+         [200, 360, 560, 760, 960, 1160]),
+        (y0 + 330, "Mono result",  AMBER,       AMBER_LT, [820]),
+    ]
+    # operator box between the two rails (flatMap) — Java-orange hero
+    opx, opy = W // 2 - 150, y0 + 120
+    g.append(
+        f'<rect x="{opx}" y="{opy}" width="300" height="88" rx="10" '
+        f'fill="{NAVY_2}" stroke="{JAVA_ORANGE}" stroke-width="2.5"/>'
+    )
+    g.append(
+        f'<text x="{W//2}" y="{opy+54}" text-anchor="middle" fill="{JAVA_ORANGE_LT}" '
+        f'font-size="34" font-weight="600" font-family="{FONT}" '
+        f'letter-spacing="1">flatMap()</text>'
     )
 
-
-def quad_path(x1: float, y1: float, x2: float, y2: float) -> str:
-    """Smooth quadratic bezier between two points, gently curved outward."""
-    mx, my = (x1 + x2) / 2, (y1 + y2) / 2
-    dx, dy = x2 - x1, y2 - y1
-    cpx = mx - dy * 0.18
-    cpy = my + dx * 0.18
-    return f"M{x1:.1f},{y1:.1f} Q{cpx:.1f},{cpy:.1f} {x2:.1f},{y2:.1f}"
-
-
-def firefly_mark(cx: float, cy: float, scale: float = 1.0) -> str:
-    """A clean, self-contained firefly/spark mark — the cover's brand emblem.
-
-    A tilted firefly with a softly glowing abdomen and swept-back wings, sitting
-    in a faint amber bloom. Drawn entirely inline (no external image), so the
-    cover is reproducible from this script alone.
-    """
-    return (
-        f'<g transform="translate({cx},{cy}) scale({scale})">'
-        # ambient bloom rings
-        f'<circle r="118" fill="{AMBER}" opacity="0.06"/>'
-        f'<circle r="78" fill="{AMBER}" opacity="0.09"/>'
-        f'<circle r="46" fill="{AMBER}" opacity="0.16"/>'
-        # light trail curving in from the lower-left (two strokes = a taper)
-        f'<path d="M-150,150 C-86,80 -44,32 -14,-4" fill="none" stroke="{AMBER}" '
-        f'stroke-width="4" opacity="0.16" stroke-linecap="round"/>'
-        f'<path d="M-150,150 C-86,80 -44,32 -14,-4" fill="none" stroke="{AMBER_BRT}" '
-        f'stroke-width="1.6" opacity="0.34" stroke-linecap="round"/>'
-        # the firefly, gently tilted for life
-        '<g transform="rotate(-16)">'
-        f'<circle cx="0" cy="52" r="42" fill="{AMBER}" opacity="0.20"/>'
-        f'<circle cx="0" cy="52" r="25" fill="{AMBER_BRT}" opacity="0.48"/>'
-        # wings, swept back and translucent (warm cream)
-        f'<path d="M-5,-10 C-72,-54 -94,-2 -28,14 Z" fill="{CREAM}" opacity="0.20"/>'
-        f'<path d="M5,-10 C72,-54 94,-2 28,14 Z" fill="{CREAM}" opacity="0.20"/>'
-        # glowing abdomen
-        f'<ellipse cx="0" cy="46" rx="20" ry="29" fill="{AMBER}"/>'
-        f'<ellipse cx="0" cy="49" rx="11" ry="18" fill="#FFF1D2"/>'
-        # dark thorax + head with a green rim (brand spark)
-        f'<ellipse cx="0" cy="4" rx="16" ry="23" fill="{INK}" stroke="{GREEN}" stroke-width="2.8"/>'
-        f'<ellipse cx="0" cy="-23" rx="10" ry="12" fill="{INK}" stroke="{GREEN}" stroke-width="2.4"/>'
-        # antennae
-        f'<path d="M-5,-32 C-16,-50 -23,-54 -30,-60" fill="none" stroke="{GREEN}" '
-        f'stroke-width="2.6" stroke-linecap="round"/>'
-        f'<path d="M5,-32 C16,-50 23,-54 30,-60" fill="none" stroke="{GREEN}" '
-        f'stroke-width="2.6" stroke-linecap="round"/>'
-        '</g>'
-        # satellite motes — amber glints + one green spark
-        f'<circle cx="92" cy="-82" r="3.4" fill="{AMBER_BRT}" opacity="0.78"/>'
-        f'<circle cx="110" cy="50" r="2.8" fill="{GREEN}" opacity="0.85"/>'
-        f'<circle cx="-96" cy="-72" r="2.8" fill="{AMBER_BRT}" opacity="0.68"/>'
-        '</g>'
+    for ry, label, mcol, glint, marbles in rails:
+        # rail
+        g.append(
+            f'<line x1="{L}" y1="{ry}" x2="{R-40}" y2="{ry}" '
+            f'stroke="{JAVA_BLUE_DIM}" stroke-width="2.5"/>'
+        )
+        # terminal arrowhead
+        g.append(
+            f'<path d="M{R-40},{ry-12} L{R-10},{ry} L{R-40},{ry+12} Z" '
+            f'fill="{JAVA_BLUE_DIM}"/>'
+        )
+        # completion tick near the end
+        g.append(
+            f'<line x1="{R-90}" y1="{ry-22}" x2="{R-90}" y2="{ry+22}" '
+            f'stroke="{JAVA_BLUE}" stroke-width="3"/>'
+        )
+        # rail label
+        g.append(
+            f'<text x="{L}" y="{ry-26}" fill="{WARM_COOL}" font-size="22" '
+            f'font-weight="500" letter-spacing="2" font-family="{FONT}">'
+            f'{label.upper()}</text>'
+        )
+        # marbles
+        for mx in marbles:
+            r = 26 if mcol is AMBER else 22
+            g.append(
+                f'<circle cx="{mx}" cy="{ry}" r="{r+7}" fill="{mcol}" '
+                f'opacity="0.16"/>'
+            )
+            g.append(
+                f'<circle cx="{mx}" cy="{ry}" r="{r}" fill="{NAVY}" '
+                f'stroke="{mcol}" stroke-width="3"/>'
+            )
+            g.append(
+                f'<circle cx="{mx-r*0.32:.0f}" cy="{ry-r*0.32:.0f}" '
+                f'r="{r*0.30:.1f}" fill="{glint}" opacity="0.85"/>'
+            )
+    # faint connecting threads from Flux marbles into the operator
+    for mx in [360, 560, 760]:
+        g.append(
+            f'<path d="M{mx},{y0} C{mx},{y0+60} {W//2},{opy-40} {W//2},{opy}" '
+            f'fill="none" stroke="{JAVA_ORANGE}" stroke-width="1.4" opacity="0.32"/>'
+        )
+    # thread from operator down to the Mono (amber) marble
+    g.append(
+        f'<path d="M{W//2},{opy+88} C{W//2},{y0+260} 820,{y0+260} 820,{y0+330}" '
+        f'fill="none" stroke="{AMBER}" stroke-width="1.6" opacity="0.42"/>'
     )
+    return "<g>" + "".join(g) + "</g>"
 
 
 # ---------------------------------------------------------------------------
 # Build SVG
 # ---------------------------------------------------------------------------
 def build_svg() -> str:
-    # -------------------------------------------------------------------------
-    # EDA Network motif  (illustration zone: y = 80 ... 1080)
-    # Hub: center, slightly above midpoint of illustration zone
-    # -------------------------------------------------------------------------
-    HUB_X, HUB_Y, HUB_R = 750, 580, 72
+    p: list[str] = []
 
-    # Satellite nodes: (cx, cy, radius, label)
-    SATS = [
-        (260,  210, 44, "CMD"),
-        (650,  185, 40, "EVT"),
-        (1080, 240, 44, "SAGA"),
-        (1220, 540, 38, "Q"),
-        (1110, 870, 44, "HTTP"),
-        (390,  930, 40, "DATA"),
-        (150,  610, 38, "MSG"),
-    ]
-
-    # Small accent nodes (no labels, atmospheric depth)
-    ACCENT_NODES = [
-        (500,  100, 22),
-        (930,  130, 18),
-        (1350, 360, 20),
-        (1370, 760, 17),
-        (980, 1020, 19),
-        (200,  990, 16),
-        (80,   400, 18),
-    ]
-
-    # Peer-to-peer connections (satellite ring, one hop)
-    CONNECTIONS_PEER = [(0, 1), (1, 2), (2, 3), (3, 4), (4, 5), (5, 6), (6, 0)]
-
-    # SVG fragment list
-    parts: list[str] = []
-
-    # 1. Background fill
-    parts.append(f'<rect width="{W}" height="{H}" fill="{INK}"/>')
-
-    # 2. Very faint amber hex-grid texture over whole canvas
-    parts.append(f'<g opacity="0.04" fill="none" stroke="{AMBER}" stroke-width="0.8">')
-    for row in range(15):
-        for col in range(10):
-            gx = col * 185 - 60
-            gy = row * 165 + (80 if col % 2 else 0) - 30
-            pts = hex_points(gx, gy, 78)
-            parts.append(f'<polygon points="{pts}"/>')
-    parts.append('</g>')
-
-    # 3. Radial amber glow behind hub (defined inline; hoisted to <defs>)
-    grad_id = "hubglow"
-    parts.append(
-        f'<radialGradient id="{grad_id}" cx="{HUB_X/W:.4f}" cy="{HUB_Y/H:.4f}" r="0.30" '
-        f'fx="{HUB_X/W:.4f}" fy="{HUB_Y/H:.4f}" gradientUnits="objectBoundingBox">'
-        f'<stop offset="0" stop-color="{AMBER}" stop-opacity="0.22"/>'
-        f'<stop offset="1" stop-color="{AMBER}" stop-opacity="0"/>'
-        f'</radialGradient>'
+    # background — deep Java navy with a subtle vertical gradient
+    p.append(
+        f'<linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">'
+        f'<stop offset="0" stop-color="{NAVY_2}"/>'
+        f'<stop offset="0.55" stop-color="{NAVY}"/>'
+        f'<stop offset="1" stop-color="{NAVY_DEEP}"/>'
+        f'</linearGradient>'
     )
-    parts.append(f'<rect width="{W}" height="{H}" fill="url(#{grad_id})"/>')
+    p.append(f'<rect width="{W}" height="{H}" fill="url(#sky)"/>')
 
-    # 4. Peer connection lines (dim green ring)
-    parts.append(
-        f'<g fill="none" stroke="{GREEN_DIM}" stroke-width="1.5" opacity="0.42">'
-    )
-    for (a, b) in CONNECTIONS_PEER:
-        sx, sy = SATS[a][0], SATS[a][1]
-        ex, ey = SATS[b][0], SATS[b][1]
-        parts.append(f'<path d="{quad_path(sx, sy, ex, ey)}"/>')
-    parts.append('</g>')
+    # faint dotted grid texture in the upper field (Java-blue)
+    p.append(f'<g fill="{JAVA_BLUE}" opacity="0.06">')
+    for r in range(7):
+        for c in range(13):
+            p.append(f'<circle cx="{90 + c*110}" cy="{120 + r*110}" r="2.4"/>')
+    p.append('</g>')
 
-    # 5. Hub spokes — amber, brighter and thicker (the hero radiates)
-    parts.append(
-        f'<g fill="none" stroke="{AMBER}" stroke-width="2.5" opacity="0.60">'
-    )
-    for (sx, sy, _, _) in SATS:
-        parts.append(f'<path d="{quad_path(HUB_X, HUB_Y, sx, sy)}"/>')
-    parts.append('</g>')
-
-    # 6. Event-pulse dots along spokes at 1/3 and 2/3
-    PULSE_COLORS = [AMBER, GREEN, AMBER, GREEN, AMBER, GREEN, AMBER]
-    for i, (sx, sy, _, _) in enumerate(SATS):
-        col = PULSE_COLORS[i % len(PULSE_COLORS)]
-        for t, r_dot, op_dot in [(0.32, 6, 0.90), (0.65, 4, 0.55)]:
-            px = HUB_X + (sx - HUB_X) * t
-            py = HUB_Y + (sy - HUB_Y) * t
-            parts.append(
-                f'<circle cx="{px:.1f}" cy="{py:.1f}" r="{r_dot}" '
-                f'fill="{col}" opacity="{op_dot}"/>'
-            )
-
-    # 7. Accent nodes (tiny, atmospheric — espresso fill, dim green rim)
-    for (ax, ay, ar) in ACCENT_NODES:
-        parts.append(node(ax, ay, ar, DEEP, GREEN_DIM, 1.4, opacity=0.55))
-
-    # 8. Satellite nodes (green-mid) with green outer ring + cream label
-    for (sx, sy, sr, lbl) in SATS:
-        parts.append(node(sx, sy, sr + 9, "none", GREEN, 1.2, opacity=0.30))
-        parts.append(node(sx, sy, sr, GREEN_MID, GREEN, 2.2))
-        fs = 23 if len(lbl) <= 3 else 19
-        parts.append(
-            f'<text x="{sx}" y="{sy + 1}" text-anchor="middle" '
-            f'dominant-baseline="middle" fill="{CREAM}" '
-            f'font-size="{fs}" font-weight="700" '
-            f'font-family="{FONT}" letter-spacing="1">{lbl}</text>'
-        )
-
-    # 9. Hub node — the firefly mark sits at the network's heart.
-    #    Green rims for brand continuity, an amber inner ring for the hero glow.
-    parts.append(node(HUB_X, HUB_Y, HUB_R + 16, "none", GREEN, 1.8, opacity=0.42))
-    parts.append(node(HUB_X, HUB_Y, HUB_R + 4,  "none", GREEN, 2.8, opacity=0.78))
-    parts.append(node(HUB_X, HUB_Y, HUB_R, GREEN_MID, AMBER, 3.8))
-    # the drawn firefly emblem, centered on the hub
-    parts.append(firefly_mark(HUB_X, HUB_Y, scale=0.62))
-
-    # 10. Atmospheric micro-labels (subtle, spaced out)
-    MICRO = [
-        (500,   76, "EVENTS"),
-        (1320, 315, "ASYNC"),
-        (160,  375, "REACTIVE"),
-        (960,  1050, "CQRS"),
-    ]
-    for (mx, my, mlbl) in MICRO:
-        parts.append(
-            f'<text x="{mx}" y="{my}" text-anchor="middle" fill="{AMBER}" '
-            f'font-size="18" font-weight="400" opacity="0.45" '
-            f'font-family="{FONT}" letter-spacing="3.5">{mlbl}</text>'
-        )
-
-    # -------------------------------------------------------------------------
-    # Amber + green divider rules
-    # -------------------------------------------------------------------------
-    RULE_Y = 1110
-    parts.append(
-        f'<rect x="100" y="{RULE_Y}" width="1300" height="6" fill="{AMBER}" rx="3"/>'
-    )
-    parts.append(
-        f'<rect x="100" y="{RULE_Y + 14}" width="1300" height="1.5" '
-        f'fill="{GREEN}" opacity="0.45" rx="1"/>'
+    # publisher band — top
+    p.append(
+        f'<text x="{W//2}" y="120" text-anchor="middle" fill="{WARM_COOL}" '
+        f'font-size="25" font-weight="500" letter-spacing="10" '
+        f'font-family="{FONT}">FIREFLY SOFTWARE FOUNDATION</text>'
     )
 
-    # -------------------------------------------------------------------------
-    # Publisher label — top edge, small caps, generous letter-spacing
-    # -------------------------------------------------------------------------
-    parts.append(
-        f'<text x="{W // 2}" y="68" text-anchor="middle" '
-        f'fill="{MUTED}" font-size="26" font-weight="500" '
-        f'letter-spacing="9" font-family="{FONT}">'
-        f'FIREFLY SOFTWARE FOUNDATION</text>'
+    # the reactive-stream marble diagram flourish
+    p.append(marble_diagram(380))
+
+    # amber rule separating motif from title (firefly amber hero accent)
+    RULE_Y = 1080
+    p.append(f'<rect x="150" y="{RULE_Y}" width="{W-300}" height="5" '
+             f'fill="{AMBER}" rx="2.5"/>')
+    p.append(f'<rect x="150" y="{RULE_Y+14}" width="{W-300}" height="1.5" '
+             f'fill="{JAVA_BLUE}" opacity="0.5"/>')
+
+    # title — left aligned, authoritative
+    LX = 150
+    # "Firefly for" — cream
+    p.append(
+        f'<text x="{LX}" y="{RULE_Y+180}" fill="{CREAM}" '
+        f'font-size="132" font-weight="700" letter-spacing="-2" '
+        f'font-family="{FONT}">Firefly for</text>'
+    )
+    # hero "Java" — the BIG Java-orange standout word
+    p.append(
+        f'<text x="{LX-4}" y="{RULE_Y+400}" fill="{JAVA_ORANGE}" '
+        f'font-size="240" font-weight="800" letter-spacing="-4" '
+        f'font-family="{FONT}">Java</text>'
+    )
+    # Java-blue separator under "Java"
+    p.append(
+        f'<rect x="{LX}" y="{RULE_Y+454}" width="620" height="3" '
+        f'fill="{JAVA_BLUE}" opacity="0.75" rx="1.5"/>'
+    )
+    # "by Example" — Java-blue serif italic for contrast
+    p.append(
+        f'<text x="{LX}" y="{RULE_Y+548}" fill="{JAVA_BLUE}" '
+        f'font-size="92" font-weight="500" font-style="italic" '
+        f'font-family="{SERIF}">by Example</text>'
     )
 
-    # -------------------------------------------------------------------------
-    # Title block
-    # -------------------------------------------------------------------------
-    TY = RULE_Y + 68   # baseline anchor of first title line
-
-    # "Firefly for" — heavy, cream
-    parts.append(
-        f'<text x="108" y="{TY + 120}" '
-        f'fill="{CREAM}" font-size="150" font-weight="800" '
-        f'font-family="{FONT}" letter-spacing="-4">Firefly for</text>'
-    )
-
-    # "Java" — the BIG amber-gold hero (the standout word)
-    parts.append(
-        f'<text x="108" y="{TY + 300}" '
-        f'fill="{AMBER}" font-size="220" font-weight="800" '
-        f'font-family="{FONT}" letter-spacing="-6">Java</text>'
-    )
-
-    # Thin green spark separator under "Java" (brand continuity)
-    RULE2_Y = TY + 326
-    parts.append(
-        f'<rect x="112" y="{RULE2_Y}" width="700" height="3" '
-        f'fill="{GREEN}" opacity="0.65" rx="1.5"/>'
-    )
-
-    # "by Example" — firefly-green, demi-bold
-    parts.append(
-        f'<text x="112" y="{RULE2_Y + 110}" '
-        f'fill="{GREEN}" font-size="100" font-weight="600" '
-        f'font-family="{FONT}" letter-spacing="-1">by Example</text>'
-    )
-
-    # Subtitle (two lines)
-    SUB_Y = RULE2_Y + 188
+    # subtitle (two lines) — warm-muted
+    SUB_Y = RULE_Y + 638
     for i, line in enumerate([
         "Reactive Microservices with Spring Boot,",
         "WebFlux & the Firefly Framework",
     ]):
-        parts.append(
-            f'<text x="112" y="{SUB_Y + i * 50}" '
-            f'fill="{MUTED_LT}" font-size="37" font-weight="400" '
-            f'font-family="{FONT}" letter-spacing="0.5">{_xml_escape(line)}</text>'
+        p.append(
+            f'<text x="{LX}" y="{SUB_Y + i*52}" fill="{WARM_WARM}" '
+            f'font-size="38" font-weight="400" letter-spacing="0.5" '
+            f'font-family="{FONT}">{_xml_escape(line)}</text>'
         )
 
     # -------------------------------------------------------------------------
     # Assemble: hoist gradient elements into <defs>
     # -------------------------------------------------------------------------
     defs_tags = ("<radialGradient", "<linearGradient")
-    defs_parts = [p for p in parts if p.startswith(defs_tags)]
-    body_parts = [p for p in parts if not p.startswith(defs_tags)]
-
-    svg = (
+    defs = [x for x in p if x.startswith(defs_tags)]
+    body = [x for x in p if not x.startswith(defs_tags)]
+    return (
         f'<svg xmlns="http://www.w3.org/2000/svg" '
         f'xmlns:xlink="http://www.w3.org/1999/xlink" '
         f'width="{W}" height="{H}" viewBox="0 0 {W} {H}">\n'
-        f'<defs>{"".join(defs_parts)}</defs>\n'
-        + "\n".join(body_parts)
-        + "\n</svg>"
+        f'<defs>{"".join(defs)}</defs>\n'
+        + "\n".join(body) + "\n</svg>"
     )
-    return svg
 
 
 def main() -> None:

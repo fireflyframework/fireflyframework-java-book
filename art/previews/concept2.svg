@@ -1,0 +1,107 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1500" height="2100" viewBox="0 0 1500 2100">
+<defs><linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#13243A"/><stop offset="0.55" stop-color="#0E1A2B"/><stop offset="1" stop-color="#0A1422"/></linearGradient></defs>
+<rect width="1500" height="2100" fill="url(#sky)"/>
+<g fill="#6FA8C7" opacity="0.06">
+<circle cx="90" cy="120" r="2.4"/>
+<circle cx="200" cy="120" r="2.4"/>
+<circle cx="310" cy="120" r="2.4"/>
+<circle cx="420" cy="120" r="2.4"/>
+<circle cx="530" cy="120" r="2.4"/>
+<circle cx="640" cy="120" r="2.4"/>
+<circle cx="750" cy="120" r="2.4"/>
+<circle cx="860" cy="120" r="2.4"/>
+<circle cx="970" cy="120" r="2.4"/>
+<circle cx="1080" cy="120" r="2.4"/>
+<circle cx="1190" cy="120" r="2.4"/>
+<circle cx="1300" cy="120" r="2.4"/>
+<circle cx="1410" cy="120" r="2.4"/>
+<circle cx="90" cy="230" r="2.4"/>
+<circle cx="200" cy="230" r="2.4"/>
+<circle cx="310" cy="230" r="2.4"/>
+<circle cx="420" cy="230" r="2.4"/>
+<circle cx="530" cy="230" r="2.4"/>
+<circle cx="640" cy="230" r="2.4"/>
+<circle cx="750" cy="230" r="2.4"/>
+<circle cx="860" cy="230" r="2.4"/>
+<circle cx="970" cy="230" r="2.4"/>
+<circle cx="1080" cy="230" r="2.4"/>
+<circle cx="1190" cy="230" r="2.4"/>
+<circle cx="1300" cy="230" r="2.4"/>
+<circle cx="1410" cy="230" r="2.4"/>
+<circle cx="90" cy="340" r="2.4"/>
+<circle cx="200" cy="340" r="2.4"/>
+<circle cx="310" cy="340" r="2.4"/>
+<circle cx="420" cy="340" r="2.4"/>
+<circle cx="530" cy="340" r="2.4"/>
+<circle cx="640" cy="340" r="2.4"/>
+<circle cx="750" cy="340" r="2.4"/>
+<circle cx="860" cy="340" r="2.4"/>
+<circle cx="970" cy="340" r="2.4"/>
+<circle cx="1080" cy="340" r="2.4"/>
+<circle cx="1190" cy="340" r="2.4"/>
+<circle cx="1300" cy="340" r="2.4"/>
+<circle cx="1410" cy="340" r="2.4"/>
+<circle cx="90" cy="450" r="2.4"/>
+<circle cx="200" cy="450" r="2.4"/>
+<circle cx="310" cy="450" r="2.4"/>
+<circle cx="420" cy="450" r="2.4"/>
+<circle cx="530" cy="450" r="2.4"/>
+<circle cx="640" cy="450" r="2.4"/>
+<circle cx="750" cy="450" r="2.4"/>
+<circle cx="860" cy="450" r="2.4"/>
+<circle cx="970" cy="450" r="2.4"/>
+<circle cx="1080" cy="450" r="2.4"/>
+<circle cx="1190" cy="450" r="2.4"/>
+<circle cx="1300" cy="450" r="2.4"/>
+<circle cx="1410" cy="450" r="2.4"/>
+<circle cx="90" cy="560" r="2.4"/>
+<circle cx="200" cy="560" r="2.4"/>
+<circle cx="310" cy="560" r="2.4"/>
+<circle cx="420" cy="560" r="2.4"/>
+<circle cx="530" cy="560" r="2.4"/>
+<circle cx="640" cy="560" r="2.4"/>
+<circle cx="750" cy="560" r="2.4"/>
+<circle cx="860" cy="560" r="2.4"/>
+<circle cx="970" cy="560" r="2.4"/>
+<circle cx="1080" cy="560" r="2.4"/>
+<circle cx="1190" cy="560" r="2.4"/>
+<circle cx="1300" cy="560" r="2.4"/>
+<circle cx="1410" cy="560" r="2.4"/>
+<circle cx="90" cy="670" r="2.4"/>
+<circle cx="200" cy="670" r="2.4"/>
+<circle cx="310" cy="670" r="2.4"/>
+<circle cx="420" cy="670" r="2.4"/>
+<circle cx="530" cy="670" r="2.4"/>
+<circle cx="640" cy="670" r="2.4"/>
+<circle cx="750" cy="670" r="2.4"/>
+<circle cx="860" cy="670" r="2.4"/>
+<circle cx="970" cy="670" r="2.4"/>
+<circle cx="1080" cy="670" r="2.4"/>
+<circle cx="1190" cy="670" r="2.4"/>
+<circle cx="1300" cy="670" r="2.4"/>
+<circle cx="1410" cy="670" r="2.4"/>
+<circle cx="90" cy="780" r="2.4"/>
+<circle cx="200" cy="780" r="2.4"/>
+<circle cx="310" cy="780" r="2.4"/>
+<circle cx="420" cy="780" r="2.4"/>
+<circle cx="530" cy="780" r="2.4"/>
+<circle cx="640" cy="780" r="2.4"/>
+<circle cx="750" cy="780" r="2.4"/>
+<circle cx="860" cy="780" r="2.4"/>
+<circle cx="970" cy="780" r="2.4"/>
+<circle cx="1080" cy="780" r="2.4"/>
+<circle cx="1190" cy="780" r="2.4"/>
+<circle cx="1300" cy="780" r="2.4"/>
+<circle cx="1410" cy="780" r="2.4"/>
+</g>
+<text x="750" y="120" text-anchor="middle" fill="#A9B8C7" font-size="25" font-weight="500" letter-spacing="10" font-family="Avenir Next,Avenir,Helvetica Neue,Segoe UI,Helvetica,Arial,sans-serif">FIREFLY SOFTWARE FOUNDATION</text>
+<g><rect x="600" y="500" width="300" height="88" rx="10" fill="#13243A" stroke="#D98A3D" stroke-width="2"/><text x="750" y="554" text-anchor="middle" fill="#F0B36A" font-size="34" font-weight="600" font-family="Avenir Next,Avenir,Helvetica Neue,Segoe UI,Helvetica,Arial,sans-serif" letter-spacing="1">flatMap()</text><line x1="150" y1="380" x2="1310" y2="380" stroke="#3E6178" stroke-width="2.5"/><path d="M1310,368 L1340,380 L1310,392 Z" fill="#3E6178"/><line x1="1260" y1="358" x2="1260" y2="402" stroke="#6FA8C7" stroke-width="3"/><text x="150" y="354" fill="#A9B8C7" font-size="22" font-weight="500" letter-spacing="2" font-family="Avenir Next,Avenir,Helvetica Neue,Segoe UI,Helvetica,Arial,sans-serif">FLUX  SOURCE</text><circle cx="200" cy="380" r="29" fill="#6FA8C7" opacity="0.16"/><circle cx="200" cy="380" r="22" fill="#0E1A2B" stroke="#6FA8C7" stroke-width="3"/><circle cx="193" cy="373" r="6.6" fill="#6FA8C7" opacity="0.85"/><circle cx="360" cy="380" r="29" fill="#6FA8C7" opacity="0.16"/><circle cx="360" cy="380" r="22" fill="#0E1A2B" stroke="#6FA8C7" stroke-width="3"/><circle cx="353" cy="373" r="6.6" fill="#6FA8C7" opacity="0.85"/><circle cx="560" cy="380" r="29" fill="#6FA8C7" opacity="0.16"/><circle cx="560" cy="380" r="22" fill="#0E1A2B" stroke="#6FA8C7" stroke-width="3"/><circle cx="553" cy="373" r="6.6" fill="#6FA8C7" opacity="0.85"/><circle cx="760" cy="380" r="29" fill="#6FA8C7" opacity="0.16"/><circle cx="760" cy="380" r="22" fill="#0E1A2B" stroke="#6FA8C7" stroke-width="3"/><circle cx="753" cy="373" r="6.6" fill="#6FA8C7" opacity="0.85"/><circle cx="960" cy="380" r="29" fill="#6FA8C7" opacity="0.16"/><circle cx="960" cy="380" r="22" fill="#0E1A2B" stroke="#6FA8C7" stroke-width="3"/><circle cx="953" cy="373" r="6.6" fill="#6FA8C7" opacity="0.85"/><circle cx="1160" cy="380" r="29" fill="#6FA8C7" opacity="0.16"/><circle cx="1160" cy="380" r="22" fill="#0E1A2B" stroke="#6FA8C7" stroke-width="3"/><circle cx="1153" cy="373" r="6.6" fill="#6FA8C7" opacity="0.85"/><line x1="150" y1="710" x2="1310" y2="710" stroke="#3E6178" stroke-width="2.5"/><path d="M1310,698 L1340,710 L1310,722 Z" fill="#3E6178"/><line x1="1260" y1="688" x2="1260" y2="732" stroke="#6FA8C7" stroke-width="3"/><text x="150" y="684" fill="#A9B8C7" font-size="22" font-weight="500" letter-spacing="2" font-family="Avenir Next,Avenir,Helvetica Neue,Segoe UI,Helvetica,Arial,sans-serif">MONO RESULT</text><circle cx="820" cy="710" r="33" fill="#D98A3D" opacity="0.16"/><circle cx="820" cy="710" r="26" fill="#0E1A2B" stroke="#D98A3D" stroke-width="3"/><circle cx="812" cy="702" r="7.8" fill="#F0B36A" opacity="0.85"/><path d="M360,380 C360,440 750,460 750,500" fill="none" stroke="#D98A3D" stroke-width="1.4" opacity="0.30"/><path d="M560,380 C560,440 750,460 750,500" fill="none" stroke="#D98A3D" stroke-width="1.4" opacity="0.30"/><path d="M760,380 C760,440 750,460 750,500" fill="none" stroke="#D98A3D" stroke-width="1.4" opacity="0.30"/><path d="M750,588 C750,640 820,640 820,710" fill="none" stroke="#D98A3D" stroke-width="1.6" opacity="0.40"/></g>
+<rect x="150" y="1080" width="1200" height="4" fill="#D98A3D" rx="2"/>
+<rect x="150" y="1092" width="1200" height="1.5" fill="#6FA8C7" opacity="0.5"/>
+<text x="150" y="1260" fill="#F2F4F7" font-size="132" font-weight="700" letter-spacing="-2" font-family="Avenir Next,Avenir,Helvetica Neue,Segoe UI,Helvetica,Arial,sans-serif">Firefly for</text>
+<text x="146" y="1480" fill="#D98A3D" font-size="240" font-weight="800" letter-spacing="-4" font-family="Avenir Next,Avenir,Helvetica Neue,Segoe UI,Helvetica,Arial,sans-serif">Java</text>
+<rect x="150" y="1534" width="620" height="3" fill="#6FA8C7" opacity="0.7" rx="1.5"/>
+<text x="150" y="1628" fill="#6FA8C7" font-size="92" font-weight="500" font-style="italic" font-family="Iowan Old Style,Palatino,Palatino Linotype,Georgia,Times New Roman,serif">by Example</text>
+<text x="150" y="1718" fill="#A9B8C7" font-size="38" font-weight="400" letter-spacing="0.5" font-family="Avenir Next,Avenir,Helvetica Neue,Segoe UI,Helvetica,Arial,sans-serif">Reactive Microservices with Spring Boot,</text>
+<text x="150" y="1770" fill="#A9B8C7" font-size="38" font-weight="400" letter-spacing="0.5" font-family="Avenir Next,Avenir,Helvetica Neue,Segoe UI,Helvetica,Arial,sans-serif">WebFlux &amp; the Firefly Framework</text>
+</svg>

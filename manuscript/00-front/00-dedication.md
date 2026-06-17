@@ -1,7 +1,7 @@
 *For **Nacho Álvarez** —*
 
-*who put up with an architect's madness and the stubborn urge to build powerful things.*
+*the only person who can hear "what if we rewrote the whole thing?" without hanging up.*
 
-*Now there is one way: pick a starter, inherit production.*
+*We rewrote the whole thing.*
 
-*(One starter. We give the override flag a week.)*
+*(In five languages. This is the Java one.)*

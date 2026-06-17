@@ -49,8 +49,8 @@ RUST     = "#d4793a"   # connectors, accent stroke
 RUST_D   = "#b5531f"   # deeper rust (arrowheads/emphasis)
 AMBER    = "#f6a821"
 AMBER_B  = "#ffc24a"
-GREEN    = "#1f8a4c"   # query / success accent (matches admin "green" badges)
-GREEN_BG = "#ecf9f0"
+TEAL     = "#2E5A78"   # query / success accent (Java-blue family)
+TEAL_BG  = "#EEF3F7"
 BLUE     = "#2563c9"   # command / note accent (matches admin "blue" badges)
 BLUE_BG  = "#eef4ff"
 RED      = "#b03a2e"   # failure / compensation (matches existing saga figs)
@@ -464,10 +464,10 @@ def fig_reactive():
     b.append(f'<polygon points="510,58 500,53 500,63" fill="{SUB}"/>')
     b.append(f'<circle cx="250" cy="58" r="13" fill="{AMBER}" '
              f'stroke="{RUST}" stroke-width="1.5"/>')
-    b.append(f'<line x1="430" y1="50" x2="430" y2="66" stroke="{GREEN}" '
+    b.append(f'<line x1="430" y1="50" x2="430" y2="66" stroke="{TEAL}" '
              f'stroke-width="3"/>')  # completion bar
     b.append(label(250, 86, "just(v)", size=10, mono=True, fill=SUB))
-    b.append(label(430, 86, "complete", size=10, fill=GREEN))
+    b.append(label(430, 86, "complete", size=10, fill=TEAL))
     # divider
     b.append(f'<line x1="24" y1="120" x2="536" y2="120" stroke="{CARD_S}" '
              f'stroke-width="1" stroke-dasharray="4 4"/>')
@@ -484,7 +484,7 @@ def fig_reactive():
         b.append(f'<circle cx="{cx}" cy="176" r="{11 - i}" '
                  f'fill="{AMBER if i % 2 == 0 else RUST}" '
                  f'stroke="{RUST_D}" stroke-width="1.2"/>')
-    b.append(f'<line x1="492" y1="168" x2="492" y2="184" stroke="{GREEN}" '
+    b.append(f'<line x1="492" y1="168" x2="492" y2="184" stroke="{TEAL}" '
              f'stroke-width="3"/>')
     b.append(label(228, 206, "map · filter · flat_map", size=10, mono=True,
                    fill=SUB))
@@ -528,7 +528,7 @@ def fig_event_sourcing():
     b.append(arrow(250, 198, 330, 110, label="append", label_dy=-4))
     # replay/fold back into state
     b.append(arrow(330, 244, 250, 286, label="fold / replay", label_dy=14,
-                   color=GREEN, head=GREEN))
+                   color=TEAL, head=TEAL))
     b.append(card(50, 264, 200, 46, "current state", sub="balance = 120",
                   accent=True, ts=14))
     body = "\n".join(b)
@@ -617,16 +617,16 @@ def fig_tcc():
     """7b. TCC try / confirm / cancel across participants."""
     vw, vh = 616, 250
     b = []
-    cols = [("Try", "reserve", RUST_D), ("Confirm", "on all-tried", GREEN),
+    cols = [("Try", "reserve", RUST_D), ("Confirm", "on all-tried", TEAL),
             ("Cancel", "on a try failure", RED)]
     cw = 158
     cx = [176, 356, 536]   # column centres, leaving a left margin for row labels
     for (name, sub, col), x in zip(cols, cx):
         b.append(label(x, 28, name, size=14, weight="800", fill=col))
         b.append(label(x, 44, sub, size=10, fill=col))
-    rows = [("source", [("withdraw (hold)", RUST, FIELD), ("(none — held)", GREEN, GREEN_BG),
+    rows = [("source", [("withdraw (hold)", RUST, FIELD), ("(none — held)", TEAL, TEAL_BG),
                         ("deposit (release)", RED, RED_BG)]),
-            ("dest", [("verify exists", RUST, FIELD), ("deposit (capture)", GREEN, GREEN_BG),
+            ("dest", [("verify exists", RUST, FIELD), ("deposit (capture)", TEAL, TEAL_BG),
                       ("(none — nothing held)", RED, RED_BG)])]
     for ri, (rname, cells) in enumerate(rows):
         ry = 60 + ri * 74
@@ -637,8 +637,8 @@ def fig_tcc():
             b.append(card(x, ry, cw, 46, txt, fill=fill, stroke=stroke,
                           tcol=stroke, ts=11))
     # flow notes under the grid
-    b.append(arrow(252, 216, 268, 216, color=GREEN, head=GREEN, width=2.5))
-    b.append(label(348, 212, "all tried → confirm", size=10.5, fill=GREEN))
+    b.append(arrow(252, 216, 268, 216, color=TEAL, head=TEAL, width=2.5))
+    b.append(label(348, 212, "all tried → confirm", size=10.5, fill=TEAL))
     b.append(label(430, 236, "any try fails → cancel tried in reverse",
                    size=10.5, fill=RED))
     body = "\n".join(b)

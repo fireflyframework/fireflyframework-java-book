@@ -99,8 +99,8 @@ _ADM_ICON = {
                '<circle cx="10" cy="13.9" r="1.05" fill="#c2410c"/></svg>',
     "spring": '<svg class="adm-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" aria-hidden="true">'
               '<path d="M4.5 15.5c0-5.5 4-9.5 11-9.5-.5 5.5-4.5 9.5-11 9.5z" fill="none" '
-              'stroke="#43b02a" stroke-width="1.5" stroke-linejoin="round"/>'
-              '<path d="M6 14.2c2.6-3.2 5.4-5.2 8.4-6.1" stroke="#43b02a" stroke-width="1.3" '
+              'stroke="#5382A1" stroke-width="1.5" stroke-linejoin="round"/>'
+              '<path d="M6 14.2c2.6-3.2 5.4-5.2 8.4-6.1" stroke="#5382A1" stroke-width="1.3" '
               'fill="none" stroke-linecap="round"/></svg>',
 }
 

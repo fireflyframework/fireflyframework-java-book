@@ -16,10 +16,10 @@ body{
 h1,h2,h3,h4{ color:var(--ink); line-height:1.22; font-weight:800; }
 .eyebrow{ display:block; color:var(--amber-deep); font-weight:800; letter-spacing:.18em;
   font-size:.72rem; text-transform:uppercase; margin-bottom:.4rem; }
-h1.chtitle{ font-size:2.3rem; line-height:1.08; margin:.1rem 0 1.15rem; color:var(--amber-deep);
+h1.chtitle{ font-size:2.3rem; line-height:1.08; margin:.1rem 0 1.15rem; color:var(--java-blue-deep);
   letter-spacing:-.015em; }
-h2{ font-size:1.4rem; font-weight:800; color:var(--bronze); margin:2rem 0 .7rem;
-  padding-bottom:.35rem; border-bottom:2px solid #f0e2c8; }
+h2{ font-size:1.4rem; font-weight:800; color:#23303A; margin:2rem 0 .7rem;
+  padding-bottom:.35rem; border-bottom:2px solid #F0DEB8; }
 h3{ font-size:1.08rem; font-weight:700; margin:1.35rem 0 .4rem; color:#3a2c14; }
 h2+p,h3+p{ margin-top:0; }
 
@@ -27,15 +27,15 @@ h2+p,h3+p{ margin-top:0; }
 p{ margin:0 0 .9rem; }
 strong,b{ color:#3a2c14; font-weight:700; }
 em{ color:inherit; }
-a{ color:var(--green-deep); text-decoration:underline; text-decoration-color:#bcd9a8;
+a{ color:#3E6E8E; text-decoration:underline; text-decoration-color:#bcd2e0;
   text-underline-offset:2px; }
 ul,ol{ margin:.3rem 0 1rem; padding-left:1.45rem; }
 li{ margin:.28rem 0; }
-li::marker{ color:var(--green); }
+li::marker{ color:var(--amber); }
 hr{ border:none; border-top:1px solid var(--rule); margin:1.7rem 0; }
 
-/* inline code — warm tint, firefly-green text */
-code{ background:#f3ecda; color:#2c6e22; padding:.06em .36em; border-radius:4px;
+/* inline code — warm tint, Java-blue text */
+code{ background:#F3ECDA; color:#2E5A78; padding:.06em .36em; border-radius:4px;
   font-family:"SF Mono","JetBrains Mono",Menlo,Consolas,monospace; font-size:.85em;
   word-break:break-word; }
 
@@ -65,8 +65,8 @@ figcaption b,figcaption strong{ color:var(--bronze); }
 /* ============ tables ============ */
 table{ width:100%; border-collapse:collapse; margin:1.15rem 0; font-size:.9rem; line-height:1.5; }
 th,td{ border:1px solid #e7dcc4; padding:.5rem .72rem; text-align:left; vertical-align:top; }
-thead th{ background:#fbf6ea; color:#5a4314; font-weight:700; }
-tbody tr:nth-child(even){ background:#fbf6ea; }
+thead th{ background:#FBF6EA; color:#2E5A78; font-weight:700; }
+tbody tr:nth-child(even){ background:#EEF3F7; }
 td code,th code{ background:#f3ecda; }
 
 /* ============ callouts ============ */
@@ -83,14 +83,14 @@ td code,th code{ background:#f3ecda; }
 .admonition.tip>.admonition-title{ color:var(--tip); }
 .admonition.warning{ background:var(--warn-bg); border-color:#fcd9c2; border-left-color:var(--warn); }
 .admonition.warning>.admonition-title{ color:var(--warn); }
-.admonition.spring{ background:#f1fae6; border-color:#d4e9bd; border-left-color:var(--green); }
-.admonition.spring>.admonition-title{ color:var(--green-deep); }
+.admonition.spring{ background:#EEF3F7; border-color:#cddeea; border-left-color:#5382A1; }
+.admonition.spring>.admonition-title{ color:#2E5A78; }
 
 /* ============ recap / exercises (applied to the section H2) ============ */
-h2.recap,h2.exercises{ color:var(--bronze); border-bottom-color:#f0e2c8;
+h2.recap,h2.exercises{ color:#23303A; border-bottom-color:#F0DEB8;
   display:flex; align-items:center; gap:.5rem; }
-h2.recap::before{ content:"\2713"; color:var(--amber-deep); font-size:1.05rem; }
-h2.exercises::before{ content:"\270E"; color:var(--amber-deep); font-size:1.05rem; }
+h2.recap::before{ content:"\2713"; color:var(--java-orange); font-size:1.05rem; }
+h2.exercises::before{ content:"\270E"; color:var(--java-orange); font-size:1.05rem; }
 
 /* ============ Table of Contents (Packt style) ============ */
 .toc{ padding:0 0 2.5rem; }
@@ -107,7 +107,7 @@ ol.toc-chapters > li{ margin:.18rem 0; }
 .toc-link{                             /* readable chapter row; leader fills to the page number */
   display:block; color:var(--ink); text-decoration:none; font-size:.98rem; line-height:1.75;
 }
-.toc-link:hover{ color:var(--green-deep); }
+.toc-link:hover{ color:var(--java-blue-deep); }
 
 /* ============ EPUB nav (part-grouped) ============ */
 nav#toc ol{ list-style:none; padding-left:1rem; }
@@ -128,6 +128,6 @@ nav#toc li.toc-part > ol a{ font-weight:400; color:var(--ink); }
   font-size:1rem; text-transform:uppercase; margin-bottom:.8rem;
 }
 .part-title{                           /* "Foundations" — centered and large */
-  font-size:2.9rem; line-height:1.1; font-weight:800; color:var(--bronze);
+  font-size:2.9rem; line-height:1.1; font-weight:800; color:var(--java-blue-deep);
   letter-spacing:-.02em; margin:0; border:none; padding:0;
 }

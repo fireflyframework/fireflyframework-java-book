@@ -1,12 +1,13 @@
 """Generate on-brand chapter-opener SVGs for *Firefly for Java by Example*.
 
 Each opener is a 720x300 banner sharing one visual language with the cover:
-a warm espresso field with a faint event-mesh, an amber accent bar, and a darker
-espresso panel on the right holding a glowing **firefly** emblem (the same
-bioluminescent motif as the cover). The "Reactive Java at dusk" palette — espresso
-base, amber-gold hero, firefly-green spark — is constant so the set reads as a
-family; a per-chapter abstract "constellation" varies the left-hand field so no
-two openers look identical — no chapter-specific text is required.
+a deep Java-navy field with a faint event-mesh, an amber accent bar, and a darker
+navy panel on the right holding a glowing **firefly** emblem (the same
+bioluminescent motif as the cover). The "firefly amber + Java logo" palette —
+Java navy base, Java blue + orange hero pairing, firefly amber accent (no leaf
+tones) — is constant so the set reads as a family; a per-chapter abstract "constellation"
+varies the left-hand field so no two openers look identical — no chapter-specific
+text is required.
 
 This writes EXACTLY the files the manifests reference: art/openers/ch01.svg
 through art/openers/ch24.svg (24 files). The prelude and appendices have no
@@ -32,20 +33,22 @@ def esc(s: str) -> str:
     return _xml_escape(str(s))
 
 
-# ---- palette ("Reactive Java at dusk"; shared with the cover) --------------
-FIELD1  = "#1B1610"   # espresso base — field, top
-FIELD2  = "#2A2014"   # deeper espresso — layering / node fills
-PANEL1  = "#211A12"   # darker espresso panel, top
-PANEL2  = "#14100A"   # darker espresso panel, bottom
-GREEN   = "#43b02a"   # firefly green — node rims / spark
-GREEN_B = "#5fd13a"   # bright green accent
-GREEN_D = "#2c8a1c"   # deep green — peer-ring mesh lines
-AMBER   = "#e8a23a"   # amber hero — spokes / firefly glow
-AMBER_B = "#f4c24e"   # bright amber
-AMBER_D = "#c8801f"   # deep amber
-CREAM   = "#f3ecdd"   # cream — text on the field
-LIGHT   = "#f3ecdd"   # cream — hub glyph (kept name for callers)
-MUTED   = "#c9b896"   # warm muted — secondary text
+# ---- palette ("firefly amber + Java logo"; shared with the cover) ----------
+FIELD1  = "#0E2233"   # Java navy base — field, top
+FIELD2  = "#123047"   # lifted navy — layering / node fills
+PANEL1  = "#0F2436"   # darker navy panel, top
+PANEL2  = "#0A1B29"   # darkest navy panel, bottom
+BLUE    = "#5382A1"   # Java-logo blue — node rims / accents
+BLUE_B  = "#7FB0CE"   # lighter Java blue — bright accents / motes
+BLUE_D  = "#3E6178"   # dim Java blue — peer-ring mesh lines
+ORANGE  = "#E76F00"   # Java-logo orange — hero spokes / firefly glow
+ORANGE_B= "#F89820"   # lighter Java orange — bright accents
+AMBER   = "#E8B33A"   # firefly amber — accent bar / firefly glow / pulse
+AMBER_B = "#F2C961"   # bright amber
+AMBER_D = "#B5791A"   # deep amber — accent-bar gradient bottom
+CREAM   = "#F5EFE2"   # cream — text on the field
+LIGHT   = "#F5EFE2"   # cream — hub glyph (kept name for callers)
+MUTED   = "#A9B7C2"   # cool warm-muted — secondary text
 
 W, H = 720, 300
 # the night-sky panel on the right
@@ -76,7 +79,7 @@ def defs() -> str:
         f'<linearGradient id="pnl" x1="{PX}" y1="{PY}" x2="{PX+PW}" y2="{PY+PH}" gradientUnits="userSpaceOnUse">'
         f'<stop offset="0" stop-color="{PANEL1}"/>'
         f'<stop offset="1" stop-color="{PANEL2}"/></linearGradient>'
-        # root-space vertical amber gradient for the accent bar (the hero spark):
+        # root-space vertical amber gradient for the accent bar (the firefly spark):
         f'<linearGradient id="grh" x1="0" y1="0" x2="0" y2="{H}" gradientUnits="userSpaceOnUse">'
         f'<stop offset="0" stop-color="{AMBER_B}"/>'
         f'<stop offset="1" stop-color="{AMBER_D}"/></linearGradient>'
@@ -108,36 +111,36 @@ def emblem() -> str:
         # glowing abdomen
         f'<ellipse cx="0" cy="26" rx="11" ry="16" fill="{AMBER}"/>'
         f'<ellipse cx="0" cy="28" rx="6" ry="10" fill="#fff1d2"/>'
-        # dark thorax + head with a green rim (brand)
-        f'<ellipse cx="0" cy="2" rx="9" ry="13" fill="{PANEL2}" stroke="{GREEN}" stroke-width="1.6"/>'
-        f'<ellipse cx="0" cy="-13" rx="5.5" ry="6.5" fill="{PANEL2}" stroke="{GREEN}" stroke-width="1.3"/>'
+        # dark thorax + head with a Java-blue rim (brand)
+        f'<ellipse cx="0" cy="2" rx="9" ry="13" fill="{PANEL2}" stroke="{BLUE}" stroke-width="1.6"/>'
+        f'<ellipse cx="0" cy="-13" rx="5.5" ry="6.5" fill="{PANEL2}" stroke="{BLUE}" stroke-width="1.3"/>'
         # antennae
-        f'<path d="M-3,-18 C-9,-28 -13,-30 -17,-33" fill="none" stroke="{GREEN}" stroke-width="1.5" stroke-linecap="round"/>'
-        f'<path d="M3,-18 C9,-28 13,-30 17,-33" fill="none" stroke="{GREEN}" stroke-width="1.5" stroke-linecap="round"/>'
+        f'<path d="M-3,-18 C-9,-28 -13,-30 -17,-33" fill="none" stroke="{BLUE}" stroke-width="1.5" stroke-linecap="round"/>'
+        f'<path d="M3,-18 C9,-28 13,-30 17,-33" fill="none" stroke="{BLUE}" stroke-width="1.5" stroke-linecap="round"/>'
         '</g>'
-        # satellite motes (one bioluminescent green, matching the cover)
+        # satellite motes (Java-blue + amber, matching the cover)
         f'<circle cx="50" cy="-46" r="2" fill="{AMBER_B}" opacity="0.7"/>'
-        f'<circle cx="62" cy="28" r="1.6" fill="{GREEN_B}" opacity="0.75"/>'
+        f'<circle cx="62" cy="28" r="1.6" fill="{BLUE_B}" opacity="0.75"/>'
         f'<circle cx="-54" cy="-40" r="1.6" fill="{AMBER_B}" opacity="0.6"/>'
         '</g>'
     )
 
 
 def frame(num: str) -> str:
-    """Forest-green field, green accent bar, darker panel + motes, kicker."""
+    """Java-navy field, amber accent bar, darker panel + motes, kicker."""
     return (
         f'<rect width="{W}" height="{H}" fill="url(#fld)"/>'
         f'<rect x="0" y="0" width="8" height="{H}" fill="url(#grh)"/>'
         # darker panel on the right
         f'<rect x="{PX}" y="{PY}" width="{PW}" height="{PH}" rx="16" fill="url(#pnl)"/>'
         f'<rect x="{PX}" y="{PY}" width="{PW}" height="{PH}" rx="16" fill="none" '
-        f'stroke="{GREEN}" stroke-width="1" opacity="0.22"/>'
+        f'stroke="{BLUE}" stroke-width="1" opacity="0.22"/>'
         # a few distant motes inside the panel
         f'<g fill="{AMBER_B}"><circle cx="528" cy="56" r="1.4" opacity="0.6"/>'
         f'<circle cx="678" cy="236" r="1.4" opacity="0.55"/>'
         f'<circle cx="644" cy="66" r="1.1" opacity="0.5"/>'
         f'<circle cx="512" cy="210" r="1.1" opacity="0.45"/></g>'
-        f'<circle cx="552" cy="246" r="1.3" fill="{GREEN_B}" opacity="0.6"/>'
+        f'<circle cx="552" cy="246" r="1.3" fill="{BLUE_B}" opacity="0.6"/>'
         # chapter number — a TOP-left kicker, clear of the scene below it
         f'<text x="40" y="40" fill="{AMBER_B}" font-size="15" font-weight="800" '
         f'letter-spacing="2.5">{esc(num)}</text>'
@@ -147,7 +150,7 @@ def frame(num: str) -> str:
 
 def constellation(seed: int) -> str:
     """A per-chapter abstract event-mesh on the left-hand field: a small set of
-    hexagonal nodes joined by gently curved spokes, with amber/green pulse dots
+    hexagonal nodes joined by gently curved spokes, with amber/blue pulse dots
     travelling along them. Deterministic from ``seed`` so each chapter differs
     yet the whole set stays one coherent family. Stays within x < 470 so it
     never collides with the panel."""
@@ -182,32 +185,32 @@ def constellation(seed: int) -> str:
     # faint atmospheric accent nodes
     for _ in range(rng.randint(3, 5)):
         ax, ay = rng.uniform(60, 450), rng.uniform(60, 240)
-        parts.append(hexagon(ax, ay, rng.uniform(7, 12), FIELD2, GREEN_D, 1.2, op=0.6))
-    # spokes from hub to each satellite — amber (echoes the cover's hero spokes)
-    parts.append(f'<g fill="none" stroke="{AMBER}" stroke-width="2" opacity="0.50">')
+        parts.append(hexagon(ax, ay, rng.uniform(7, 12), FIELD2, BLUE_D, 1.2, op=0.6))
+    # spokes from hub to each satellite — Java-orange (echoes the cover's hero)
+    parts.append(f'<g fill="none" stroke="{ORANGE}" stroke-width="2" opacity="0.50">')
     for (sx, sy, _) in sats:
         parts.append(f'<path d="{quad(hub[0], hub[1], sx, sy)}"/>')
     parts.append('</g>')
-    # peer ring (satellite to next satellite), dim
-    parts.append(f'<g fill="none" stroke="{GREEN_D}" stroke-width="1.3" opacity="0.4">')
+    # peer ring (satellite to next satellite), dim Java-blue
+    parts.append(f'<g fill="none" stroke="{BLUE_D}" stroke-width="1.3" opacity="0.4">')
     for i in range(len(sats)):
         a, b = sats[i], sats[(i + 1) % len(sats)]
         parts.append(f'<path d="{quad(a[0], a[1], b[0], b[1])}"/>')
     parts.append('</g>')
-    # pulse dots travelling along the spokes
+    # pulse dots travelling along the spokes (amber + Java-blue)
     for j, (sx, sy, _) in enumerate(sats):
-        col = AMBER if j % 2 == 0 else GREEN_B
+        col = AMBER if j % 2 == 0 else BLUE_B
         for t, r_dot, op in [(0.34, 4.5, 0.9), (0.66, 3.0, 0.55)]:
             px = hub[0] + (sx - hub[0]) * t
             py = hub[1] + (sy - hub[1]) * t
             parts.append(f'<circle cx="{px:.1f}" cy="{py:.1f}" r="{r_dot}" fill="{col}" opacity="{op}"/>')
-    # satellite nodes
+    # satellite nodes — Java-blue rims
     for (sx, sy, sr) in sats:
-        parts.append(hexagon(sx, sy, sr + 6, "none", GREEN, 1.1, op=0.25))
-        parts.append(hexagon(sx, sy, sr, FIELD2, GREEN, 2.0))
+        parts.append(hexagon(sx, sy, sr + 6, "none", BLUE, 1.1, op=0.25))
+        parts.append(hexagon(sx, sy, sr, FIELD2, BLUE, 2.0))
     # hub node — slightly larger, amber-rimmed (echoes the cover hub)
-    parts.append(hexagon(hub[0], hub[1], 30, "none", GREEN, 1.6, op=0.4))
-    parts.append(hexagon(hub[0], hub[1], 22, GREEN_D, AMBER, 2.6))
+    parts.append(hexagon(hub[0], hub[1], 30, "none", BLUE, 1.6, op=0.4))
+    parts.append(hexagon(hub[0], hub[1], 22, FIELD2, AMBER, 2.6))
     parts.append(
         f'<text x="{hub[0]:.1f}" y="{hub[1] + 1:.1f}" text-anchor="middle" '
         f'dominant-baseline="middle" fill="{LIGHT}" font-size="20" font-weight="800" '

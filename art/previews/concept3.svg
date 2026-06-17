@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1500" height="2100" viewBox="0 0 1500 2100">
+<defs></defs>
+<rect width="1500" height="2100" fill="#F7F1E3"/>
+<rect x="0" y="1180" width="1500" height="920" fill="#EFE7D3" opacity="0.45"/>
+<rect x="70" y="70" width="1360" height="1960" fill="none" stroke="#1A1B18" stroke-width="1.5" opacity="0.55"/>
+<rect x="80" y="80" width="1340" height="1940" fill="none" stroke="#1A1B18" stroke-width="0.6" opacity="0.35"/>
+<text x="750" y="172" text-anchor="middle" fill="#5C5A50" font-size="24" font-weight="500" letter-spacing="9" font-family="Avenir Next,Avenir,Helvetica Neue,Helvetica,Arial,sans-serif">FIREFLY SOFTWARE FOUNDATION</text>
+<rect x="690" y="200" width="120" height="2" fill="#2E7D32" rx="1"/>
+<g transform="translate(750,560) scale(1.15)"><path d="M-300,120 C-220,30 -120,-40 -40,-30 C40,-20 70,60 0,80 C-70,100 -60,10 10,-20 C90,-52 200,-40 280,40" fill="none" stroke="#D9952B" stroke-width="2.2" opacity="0.55" stroke-linecap="round"/><circle cx="-300" cy="120" r="3.2" fill="#D9952B" opacity="0.3"/><circle cx="-150" cy="-22" r="3.2" fill="#D9952B" opacity="0.45"/><circle cx="60" cy="68" r="3.2" fill="#D9952B" opacity="0.4"/><circle cx="200" cy="-30" r="3.2" fill="#D9952B" opacity="0.55"/><circle cx="280" cy="40" r="3.2" fill="#D9952B" opacity="0.7"/><g transform="translate(40,-40) rotate(-18)"><circle cx="0" cy="40" r="34" fill="#F0B651" opacity="0.30"/><circle cx="0" cy="40" r="16" fill="#D9952B" opacity="0.55"/><path d="M-4,-6 C-56,-44 -78,-2 -22,12" fill="none" stroke="#1A1B18" stroke-width="2" opacity="0.85"/><path d="M4,-6 C56,-44 78,-2 22,12" fill="none" stroke="#1A1B18" stroke-width="2" opacity="0.85"/><ellipse cx="0" cy="40" rx="14" ry="22" fill="#2E7D32" stroke="#1F5C24" stroke-width="1.5"/><ellipse cx="0" cy="4" rx="11" ry="16" fill="#F7F1E3" stroke="#1A1B18" stroke-width="2"/><circle cx="0" cy="-18" r="8" fill="#F7F1E3" stroke="#1A1B18" stroke-width="2"/><path d="M-4,-24 C-12,-38 -18,-42 -24,-46" fill="none" stroke="#1A1B18" stroke-width="1.8" stroke-linecap="round"/><path d="M4,-24 C12,-38 18,-42 24,-46" fill="none" stroke="#1A1B18" stroke-width="1.8" stroke-linecap="round"/></g></g>
+<rect x="490" y="1050" width="200" height="2" fill="#1A1B18" opacity="0.6"/>
+<circle cx="750" cy="1051" r="5" fill="#D9952B"/>
+<rect x="810" y="1050" width="200" height="2" fill="#1A1B18" opacity="0.6"/>
+<text x="750" y="1215" text-anchor="middle" fill="#1A1B18" font-size="120" font-weight="600" letter-spacing="0.5" font-family="Iowan Old Style,Palatino,Palatino Linotype,Hoefler Text,Georgia,Times New Roman,serif">Firefly for</text>
+<text x="750" y="1422" text-anchor="middle" fill="#1A1B18" font-size="236" font-weight="700" letter-spacing="1" font-family="Iowan Old Style,Palatino,Palatino Linotype,Hoefler Text,Georgia,Times New Roman,serif">Java</text>
+<rect x="570" y="1452" width="360" height="4" fill="#2E7D32" rx="2"/>
+<circle cx="750" cy="1454" r="9" fill="#D9952B"/>
+<text x="750" y="1570" text-anchor="middle" fill="#2E7D32" font-size="92" font-weight="500" font-style="italic" font-family="Iowan Old Style,Palatino,Palatino Linotype,Hoefler Text,Georgia,Times New Roman,serif">by Example</text>
+<text x="750" y="1662" text-anchor="middle" fill="#5C5A50" font-size="37" font-weight="400" letter-spacing="0.5" font-family="Avenir Next,Avenir,Helvetica Neue,Helvetica,Arial,sans-serif">Reactive Microservices with Spring Boot,</text>
+<text x="750" y="1714" text-anchor="middle" fill="#5C5A50" font-size="37" font-weight="400" letter-spacing="0.5" font-family="Avenir Next,Avenir,Helvetica Neue,Helvetica,Arial,sans-serif">WebFlux &amp; the Firefly Framework</text>
+</svg>
