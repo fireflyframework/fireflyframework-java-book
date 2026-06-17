@@ -12,13 +12,22 @@ an SDK. You will define a `Command<R>` and a `Query<R>`, write the single-method
 handlers that satisfy them, and watch the framework discover and dispatch those
 handlers by their generic type, with no manual registration. You will see the
 `CommandBus` and `QueryBus` that route the work, the multi-tenant `ExecutionContext`
-that flows through it, and the SDK seam — a reactive port — that stands in for the
-generated core client until Chapter 14 wires the real one.
+that flows through it, and the SDK seam — a reactive port — that the command handlers
+call to reach the core service.
+
+And this is the chapter where the wiring stops being theoretical. The handlers you
+build here now run **live**: when you POST to the experience BFF on port `8080`, the
+request flows `exp → domain → core`, the domain runs the `RegisterApplicationSaga`,
+and the saga sends a `RegisterLoanApplicationCommand` on the `CommandBus` straight into
+the `RegisterLoanApplicationHandler` you are about to read — which writes to the core
+service over HTTP and gets back a `SUBMITTED` application. The full stack runs with no
+Docker (core on `:8081` over H2, domain on `:8082`, exp on `:8080`). You met that flow
+end to end in the quickstart; here you build the piece in the middle that makes it work.
 
 Everything you slice lives in the `domain-lending-loan-origination` module, and a
-six-method test suite proves it boots and runs with no core service and no Docker.
-Let's start with the two halves of CQRS: commands that change state, and queries
-that read it.
+six-method test suite proves the tier boots and runs with no core service and no
+Docker. Let's start with the two halves of CQRS: commands that change state, and
+queries that read it.
 
 ## Why split commands from queries
 
@@ -41,6 +50,15 @@ a saga, while the read path can cache aggressively, because a read changes nothi
     `Query<R>` — dispatched through its own bus to a handler the framework discovers by
     generic type. The benefit is not ceremony; it is that each operation becomes a
     discrete unit you can test, trace, cache, and orchestrate independently.
+
+!!! note "Key term — the domain (orchestration) tier"
+    The **domain tier** — built on `fireflyframework-starter-domain` — is the
+    orchestration layer of a Firefly fleet. It owns *no* database. Its job is to
+    compose the core systems of record into business flows: it dispatches commands and
+    queries on the CQRS buses, runs sagas (Chapter 11), publishes domain events, and
+    reaches each core service through an SDK seam — a reactive client interface. In
+    Lumen it serves on port `8082` and sits between the experience BFF (`8080`) and the
+    core service (`8081`).
 
 ## Step 1 — Define a command
 
@@ -75,6 +93,13 @@ says "dispatching me yields a `Mono<UUID>`," and it is also the key the framewor
 to find the handler. The command itself has no behavior — no logic, no client, no
 bus. It is an envelope. The behavior lives in a handler, and the type parameter is the
 wire between them.
+
+The command is also intentionally *immutable for its core fields*: `applicantName` and
+`amount` are `final`, set once in the constructor. A command is a value you create,
+hand to the bus, and never mutate — which is what makes it safe to log, replay, and
+reason about. (You will see in Chapter 11 that the *dependent* commands add one
+mutable `loanApplicationId` slot the saga stamps in just before dispatch; that is the
+single deliberate exception, and it is local to the orchestration step.)
 
 !!! spring "Spring parity"
     `Command<R>` and `Query<R>` are Firefly interfaces, but the message-and-handler
@@ -127,11 +152,14 @@ That pairing is exactly the information the framework needs to route — it inde
 `RegisterLoanApplicationCommand`, the bus already knows this is the handler. You never
 write a `register(...)` line or a switch statement; the generic type *is* the registration.
 
-Inside `doHandle`, the reactive vocabulary from Chapter 5 is all you need. `client.
-createLoanApplication(...)` returns a `Mono<UUID>`; `flatMap` chains the asynchronous
-event publish and then re-emits the id with `thenReturn`. This is the canonical
-"command writes, then emits a domain event" shape — the write reaches the system of
-record first, and only on success does the event go out.
+Inside `doHandle`, the reactive vocabulary from Chapter 5 is all you need.
+`client.createLoanApplication(...)` returns a `Mono<UUID>`; `flatMap` chains the
+asynchronous event publish and then re-emits the id with `thenReturn`. This is the
+canonical "command writes, then emits a domain event" shape — the write reaches the
+system of record first, and only on success does the event go out. The ordering is the
+point: `flatMap` does not subscribe to `publishRegistered(...)` until
+`createLoanApplication(...)` has emitted an id, so a failed core write short-circuits
+and no event is published for a write that did not happen.
 
 !!! note "Key term — the single-method handler pattern"
     A Firefly handler extends `CommandHandler<C, R>` (or `QueryHandler<Q, R>`) and
@@ -140,6 +168,15 @@ record first, and only on success does the event go out.
     the framework's surrounding `handle` method, which calls your `doHandle`. You write
     the business step and nothing else, and every handler in the fleet is wrapped the
     same way.
+
+!!! note "Key term — the public handle vs. your doHandle"
+    `doHandle` is `protected` — it is *your* business step and nothing calls it
+    directly. The bus (and the handler test you will run) invokes the inherited
+    *public* `handle(command)`, the framework's wrapper. `handle` validates the
+    command, opens a trace span, starts a metrics timer, calls `doHandle`, and maps any
+    thrown or signalled error onto the fleet-wide error model before returning the
+    `Mono<R>`. The split is why your handler stays a clean one-liner while every
+    dispatch is still timed, traced, and validated identically.
 
 !!! spring "Spring parity"
     `@CommandHandlerComponent` is a meta-annotated Spring stereotype — under the hood
@@ -192,6 +229,15 @@ real read handler would consult a projection or call the core's read API, but th
 result, implement `doHandle`. The framework discovers it on the `QueryBus` precisely
 the way it discovered the command handler on the `CommandBus`, by the generic type.
 
+A fair question at this point: if the live read path returns a real `SUBMITTED`
+application from core, why does this handler return the constant `"REGISTERED"`? Because
+the *live GET* in Lumen does not go through this query handler at all — it goes through
+the domain controller straight to a core reader (you will see that seam in Step 5). The
+`GetApplicationStatusQuery` exists to teach the read half of CQRS as a typed,
+bus-routed message in its own right; keeping its handler a constant is the honest way to
+show the *mechanism* without standing up a projection store the slice does not need.
+Both reads are real; they answer different questions.
+
 !!! tip "Checkpoint"
     Stop and notice the pattern. Four files — two messages, two handlers — and you have
     not written a single line that *registers* a handler, *routes* a message, or
@@ -222,9 +268,12 @@ bus routes to `GetApplicationStatusHandler` because that handler declared the sa
 query type. The caller never names the handler. It names the *message*, and the bus
 finds the rest.
 
-The command side dispatches the same way, with `commandBus.send(command)`. You will
-not see a bare `send` in the service, because in Lumen the write path is wrapped in a
-saga (the next chapter's subject), but inside a saga step the call is exactly that:
+That same `LoanOriginationService` is the one the live flow actually drives. Its other
+method, `submitApplication(...)`, does not call the `CommandBus` directly — it hands the
+work to the `SagaEngine`, which runs the `RegisterApplicationSaga`, and *the saga steps*
+are what call `commandBus.send(...)`. You will not see a bare `send` in the service,
+because in Lumen the write path is wrapped in a saga (the next chapter's subject), but
+inside a saga step the call is exactly that:
 
 ```java
 // Inside a saga step — a command dispatched on the CommandBus.
@@ -236,6 +285,10 @@ return commandBus.send(command)
 `Command<UUID>` parameter; the step stashes the new id in the `ExecutionContext` so
 later steps can read it. Whether dispatched directly or from a saga step, the contract
 is the same: hand the bus a typed message, get back a `Mono` of its declared result.
+That snippet is not a sketch — it is the exact body of the saga's root step, and it is
+the line that runs every time the BFF submits an application. The command you defined
+in Step 1, the handler you wrote in Step 2, and this `commandBus.send` call are the
+three links the live `exp → domain → core` flow threads together.
 
 !!! note "Key term — ExecutionContext"
     The **`ExecutionContext`** is the request-scoped bag of variables and metadata that
@@ -245,7 +298,7 @@ is the same: hand the bus a typed message, get back a `Mono` of its declared res
     reactive stack, without a `ThreadLocal`. You write to it with `putVariable` and read
     it back, typed, with `getVariableAs`.
 
-## Step 5 — The SDK seam, honestly
+## Step 5 — The SDK seam, and how the live flow uses it
 
 The command handler called `client.createLoanApplication(...)`. What is that client?
 It is a **reactive port** — an interface the domain tier depends on to reach the core
@@ -268,22 +321,62 @@ Be clear-eyed about what this is. In a real Firefly deployment, the domain tier 
 not hand-write this interface — it injects the *generated core SDK*, a WebClient-based
 client produced from the core service's OpenAPI contract. The reactor hand-rolls a
 trimmed port here for one honest reason: so the sample compiles and its tests run with
-**no running core service and no Docker**. The port is a stand-in. Chapter 14 replaces
-it with the generated SDK and wires the real HTTP call to the core tier you built in
-Chapters 7 and 8.
+**no running core service and no Docker**. But the port is more than a teaching stub —
+it is the seam that gives the tier *two* swappable implementations, and the live stack
+uses both:
 
-That substitution is exactly why CQRS and the port matter. The handler depends on the
-*interface*, never on a concrete client, so a test can supply an in-memory
-implementation and the production wiring can supply the generated SDK — and the
-handler does not change. The tiers integrate over a contract, never a shared database,
-which is the rule Chapter 1 set for the whole fleet.
+- In the **slice tests**, a `@Bean` supplies the in-memory `StubLoanOriginationClient`
+  (under `src/test/java`), which records calls and returns synthetic ids. No HTTP, no
+  core, no Docker.
+- In the **running stack**, a `WebClientLoanOriginationClient` implements the same port
+  by POSTing to the core service over HTTP. It is activated only when you set the core
+  base path, so it never displaces the test stub.
 
-!!! warning "The port is a stand-in, not the production client"
-    Do not read `LoanOriginationClient` as "how Firefly calls a downstream service."
-    The production path is a *generated* SDK client with resilient defaults — retries,
-    timeouts, a circuit breaker (Chapter 14). The hand-rolled port exists so this
-    chapter can teach CQRS without standing up the core service. When you see the port,
-    read "this is where the generated SDK plugs in."
+The handler does not know or care which one it got — it depends on the *interface*,
+never on a concrete client. That is the whole payoff of the port: the same
+`RegisterLoanApplicationHandler` is exercised in a millisecond unit test and in the
+live three-tier flow, unchanged.
+
+!!! note "Key term — the SDK seam"
+    A **seam** is a place where you can change behavior without editing the code on
+    either side of it. `LoanOriginationClient` is the domain tier's SDK seam to the
+    core service: production wiring plugs in the generated SDK, the live sample plugs in
+    a `WebClient` adapter, and tests plug in an in-memory stub. The tiers integrate over
+    a *contract*, never a shared database — the rule Chapter 1 set for the whole fleet.
+
+You can see the live adapter making the real call. `WebClientLoanOriginationClient`
+implements the same `createLoanApplication(...)` the handler calls, and turns it into an
+HTTP POST to the core service:
+
+```java
+// From WebClientLoanOriginationClient — the live adapter behind the same port.
+return webClient.post()
+        .uri(LOAN_APPLICATIONS_PATH)
+        .contentType(MediaType.APPLICATION_JSON)
+        .bodyValue(body)
+        .retrieve()
+        .bodyToMono(CoreLoanApplicationResponse.class)
+        .map(CoreLoanApplicationResponse::loanApplicationId);
+```
+
+When you POST to the BFF, this is the bottom of the call stack: the
+`RegisterLoanApplicationHandler` calls the port, the `WebClientLoanOriginationClient`
+POSTs to the core's `/api/v1/loan-applications`, and the core-assigned
+`loanApplicationId` rides back up through the saga, the controller, and the BFF.
+
+!!! warning "The live mapping is intentionally minimal — and the dependent steps run in-process"
+    Be honest about two trims. First, the live write seam carries only the applicant
+    *name* and *amount*, so the core receives sensible defaults for the fields the
+    trimmed port does not pass — `currency` lands as `EUR`, `termMonths` as `12`,
+    `purpose` as `GENERAL`. (That is why the value you read back from core can differ
+    from what you submitted to the BFF; richer mapping is the generated SDK's job.)
+    Second, only the *root* step — `createLoanApplication`, and its compensating
+    `removeLoanApplication` — actually reaches the core, because the trimmed core
+    controller exposes just the loan-application resource. The dependent steps
+    (`addApplicant`, `proposeOffer`) have no core endpoint in this slice, so they
+    complete in-process with a synthesized id — enough for the saga to finish while the
+    real write and its compensation flow over HTTP. The generated SDK fills in both gaps
+    in a production service.
 
 ## How queries cache, and where the bus reports
 
@@ -359,11 +452,55 @@ The four context-booting tests go one level up: they let the framework discover 
 `StubLoanOriginationClient` for the `LoanOriginationClient` port. No Docker, no core
 service. That is the SDK seam earning its keep.
 
+To see the *same* handlers run for real, boot the full stack and POST to the BFF — the
+end-to-end flow you ran in the quickstart. With all three tiers up (core on `:8081`,
+domain on `:8082`, exp on `:8080`):
+
+```text
+curl -s -X POST localhost:8080/api/v1/experience/lending/applications \
+  -H 'Content-Type: application/json' \
+  -d '{"productId":"11111111-1111-1111-1111-111111111111","requestedAmount":25000.00,"term":36,"purpose":"HOME_IMPROVEMENT","simulationId":"22222222-2222-2222-2222-222222222222"}'
+```
+
+```json
+{
+  "applicationId": "786544c7-2f10-4110-95fe-682d63edbace",
+  "simulationId": "22222222-2222-2222-2222-222222222222",
+  "status": "SUBMITTED",
+  "requestedAmount": 25000.00,
+  "term": 36,
+  "purpose": "HOME_IMPROVEMENT",
+  "createdAt": "2026-06-17T11:46:21.186231",
+  "updatedAt": "2026-06-17T11:46:21.186231"
+}
+```
+
+On the domain tier you can watch the saga drive the write — the root step runs first
+and writes to core over HTTP, then the two dependent steps complete in-process, and the
+saga reports success:
+
+```text
+[orchestration] started   name=RegisterApplicationSaga ... pattern=SAGA
+[orchestration] step.success ... stepId=registerLoanApplication latencyMs=94
+[orchestration] step.success ... stepId=proposeOffer
+[orchestration] step.success ... stepId=registerApplicant
+[orchestration] completed name=RegisterApplicationSaga ... pattern=SAGA success=true
+```
+
+That `stepId=registerLoanApplication` line is your handler running live: the saga sent
+a `RegisterLoanApplicationCommand` on the `CommandBus`, the bus routed it to
+`RegisterLoanApplicationHandler`, the handler called the `LoanOriginationClient` port,
+and the `WebClientLoanOriginationClient` POSTed to core — which is why the
+`applicationId` in the response is the id the core system of record assigned. The
+command/query mechanism you built in tests and the production flow are the same code.
+
 !!! tip "Checkpoint"
-    Six green tests, and not one of them needs the core tier running. The command/query
-    split, the typed buses, and the port together let you test the orchestration layer
-    in complete isolation — the fastest possible feedback for the most business-critical
-    code in the fleet.
+    Six green tests, and not one of them needs the core tier running — yet the *same*
+    handlers, dispatched through the *same* buses, also run live when the BFF submits an
+    application and the saga writes to core over HTTP. The command/query split, the
+    typed buses, and the port together let you test the orchestration layer in complete
+    isolation *and* run it for real without changing a line. That is the fastest
+    possible feedback for the most business-critical code in the fleet.
 
 ## What you built {.recap}
 
@@ -372,17 +509,19 @@ service. That is the SDK seam earning its keep.
   separated because writing and reading have different shapes and needs.
 - Two **single-method handlers** — `@CommandHandlerComponent` and
   `@QueryHandlerComponent` stereotypes that extend `CommandHandler<C, R>` /
-  `QueryHandler<Q, R>` and implement only `doHandle`, while the framework supplies
-  validation, metrics, tracing, and error mapping around them.
+  `QueryHandler<Q, R>` and implement only `doHandle`, while the framework's public
+  `handle` supplies validation, metrics, tracing, and error mapping around them.
 - **Auto-discovery by generic type** — the framework indexes each handler by its
   command/query type parameter and routes `commandBus.send` / `queryBus.query` to it,
   with no manual registration and no switch statement.
 - The **`ExecutionContext`** that carries tenant, correlation, and intermediate state
   through a dispatch on the reactive stack, and a first look at query caching and
   `/actuator/cqrs` as capabilities the bus contributes for free.
-- The **SDK seam** — `LoanOriginationClient`, a reactive port that stands in for the
-  generated core SDK so the whole tier compiles and tests green with no core service
-  and no Docker, and that Chapter 14 will replace with the real client.
+- The **SDK seam** — `LoanOriginationClient`, a reactive port with two
+  implementations: the in-memory `StubLoanOriginationClient` that keeps the tier's
+  tests green with no core service and no Docker, and the live
+  `WebClientLoanOriginationClient` that POSTs to core over HTTP so the handlers run for
+  real inside the saga the BFF triggers.
 
 ## Try it yourself {.exercises}
 
@@ -402,17 +541,23 @@ service. That is the SDK seam earning its keep.
    `RegisterApplicationSaga`, follow the type parameters: which handler answers a
    `RegisterLoanApplicationCommand`, and what in its class declaration makes the bus
    pick it? Write down the single fact the bus uses to route.
-5. **Make a query cacheable in your head.** The slice's `GetApplicationStatusHandler`
+5. **Run the live flow and find your handler in the log.** Boot all three tiers, POST
+   to the BFF as in *Run it*, and find the `stepId=registerLoanApplication` line in the
+   domain log. Explain the path from that POST down to `WebClientLoanOriginationClient`
+   POSTing to core, naming the command, the bus, the handler, and the port in order.
+6. **Make a query cacheable in your head.** The slice's `GetApplicationStatusHandler`
    returns a constant. Argue why caching it would be safe, then describe one change to
    the read model that would make caching *unsafe* — and which `firefly.cqrs.*` knob you
    would reach for to bound the staleness.
 
 ## Where to go next
 
-You now have discrete, dispatched, testable commands and queries — but a real
-registration is several commands that must succeed or fail *together*, with each
-completed step undone if a later one breaks. Chapter 11 introduces the **saga**: the
-`@Saga` and `@SagaStep` orchestration that runs `registerLoanApplication`,
-`registerApplicant`, and `proposeOffer` as one atomic flow, threads the new id through
-the `ExecutionContext` you met here, and compensates in reverse when a step fails. The
-commands you just built are exactly the steps that saga will orchestrate.
+You now have discrete, dispatched, testable commands and queries — and you have seen
+them run live inside a saga the BFF triggers. But a real registration is several
+commands that must succeed or fail *together*, with each completed step undone if a
+later one breaks. Chapter 11 introduces the **saga**: the `@Saga` and `@SagaStep`
+orchestration that runs `registerLoanApplication`, `registerApplicant`, and
+`proposeOffer` as one flow, threads the new id through the `ExecutionContext` you met
+here, and compensates in reverse when a step fails. The commands you just built are
+exactly the steps that saga orchestrates — and you have already watched it write to
+core over HTTP.

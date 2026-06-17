@@ -2,9 +2,14 @@ Start here with a plain admission: Lumen Lending does not use event sourcing, an
 this chapter is optional. The origination slice you have built persists state the
 ordinary way — a `loan_application` row updated in place (Chapter 8), a rich
 aggregate that owns its lifecycle (Chapter 9), commands and queries over a bus
-(Chapter 10), and a saga that compensates when a step fails (Chapter 18). That is
-classic CRUD with orchestration, and for origination it is exactly right. Nothing in
-this chapter changes that code, and there is no companion test to run.
+(Chapter 10), in-JVM domain events on the `APPLICATION_EVENT` transport (Chapter
+11), and a saga that compensates when a step fails (Chapter 18). That is classic
+CRUD with orchestration, and for origination it is exactly right. When you POST to
+the experience tier, the request flows `exp → domain → core`, the
+`RegisterApplicationSaga` drives the write, and the core service stores a single row
+that comes back stamped `SUBMITTED` — no event log, no replay, no projection in
+sight. Nothing in this chapter changes that code, and there is no companion test to
+run.
 
 So why a chapter at all? Because Firefly ships an event-sourcing capability, and a
 real lending platform has at least one place that wants it: the **ledger**. When the
@@ -153,6 +158,24 @@ every stored event through `on(...)` in order, with no command logic running at 
     historical account that was once legal fails to load. The handler's only job is to
     fold a known-good event into state.
 
+!!! spring "Spring parity"
+    There is no Spring analogue for this command/`on(...)` split. A vanilla
+    `@Service` mutates a JPA or R2DBC entity in place; "the state" *is* the row, and
+    history is whatever you remembered to write to an audit table. Firefly's
+    `AggregateRoot` inverts that: the events are primary and the state is derived, and
+    `raise(...)` is the single choke point through which every change must pass. The
+    payoff — deterministic reconstruction from history — is exactly the property a
+    mutated row can never give you, no matter how careful the `@Service` is.
+
+Make the fold concrete. Given the stream `AccountOpened`, `FundsDeposited(500)`,
+`FundsWithdrawn(200)`, the framework constructs a blank `Account` and threads each
+event through `on(...)` in order: open sets the balance to `0`, the deposit raises it
+to `500`, the withdrawal lowers it to `300`. No `deposit` or `withdraw` command runs
+during this replay — only the three `on(...)` handlers fire — and the result is
+`balanceMinorUnits == 300` every single time, on every machine, forever. That
+determinism is not a nicety; it is the contract that lets a snapshot be a cache and a
+projection be disposable, both of which you meet below.
+
 ## Domain events as the source of truth
 
 The events are the whole point, so they get first-class treatment: each is an
@@ -242,7 +265,17 @@ A failed `append` surfaces as an `onError` you handle the reactive way — typic
 `retryWhen` with a reload, so the loser of a race reloads at version 8, re-decides its
 withdrawal against the now-current balance, and appends as version 9. The aggregate's
 invariant (no overdraft) is re-checked on that reload, which is exactly why you want
-the guard in the command and not the handler.
+the guard in the command and not the handler. This is the moment the whole discipline
+pays off: because the rule lives in the command and the command runs again on every
+retry, the loser does not blindly re-apply a stale decision — it asks the question
+afresh against the balance the winner just left behind, and may now legitimately
+refuse where it would have succeeded a millisecond earlier.
+
+A natural question: what version does a brand-new aggregate write at? An account that
+has never been stored is at version `0`, so its first `append` (carrying
+`AccountOpened`) asserts `expectedVersion = 0` and creates the stream; the store
+rejects that create if any stream already exists for the id, which is how event
+sourcing enforces "open this account exactly once."
 
 !!! note "Key term — optimistic concurrency via aggregate versioning"
     Each aggregate's stream has a monotonically increasing **version** equal to its
@@ -347,6 +380,14 @@ The payoff is that "save my events" and "tell the world" become a single atomic 
 from the writer's point of view. The aggregate's command finishes when the local
 transaction commits; propagation is the relay's problem, and the relay can be as slow,
 retried, or restarted as it needs to be without ever losing or fabricating an event.
+
+Worth a reminder on honesty here: the outbox matters precisely when "tell the world"
+crosses a process boundary. Lumen's origination events stay *in-JVM* on the
+`APPLICATION_EVENT` transport (Chapter 11), so the diagram's broker hop simply does
+not exist for the sample — there is no second system that could disagree with the
+database. The outbox earns its keep the day you switch that transport to Kafka or
+Postgres and the publish becomes a genuinely separate write; the pattern is here so
+you recognize the race before it bites, not because the slice runs it.
 
 !!! note "Key term — transactional outbox"
     The **transactional outbox** records "this event must be published" in the same
@@ -469,7 +510,9 @@ migration.
 - A **`ProjectionService`** builds read models from the stream and tracks a
   **checkpoint** so processing is resumable and read models are rebuildable. The
   **transactional outbox** publishes events atomically with the local append, trading
-  an impossible distributed transaction for an at-least-once relay.
+  an impossible distributed transaction for an at-least-once relay — a race that only
+  exists once you cross a process boundary, which Lumen's in-JVM `APPLICATION_EVENT`
+  transport does not.
 - **Snapshots** shortcut replay of long streams and are a cache, never truth;
   **upcasters** transform old events forward at read time, so an immutable, audited
   history coexists with a schema that evolves over years.
@@ -500,6 +543,13 @@ in events.
    as a `double` and revision 2 stores it as a `long` of minor units. Sketch the
    `@EventUpcaster` from revision 1 to 2, and state why editing the stored revision-1
    rows instead would be the wrong fix.
+6. **Find the seam in Lumen.** The origination slice is CRUD: the core service stores
+   a single `loan_application` row that the live `exp → domain → core` flow leaves at
+   `status: SUBMITTED`. Where, in that flow, *could* an event-sourced ledger plug in
+   without disturbing origination? Write two sentences naming the boundary — for
+   example, a disbursement ledger that the core service would post to after approval —
+   and explain why event sourcing fits *there* but not on the application status
+   itself.
 
 ## Where to go next
 

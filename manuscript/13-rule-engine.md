@@ -1,11 +1,14 @@
 Lumen Lending makes a credit decision, but it does not *reason* about one. Walk
 back through the slice you have built and find the moment a loan is priced. It is in
 the domain tier's `LoanOriginationService.submitApplication`, which takes an `amount`
-and an `annualRateBps` as plain arguments and hands them straight to a
-`ProposeOfferCommand`. The saga's `proposeOffer` step records that offer; nothing
-upstream computes whether the applicant *qualifies*, or at what rate. The eligibility
-and pricing logic is, in effect, a hand-supplied constant — the simplest possible
-heuristic, decided by the caller and passed through.
+and an `annualRateBps` as plain arguments and hands them straight into a
+`ProposeOfferCommand`. From there the saga's `proposeOffer` step dispatches that
+command on the `CommandBus`, and `ProposeOfferHandler` records the offer by calling
+`client.proposeOffer(loanApplicationId, amount, annualRateBps)` — passing the same
+rate it was handed, untouched. Nothing along that path computes whether the applicant
+*qualifies*, or at what rate. The eligibility and pricing logic is, in effect, a
+hand-supplied constant — the simplest possible heuristic, decided by the caller and
+threaded through the command to the client.
 
 That is honest for a teaching slice, and it is exactly the kind of decision that, in
 a real lending platform, you do *not* want welded into Java and redeployed every time
@@ -18,13 +21,16 @@ that the decision step becomes data, authored in YAML, versioned in a table, and
 evaluated reactively.
 
 A note on honesty up front, because this is an honest chapter. The lending reactor
-**does not wire the rule engine**. There is no listing here that the build verifies,
-and there is no `mvn` command to run at the end — the code below is *illustrative*,
-shown in standard fenced blocks, so you can see how a credit-eligibility or pricing
-rule would be authored and evaluated. Everything described is real engine behavior,
-drawn from `fireflyframework-rule-engine`'s own DSL and service layer; what is *not*
-real is any claim that Lumen calls it today. Read this as the map of where decisioning
-belongs, not a tour of code already in place.
+**does not wire the rule engine**. There is no `::: listing` slice here that the build
+verifies, and there is no `mvn` command to run at the end — the code below is
+*illustrative*, shown in standard fenced blocks, so you can see how a credit-eligibility
+or pricing rule would be authored and evaluated. Everything described is real engine
+behavior, drawn from `fireflyframework-rule-engine`'s own DSL and service layer; what is
+*not* real is any claim that Lumen calls it today. The real moving parts this chapter
+talks *around* — the `ProposeOfferCommand` and its `ProposeOfferHandler` (Chapter 10's
+CQRS slice) and the `RegisterApplicationSaga` that drives them (Chapter 18) — are
+genuine and verified; the rule engine is the piece that *would* slot between them. Read
+this as the map of where decisioning belongs, not a tour of code already in place.
 
 !!! note "Key term — rule engine"
     A **rule engine** evaluates business policy expressed as *data* — rules you can
@@ -37,9 +43,11 @@ belongs, not a tour of code already in place.
 
 ## Where the heuristic lives, and where the engine would go
 
-Find the seam first; the rest of the chapter fills it. In the domain tier, the offer
-is assembled by the service and recorded by a command handler. The handler is the
-plug-point — the one place a real decision would be *computed* rather than passed in:
+Find the seam first; the rest of the chapter fills it. In the domain tier the rate is
+born as an argument: `LoanOriginationService.submitApplication` accepts `annualRateBps`
+and packs it into a `ProposeOfferCommand`. That command rides through the saga's
+`proposeOffer` step (Chapter 18) and lands in `ProposeOfferHandler` (Chapter 10's
+CQRS slice), whose one job is to forward the number to the core over the SDK seam:
 
 ```java
 // Today, in the slice: the offer's amount and rate arrive as arguments.
@@ -53,11 +61,22 @@ public Mono<SagaResult> submitApplication(String applicantName, long amount, int
 }
 ```
 
-The `proposeOffer` step is a *decision* in disguise: it asserts an applicant is
-eligible and prices the loan, but the policy behind those numbers is implicit. Swap in
-the rule engine and the same step becomes explicit and configurable. Conceptually, the
-handler gains a dependency on the engine and asks it for a decision before building the
-command:
+The real handler is as thin as it gets — it does not decide anything, it relays:
+
+```java
+// Today, in the slice (verbatim shape): the handler just forwards the passed-in rate.
+@Override
+protected Mono<UUID> doHandle(ProposeOfferCommand command) {
+    return client.proposeOffer(command.getLoanApplicationId(),
+        command.getAmount(), command.getAnnualRateBps());   // rate came in as an argument
+}
+```
+
+The `proposeOffer` step is therefore a *decision* in disguise: it asserts an applicant
+is eligible and prices the loan, but the policy behind those numbers lives nowhere in
+the code — it was decided by whoever called `submitApplication`. Swap in the rule engine
+and the same handler becomes explicit and configurable. Conceptually, it gains a
+dependency on the engine and asks it for a decision before calling the client:
 
 ```java
 // Illustrative: the decision step consults a stored rule instead of a constant.
@@ -94,6 +113,15 @@ The shape is the lesson. Eligibility and pricing stop being arguments and become
 step. A risk analyst can change the threshold or the rate band by editing YAML and
 re-storing the rule — no code change, no redeploy. The rest of this chapter shows how
 that rule is authored, stored, evaluated, audited, and operated.
+
+Stay honest about the gap, though. Today's `ProposeOfferCommand` carries only `amount`,
+`annualRateBps`, and the injected `loanApplicationId` — the illustrative handler's
+`command.getCreditScore()` and `command.getAnnualIncome()` assume a *richer* command
+that the slice does not have. Wiring the engine for real means two changes, not one:
+carry the credit signals into the command (and back up the BFF channel that supplies
+them), *and* replace the relay call with the by-code evaluation above. The chapter
+shows the second, harder half; the first is ordinary plumbing the earlier tier chapters
+already taught.
 
 !!! spring "Spring parity"
     There is no plain-Spring equivalent that gives you this for free. In vanilla Spring
@@ -293,6 +321,16 @@ aggregate statistics, with companion `validate`, `statistics`, and `health` endp
 The same `credit-eligibility` rule that prices one new application can re-rank ten
 thousand existing ones — without a bespoke batch job.
 
+!!! spring "Spring parity"
+    Because every entry point returns a `Mono`, the engine composes into the same
+    reactive pipeline Lumen already runs. The live `proposeOffer` step does
+    `commandBus.send(command)` and chains downstream operators on the result; a
+    rule-backed step would just `.flatMap` `evaluateRuleByCodeWithAudit(...)` into that
+    same chain — no blocking bridge, no `block()`, no thread hand-off. A vanilla-Spring
+    decision service that returned a plain value (or worse, blocked on a database read)
+    would force exactly the kind of reactive seam Chapter 5 warned against. The engine
+    speaks `Mono` natively, so it disappears into the flow.
+
 !!! note "Key term — AST"
     The engine does not interpret YAML text on every call. It parses each rule once
     into an **Abstract Syntax Tree** — a typed tree of condition, expression, and action
@@ -305,7 +343,7 @@ thousand existing ones — without a bespoke batch job.
 
 Parsing YAML and loading a row from PostgreSQL on every decision would be wasteful when
 the same `credit-eligibility` rule fires thousands of times a minute. The engine caches
-through the Firefly cache abstraction (Chapter 7) — Caffeine by default, Redis-pluggable
+through the Firefly cache abstraction (Chapter 20) — Caffeine by default, Redis-pluggable
 for distributed deployments — under the `firefly.rules.cache` prefix. Four caches matter:
 
 ```yaml
@@ -329,8 +367,8 @@ The **AST cache** is the one that earns its keep: a rule is parsed once and the 
 reused, so the per-decision cost is evaluation, not re-parsing. The **definitions cache**
 keeps hot stored rules out of the database. Because it runs on the Firefly cache
 abstraction, switching from in-process Caffeine to a shared Redis — so every instance in
-the fleet evaluates the same cached policy — is the one-property change you saw in
-Chapter 7: set `firefly.rules.cache.provider` to `REDIS`.
+the fleet evaluates the same cached policy — is the one-property change you meet in
+Chapter 20: set `firefly.rules.cache.provider` to `REDIS`.
 
 !!! warning "Cached ASTs mean stored-rule edits are not instant"
     The flip side of caching is staleness. Edit `credit-eligibility` in the store and
@@ -407,8 +445,9 @@ for analysis, with no second implementation to drift.
 ## What you learned {.recap}
 
 - Lumen Lending's slice makes its credit decision with a **hand-supplied heuristic** —
-  `LoanOriginationService` passes a fixed `amount` and `annualRateBps` into
-  `ProposeOfferCommand`, and the `proposeOffer` saga step records it. The reactor does
+  `LoanOriginationService` packs a fixed `amount` and `annualRateBps` into
+  `ProposeOfferCommand`, the `proposeOffer` saga step dispatches it, and
+  `ProposeOfferHandler` relays the rate straight to the core client. The reactor does
   **not** wire the rule engine; this chapter is the map of where it would plug in.
 - `fireflyframework-rule-engine` is a **stateless, reactive expression-evaluation
   engine**: you give it a YAML rule and an input map, it returns computed outputs, a
@@ -425,9 +464,11 @@ for analysis, with no second implementation to drift.
   and definitions through the Firefly cache abstraction, **validated** at a dedicated
   endpoint, and **audited** on every evaluation — and can even be **compiled to Python**
   for offline scoring and external runtimes.
-- The decision step's plug-point in Lumen is the **`ProposeOfferHandler`**: replacing the
-  passed-in rate with a by-code evaluation of a `credit-eligibility` rule turns implicit
-  policy into governed, changeable data — no redeploy when risk moves a threshold.
+- The decision step's plug-point in Lumen is the **`ProposeOfferHandler`** — today a
+  one-line relay that forwards the passed-in `annualRateBps` to the core client.
+  Replacing that line with a by-code evaluation of a `credit-eligibility` rule (and
+  enriching `ProposeOfferCommand` to carry the credit signals) turns implicit policy
+  into governed, changeable data — no redeploy when risk moves a threshold.
 
 ## Try it yourself {.exercises}
 
@@ -449,10 +490,17 @@ deliverable, checking your work against the DSL conventions in this chapter.
    "DTI_EXCEEDED"` — placed so it runs before the approval logic. Describe, in one
    sentence, what the engine returns when the breaker trips.
 4. **Sketch the plug-in.** Re-read the illustrative `ProposeOfferHandler` in this chapter
-   and the real one in Chapter 10's domain code. Write three or four sentences naming
-   exactly which line changes, what new dependency the handler gains, and where the rate
-   now comes from.
-5. **Justify the Python compile.** In a short paragraph, argue why compiling
+   and the real one in Chapter 10's domain code — the real `doHandle` is a single line,
+   `client.proposeOffer(command.getLoanApplicationId(), command.getAmount(),
+   command.getAnnualRateBps())`. Write three or four sentences naming exactly which line
+   changes, what new dependency the handler gains, where the rate now comes from, and
+   what `ProposeOfferCommand` itself must carry that it does not today.
+5. **Trace the audit.** Suppose `credit-eligibility` declines an applicant. Name the two
+   columns of the stored `RuleDefinition` an auditor needs (the chapter calls them the
+   handle and the version label), and the method whose name promises the trail gets
+   written. In a sentence, say why the by-code path — not the direct engine — is the one
+   you wire into production.
+6. **Justify the Python compile.** In a short paragraph, argue why compiling
    `credit-eligibility` to Python keeps a backtesting notebook *honest* — that is, why a
    generated artifact from the live YAML is safer than a data scientist re-implementing
    the policy by hand.

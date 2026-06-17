@@ -20,10 +20,14 @@ In this chapter you slice Lumen's `RegisterApplicationSaga` — a `@Saga` with a
 `@SagaStep` that creates the application and two dependent steps that fan out from
 it — and the `LoanOriginationService` that runs it through the `SagaEngine`. Then
 you read the headline test: it forces the offer step to fail and proves the engine
-compensates the root step, so no orphaned application is left behind. Everything runs
-in the `domain-lending-loan-origination` module, with **no core service and no
-Docker**. At the end you will meet two sibling patterns — Workflow and TCC — and know
-when to reach for each.
+compensates the root step, so no orphaned application is left behind. And — new in
+this revision — you watch the *same saga run live*: with the three-tier stack up, a
+single channel `POST` to the experience BFF flows `exp → domain → core`, the saga's
+root step writes a real row to the running core service over HTTP, and the engine
+logs `[orchestration] completed name=RegisterApplicationSaga ... success=true`.
+Everything still runs **with no Docker** — the core uses in-memory H2 — and the
+compensation test still runs with **no core service at all**. At the end you will
+meet two sibling patterns — Workflow and TCC — and know when to reach for each.
 
 The cast of files, all under `samples/lumen-lending/domain-lending-loan-origination`:
 
@@ -33,10 +37,17 @@ The cast of files, all under `samples/lumen-lending/domain-lending-loan-originat
 - `src/main/java/com/firefly/lumen/domain/service/LoanOriginationService.java` — the
   service that assembles `StepInputs` and calls `SagaEngine.execute(...)`, reading
   back a `SagaResult`.
+- `src/main/java/com/firefly/lumen/domain/web/LoanOriginationController.java` — the
+  orchestration tier's REST face that the experience BFF calls; it drives the saga
+  and maps the channel request and response.
+- `src/main/java/com/firefly/lumen/domain/client/WebClientLoanOriginationClient.java`
+  — the live core SDK seam: a `WebClient`-backed `LoanOriginationClient` whose root
+  write (and its compensating delete) reach the running core service over HTTP.
 - `src/test/java/com/firefly/lumen/domain/saga/RegisterApplicationSagaCompensationTest.java`
   — the headline compensation test.
 - `src/test/java/com/firefly/lumen/domain/saga/RegisterApplicationSagaHappyPathTest.java`
-  — the success-path companion. (These four are the saga-relevant files; the module's six tests also include the CQRS-handler and EDA-listener tests from Chapters 10 and 11.)
+  — the success-path companion. (These six files span the saga; the module's six
+  tests also include the CQRS-handler and EDA-listener tests from Chapters 10 and 11.)
 
 ## What a saga is, and why a method tree
 
@@ -107,7 +118,10 @@ Notice that the compensation calls `client.removeLoanApplication(...)` directly 
 `LoanOriginationClient` SDK seam from Chapter 10 — rather than dispatching another
 command. A compensation is a plain reactive method returning `Mono<Void>`; it can do
 whatever undoing the step requires. The framework's only contract is that it return
-`Mono<Void>` and accept the step's result.
+`Mono<Void>` and accept the step's result. Hold on to this method: in Step 6 you will
+see that, with the live stack running, this exact call issues an HTTP `DELETE` against
+the core service — `removeLoanApplication` deletes a *real* row, not a stub's list
+entry.
 
 !!! note "Key term — `@SagaStep` and compensate"
     `@SagaStep(id, compensate, dependsOn)` marks a method as one step of a saga.
@@ -182,6 +196,14 @@ nothing upstream that needs undoing if they themselves were the *last* thing to 
 The compensation that does real work is the root's `removeLoanApplication`, because
 the root is the step that created the durable write the saga must not orphan. That is
 the case the test exercises.
+
+!!! note "Why the dependent steps have nothing durable to undo"
+    Against the live core (Step 6) the dependent steps are *deliberately* in-process:
+    the trimmed core service exposes only the loan-application resource, so the
+    `addApplicant` and `proposeOffer` seam methods synthesize an id and return without
+    a network write. There is no remote row to delete, which is exactly why their
+    compensations are `Mono.empty()`. The durable write — the one a failure must not
+    orphan — is the root's, and that is the only compensation with real work to do.
 
 !!! note "Key term — `ExecutionContext` in a saga"
     The **`ExecutionContext`** is the request-scoped store that flows through every
@@ -348,13 +370,202 @@ compensation behavior with no core service and no Docker.
     contrast is the saga pattern in two files — success runs forward, failure runs
     forward then compensates back.
 
-## Run it
+## Step 6 — The same saga, running live against core
+
+Everything so far ran the saga against an *in-memory stub*. The reactor now also runs
+it for real: with the three-tier stack up, the root step writes to the running core
+service over HTTP, and the same saga code you just read drives a real persisted row.
+Nothing in `RegisterApplicationSaga`, `LoanOriginationService`, or the compensation
+changes between the test and the live run — only *which `LoanOriginationClient`
+implementation is on the classpath* changes. That is the SDK seam paying off one more
+time.
+
+The live entry point is the experience BFF, which calls the domain over HTTP. The
+domain's REST face is `LoanOriginationController` — the second hop in the
+`exp → domain → core` flow. Its `submit` method is thin on purpose: it maps the
+channel-shaped request, calls `LoanOriginationService.submitApplication(...)` (which
+runs the saga), and turns the `SagaResult` into a `201 Created` detail view.
+
+::: listing domain-lending-loan-origination/src/main/java/com/firefly/lumen/domain/web/LoanOriginationController.java | Listing 18.6 — the domain REST face runs the saga and returns the core-assigned id
+    @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
+    @Operation(operationId = "submitApplication", summary = "Submit Application",
+            description = "Runs the RegisterApplicationSaga, writing the application to the core system of record.")
+    public Mono<ResponseEntity<ApplicationDetailView>> submit(@RequestBody ApplicationChannelRequest request) {
+        long amountMinor = toMinorUnits(request.requestedAmount());
+        String applicantName = applicantNameFor(request);
+        log.debug("Submitting application productId={} simulationId={} requestedAmount={} term={}",
+                request.productId(), request.simulationId(), request.requestedAmount(), request.term());
+
+        return service.submitApplication(applicantName, amountMinor, DEFAULT_ANNUAL_RATE_BPS)
+                .flatMap(result -> toDetail(result, request))
+                .map(detail -> ResponseEntity.status(HttpStatus.CREATED).body(detail));
+    }
+:::
+
+Read what the controller does with the result. It calls the *same* `submitApplication`
+the test calls, gets back a `SagaResult`, and in `toDetail` pulls the application id
+out of the root step's output with
+`result.resultOf(STEP_REGISTER_LOAN_APPLICATION, UUID.class)` — the id the core
+assigned. If the saga failed, it does not pretend success: it raises a
+`BusinessException(BAD_GATEWAY, "ORIGINATION_FAILED", ...)`, which the framework's
+global handler renders as the same RFC 7807 problem detail you saw in Chapter 2. The
+saga's `SagaResult` is the contract; the controller just maps it to HTTP.
+
+What turns the root step into a real network write is the *live* `LoanOriginationClient`
+on the domain classpath. When the domain is pointed at a core service, the root step's
+command handler calls `WebClientLoanOriginationClient.createLoanApplication(...)`,
+which `POST`s to the core `/api/v1/loan-applications` endpoint and maps the response
+id back. The compensation calls its sibling, `removeLoanApplication(...)`, which
+issues an HTTP `DELETE`.
+
+::: listing domain-lending-loan-origination/src/main/java/com/firefly/lumen/domain/client/WebClientLoanOriginationClient.java | Listing 18.7 — the live seam: the root write POSTs to core, the compensation DELETEs
+    @Override
+    public Mono<UUID> createLoanApplication(String applicantName, long amount) {
+        CoreCreateRequest body = new CoreCreateRequest(
+                UUID.randomUUID(),
+                BigDecimal.valueOf(amount, 2),
+                DEFAULT_CURRENCY,
+                DEFAULT_TERM_MONTHS,
+                DEFAULT_PURPOSE);
+        log.debug("Core create loan-application applicant={} amountMinor={}", applicantName, amount);
+        return webClient.post()
+                .uri(LOAN_APPLICATIONS_PATH)
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(body)
+                .retrieve()
+                .bodyToMono(CoreLoanApplicationResponse.class)
+                .map(CoreLoanApplicationResponse::loanApplicationId);
+    }
+
+    @Override
+    public Mono<Void> removeLoanApplication(UUID loanApplicationId) {
+        log.debug("Core compensation delete loan-application id={}", loanApplicationId);
+        return webClient.delete()
+                .uri(LOAN_APPLICATIONS_PATH + "/{id}", loanApplicationId)
+                .retrieve()
+                .bodyToMono(Void.class);
+    }
+:::
+
+This is the same `removeLoanApplication` the compensation test exercised — but now it
+deletes a real row in a real service. The core's `DELETE /api/v1/loan-applications/{id}`
+is *idempotent*: deleting a missing id is a no-op that still answers `204 No Content`,
+which is exactly the property a compensation needs, because the engine may retry it.
+The compensation you proved in Step 5 now protects production data, not a stub's list.
+
+The live client only wires itself in when an operator points the domain at a core
+service. `LiveLoanOriginationClientConfig` registers the `WebClient` and the client
+*conditionally*: `@ConditionalOnProperty(firefly.lumen.core.loan-origination.base-path)`
+means it materializes only when a core base path is set, and `@ConditionalOnMissingBean`
+means it never displaces a `LoanOriginationClient` the tests already supply. The
+shipped `application.yml` sets the base path to `http://localhost:8081`, so the
+standalone domain app calls the running core — while the slice tests, which register
+their own stub, never touch this code at all.
+
+!!! note "Key term — the SDK seam under two implementations"
+    The saga depends on the `LoanOriginationClient` *interface*. Two beans can satisfy
+    it. In tests, `StubLoanOriginationClient` records calls in memory and can be told
+    to fail a step. In the running stack, `WebClientLoanOriginationClient` calls the
+    core over HTTP. Because both are `Mono`-returning implementations of the same
+    port, the saga, the engine, and every compensation are byte-for-byte identical
+    across the two worlds. That is why the behavior you proved headless is the same
+    behavior that runs live.
+
+!!! spring "Spring parity"
+    The conditional wiring is ordinary Spring Boot: `@ConditionalOnProperty` and
+    `@ConditionalOnMissingBean` are the same guards Boot's own auto-configurations
+    use. Firefly adds nothing here — the live client is a plain `@Configuration`
+    bean that backs off when a test or another module has already defined the port.
+    "Configure a base path to go live, leave it unset to stay in-JVM" is the same
+    conditional-bean ergonomics you use everywhere else.
+
+To watch it run, bring up all three tiers (each in its own terminal), then POST one
+channel request to the BFF on `:8080`:
+
+```text
+$ curl -s -X POST localhost:8080/api/v1/experience/lending/applications \
+    -H 'Content-Type: application/json' \
+    -d '{"productId":"11111111-1111-1111-1111-111111111111","requestedAmount":25000.00,"term":36,"purpose":"HOME_IMPROVEMENT","simulationId":"22222222-2222-2222-2222-222222222222"}'
+```
+
+The BFF answers `201 Created` with the core-assigned id — the application flowed
+`exp → domain (saga) → core`:
+
+```json
+{
+  "applicationId": "786544c7-2f10-4110-95fe-682d63edbace",
+  "simulationId": "22222222-2222-2222-2222-222222222222",
+  "status": "SUBMITTED",
+  "requestedAmount": 25000.00,
+  "term": 36,
+  "purpose": "HOME_IMPROVEMENT",
+  "createdAt": "2026-06-17T11:46:21.186231",
+  "updatedAt": "2026-06-17T11:46:21.186231"
+}
+```
+
+On the domain tier's log you can watch the engine narrate the run. The
+`[orchestration]` lines are the `SagaEngine` reporting each step as the DAG executes —
+the root succeeds first (note `stepId=registerLoanApplication`, the only step that
+makes a network call), then the two dependents complete in-process, then the saga
+reports overall success:
+
+```text
+[orchestration] started   name=RegisterApplicationSaga ... pattern=SAGA
+[orchestration] step.success ... stepId=registerLoanApplication latencyMs=94
+[orchestration] step.success ... stepId=proposeOffer
+[orchestration] step.success ... stepId=registerApplicant
+[orchestration] completed name=RegisterApplicationSaga ... pattern=SAGA success=true
+```
+
+That final line — `[orchestration] completed name=RegisterApplicationSaga ...
+pattern=SAGA success=true` (with a `durationMs=...` for the whole run) — is the live
+counterpart to `result.isSuccess()` being `true`. The same `SagaResult` the test
+asserts on is the value the controller maps to a `201`.
+
+You can prove the write really landed by reading the application back from *core*
+directly — the `applicationId` the BFF returned is the id the core system of record
+assigned:
+
+```text
+$ curl -s localhost:8081/api/v1/loan-applications/786544c7-2f10-4110-95fe-682d63edbace
+```
+
+```json
+{
+  "loanApplicationId": "786544c7-2f10-4110-95fe-682d63edbace",
+  "applicationNumber": "9d2e8b8c-fc64-4aae-8578-c77558a3ec4b",
+  "applicantId": "8db1c7ab-5d74-44fd-a4c7-d9433f0ddaba",
+  "requestedAmount": 25000.00,
+  "currency": "EUR",
+  "termMonths": 12,
+  "purpose": "GENERAL",
+  "status": "SUBMITTED",
+  "decisionReason": null,
+  "createdAt": "2026-06-17T11:46:21.145765",
+  "updatedAt": "2026-06-17T11:46:21.145781"
+}
+```
+
+!!! warning "The live mapping is intentionally minimal — say so, don't overclaim"
+    Look closely at the core row: `currency` is `EUR`, `termMonths` is `12`, and
+    `purpose` is `GENERAL` — *not* the `36` and `HOME_IMPROVEMENT` you posted to the
+    BFF. That is honest, not a bug. The trimmed write seam carries only the applicant
+    name and the amount across the saga to core; the other fields land as core
+    *defaults* (`DEFAULT_CURRENCY`, `DEFAULT_TERM_MONTHS`, `DEFAULT_PURPOSE` in
+    `WebClientLoanOriginationClient`). The dependent steps — applicant party and
+    offer — complete in-process because the trimmed core exposes only the
+    loan-application resource. Richer field mapping and the applicant/offer endpoints
+    belong to the generated SDK in the real service; the sample keeps the seam
+    minimal so the live three-tier flow runs with no Docker and no generated code.
+
+## Step 7 — Run it
 
 The whole domain tier — CQRS handlers, the EDA listener, and both saga tests — boots
 and runs without a core service. From the `samples/lumen-lending` directory:
 
 ```text
-mvn -q -pl domain-lending-loan-origination test
+$ mvn -q -pl domain-lending-loan-origination test
 ```
 
 The expected result:
@@ -370,14 +581,22 @@ Listing 18.5 — proves the failure path compensates the root step and leaves no
 When the compensation test runs you will see the engine log it in real time:
 `step.failed ... stepId=proposeOffer`, then `compensation.started`, then a
 `dead-lettered` entry recording the failed step. Those log lines are the engine
-narrating exactly the behavior the assertions check.
+narrating exactly the behavior the assertions check — the failure-path mirror of the
+`success=true` line you saw in the live run.
+
+These six domain tests are part of the reactor's **33** green tests overall — core
+**18**, domain **6**, experience **9** — which `mvn clean verify` from
+`samples/lumen-lending` runs end to end. The tests never need the live stack: they use
+the in-memory stub, so the saga's compensation is verified headless, and the live
+`exp → domain → core` flow of Step 6 is a separate, runnable proof on top.
 
 !!! warning "A saga is eventual, not atomic — compensations must be safe to run"
     A saga gives up the all-or-nothing atomicity of `@Transactional`. Between the
     root step committing and a later step failing, the application *briefly exists*
     before compensation removes it — the system is consistent only *eventually*.
     That puts weight on your compensations: they must be idempotent (the engine may
-    retry), they must tolerate being run against a step whose effect is only
+    retry, and you saw the live `DELETE` is a no-op on a missing id precisely for
+    this), they must tolerate being run against a step whose effect is only
     partially applied, and they should not themselves fail silently. Design each
     `compensate` method as carefully as the step it undoes.
 
@@ -453,14 +672,20 @@ class ReserveFunds {
 - The **headline compensation test** (`Tests run: 6, Failures: 0`): forcing
   `proposeOffer` to fail proves the root step is compensated and the created
   application is removed — **no orphan** — with no core service and no Docker.
+- The **live run**: with the three-tier stack up, the same saga drives a real write —
+  `LoanOriginationController` runs it, `WebClientLoanOriginationClient` `POST`s the
+  root step to core over HTTP, and the engine logs `[orchestration] completed
+  name=RegisterApplicationSaga ... pattern=SAGA success=true`. The compensation now
+  issues an HTTP `DELETE` against core, protecting a real row.
 
 ## Try it yourself {.exercises}
 
 1. **Read the failure into the API.** `submitApplication` returns the raw
-   `SagaResult`. Sketch how an experience-tier caller would turn `result.isFailed()`
-   plus `result.failedSteps()` into an HTTP response — which status code, and what
-   would you put in the RFC 7807 `detail`? You do not need to run it; argue the
-   mapping.
+   `SagaResult`; `LoanOriginationController.toDetail` already turns
+   `!result.isSuccess()` into a `BusinessException(BAD_GATEWAY, "ORIGINATION_FAILED")`.
+   Trace that through the framework's RFC 7807 handler: which status code reaches the
+   BFF, and what would you put in the problem `detail`? Argue the mapping; you do not
+   need to run it.
 2. **Fail the root instead.** In `StubLoanOriginationClient`, add a `failCreate()`
    switch like the existing `failProposeOffer()` and write a test that makes the
    *root* step fail. What should `compensatedSteps()` contain, and why is it empty?
@@ -473,17 +698,23 @@ class ReserveFunds {
    `offer.proposed` step-event type and assert, on the happy path, that it fired
    exactly once. Then run the compensation test and confirm it did *not* fire — the
    offer step never completed, so its `@StepEvent` never emitted.
-5. **Choose the pattern.** For each of these operations, decide Saga, Workflow, or
+5. **Watch the live compensation.** Bring up all three tiers, then submit through the
+   BFF and read the application back from core (Step 6). Now imagine the offer step
+   failing live: which `[orchestration]` log lines would replace `success=true`, and
+   what HTTP verb would `WebClientLoanOriginationClient` issue against core to undo the
+   root write? (Hint: `removeLoanApplication` — and the `DELETE` is idempotent.)
+6. **Choose the pattern.** For each of these operations, decide Saga, Workflow, or
    TCC and justify it in one sentence: (a) reserve seats, charge a card, issue
    tickets; (b) send a welcome email, then a follow-up; (c) debit one account and
    credit another across two core services.
 
 ## Where to go next
 
-You now have the domain tier's hardest capability: a distributed transaction that
-either completes or cleanly undoes itself, verified without a single downstream
-service running. But the saga's steps still call the *stub* `LoanOriginationClient`.
-The next chapters replace that seam with the generated core SDK and wire the saga's
-commands to real HTTP calls against the core system of record you built earlier — at
-which point `removeLoanApplication` deletes a real row in a real service, and the
-compensation you proved here protects production data, not a stub's list.
+You now have the domain tier's hardest capability proven *and running*: a distributed
+transaction that either completes against a live core or cleanly undoes itself, with
+the same code verified headless and run end to end. The remaining chapters deepen the
+pieces this one leaned on — the rule engine (Chapter 13) for the decisioning the offer
+step only stubs, the data tier (Chapter 15) behind the core's persistence, and event
+sourcing (Chapter 12) for an alternative to compensation-by-deletion — and tighten the
+trimmed write seam toward the generated SDK, at which point every field the live run
+defaulted today flows through unchanged.

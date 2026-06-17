@@ -2,12 +2,14 @@ Chapter 1 named four tiers — experience, domain, core, and **data** — and pr
 we would meet the last one here. It is the only tier Lumen Lending's origination
 slice does not actually build, and rather than paper over that, this chapter is
 going to be honest about it. The slice you have been growing reads and writes loan
-applications against a database it owns. It is a *system of record*: the core tier,
-backed by plain reactive persistence. The data tier is a different animal — it does
-not own a schema, it *sources* and *improves* data that originates elsewhere. In a
-real lending platform that means credit-bureau pulls, KYC and AML screening,
-fraud-signal lookups, address normalization, and the audit trail that records where
-every borrowed fact came from.
+applications against a database it owns. It is a *system of record*: the core tier
+on port `8081`, backed by plain reactive persistence — Spring Data R2DBC through
+`fireflyframework-r2dbc`, over in-memory H2 with Flyway migrations, exactly the
+stack you built in Chapter 8. The data tier is a different animal — it does not own
+a schema, it *sources* and *improves* data that originates elsewhere. In a real
+lending platform that means credit-bureau pulls, KYC and AML screening, fraud-signal
+lookups, address normalization, and the audit trail that records where every
+borrowed fact came from.
 
 The origination slice has none of that. Where a production platform would call a
 credit bureau, the reactor records a self-made stub result so the sample can boot
@@ -31,8 +33,10 @@ the build.
     it *enriches* a subject (an applicant, an address, a company) by calling
     providers, scores the result against quality rules, and records where each fact
     came from. Its starter is `fireflyframework-starter-data`. In Lumen it would sit
-    behind the domain tier, called when origination needs a credit decision or a KYC
-    clearance.
+    behind the domain tier — the same tier whose `RegisterApplicationSaga` you watch
+    run end to end in Chapter 18 — called from a saga step when origination needs a
+    credit decision or a KYC clearance, exactly where the live flow today simply
+    writes the application straight through to core.
 
 ## Why origination needs a data tier (but the slice doesn't have one)
 
@@ -229,9 +233,10 @@ firefly:
 
 Because the decorators are configured rather than coded, the resilience posture of
 the entire data tier is visible in one place and tuned without redeploying logic.
-This is the same Resilience4j the resilient SDK clients of Chapter 14 use; the data
-tier simply applies it *per provider within a chain*, which is the granularity
-enrichment needs.
+This is the same Resilience4j the resilient `ServiceClient` of Chapter 16 wraps
+around its calls; the data tier simply applies it *per provider within a chain*,
+which is the granularity enrichment needs — a circuit breaker per bureau, not one
+shared across the whole credit-pull capability.
 
 !!! warning "Don't share a circuit breaker across providers in a chain"
     The whole value of a fallback chain is that one provider's outage routes traffic
@@ -264,11 +269,11 @@ public class ExperianCreditOperation
 }
 ```
 
-The cache rides on the same provider-agnostic caching abstraction Firefly uses
-elsewhere (Chapter 7), so the backing store — Caffeine in-process, Redis across
-instances — is a configuration choice, not a code change. A cached enrichment never
-touches the provider, so it never trips a breaker, never incurs a fee, and returns in
-microseconds.
+The cache rides on the same provider-agnostic `CacheAdapter` Firefly uses
+elsewhere (Chapter 20), so the backing store — Caffeine in-process as the L1, a
+distributed Redis or Hazelcast L2 behind it — is a configuration choice, not a code
+change. A cached enrichment never touches the provider, so it never trips a breaker,
+never incurs a fee, and returns in microseconds.
 
 Paired with caching is **cost tracking**. Because every provider call flows through
 the `DataEnricher`, the framework is positioned to count and price it. The data tier
@@ -296,11 +301,13 @@ result.estimatedCost();  // priced from the configured per-call cost
     you buy is often the largest variable cost per application.
 
 !!! spring "Spring parity"
-    Caching here is Spring's cache abstraction underneath, the same one `@Cacheable`
-    uses — so a Redis or Caffeine `CacheManager` you already run is the backing
-    store. What `starter-data` adds is the *key strategy* (enrichment name plus
-    subject), the per-enrichment TTL, and the cost metadata threaded through the
-    result, none of which a bare `@Cacheable` gives you.
+    Where vanilla Spring reaches for `@Cacheable` and a blocking `CacheManager`,
+    Firefly's caching (Chapter 20) is a reactive `CacheAdapter` — Caffeine as the
+    built-in L1, a distributed L2 one dependency away — that never blocks a Reactor
+    thread to fetch. What `starter-data` layers on top is the enrichment-specific
+    *key strategy* (enrichment name plus subject), the per-enrichment TTL, and the
+    cost metadata threaded through the result, none of which a bare `@Cacheable`
+    gives you.
 
 ## The data-quality engine
 
@@ -353,11 +360,16 @@ public Mono<CreditReport> trustedCreditReport(ApplicantRef applicant) {
 ```
 
 In a Lumen that owned this tier, that gate is precisely what protects the saga of
-Chapter 18: the `registerLoanApplication` step would not proceed on a credit report
-that failed the gate — it would compensate, or hand off to a human, instead of
-scoring a decision on data the platform does not trust. The gate threshold and which
-dimensions are mandatory are configuration, so risk and compliance can tighten the
-bar without a code change.
+Chapter 18 — the `RegisterApplicationSaga` that the running stack actually executes
+today. Its root `registerLoanApplication` step writes the application to the core
+system of record (the real log line `[orchestration] step.success ...
+stepId=registerLoanApplication`), and a credit-pull step gated on quality would sit
+*before* a decision is scored: a report that failed the gate would not advance the
+saga but trip its compensation — the root step's `removeLoanApplication` compensator,
+which today already calls the core `DELETE /api/v1/loan-applications/{id}` — or hand
+off to a human, instead of scoring a decision on data the platform does not trust.
+The gate threshold and which dimensions are mandatory are configuration, so risk and
+compliance can tighten the bar without a code change.
 
 !!! note "Key term — quality gate"
     A **quality gate** is a minimum quality score (optionally per dimension) that an
@@ -433,9 +445,11 @@ substitution you saw with the SDK seam, applied to provenance.
     There is no Spring Boot starter for "data lineage" — this is genuinely a Firefly
     capability rather than a re-wired Spring one. What *is* plain Spring is the
     mechanism: the recorder is a port (an interface) with adapters selected by
-    `@ConditionalOnProperty`, exactly like the identity and content ports of
-    Chapter 1. Firefly supplies the lineage *model* and the automatic emission;
-    Spring supplies the bean wiring that swaps the sink.
+    `@ConditionalOnProperty` — the same conditional-bean move the reactor's
+    `LiveLoanOriginationClientConfig` already uses to swap the live core client in
+    only when `firefly.lumen.core.loan-origination.base-path` is set, and the
+    identity and content ports of Chapter 1. Firefly supplies the lineage *model* and
+    the automatic emission; Spring supplies the bean wiring that swaps the sink.
 
 ## How the pieces compose
 
@@ -474,6 +488,11 @@ resilience code in a handler.
 - **Pluggable data lineage** emits a provenance record per enrichment to a port-based
   `LineageRecorder` sink, answering the audit question "where did this fact come
   from?" with a no-op adapter in tests and a durable sink in production.
+- The data tier's natural home is **behind the domain saga**: the live stack today
+  runs `RegisterApplicationSaga` (exp `8080` → domain `8082` → core `8081`,
+  `[orchestration] completed name=RegisterApplicationSaga ... success=true`) and
+  writes straight through to core; a real credit pull would become one more gated saga
+  step there, not new code in a handler.
 - Everything in this chapter is **illustrative**: no verbatim reactor slice, no
   `mvn` run, because the sample does not depend on `starter-data`. The proof lives in
   the framework's own module tests; here it is a map of where the tier plugs in.
@@ -491,9 +510,11 @@ resilience code in a handler.
    breaker. Then explain, in one sentence, what would break if you moved the circuit
    breaker up to the chain level instead of per provider.
 3. **Add a quality gate to the origination saga.** Re-read Chapter 18's
-   `registerLoanApplication` step. Describe where a `qualityEngine.assess(...)` gate
-   on the credit report would sit in that reactive chain, and what the saga should do
-   — proceed, compensate, or escalate — when the gate fails. Which `firefly.*`
+   `RegisterApplicationSaga` and its root `registerLoanApplication` step (compensated
+   by `removeLoanApplication`, which deletes from core over HTTP). Describe where a
+   `qualityEngine.assess(...)` gate on the credit report would sit in that reactive
+   chain, and what the saga should do — proceed, trigger the `removeLoanApplication`
+   compensation, or escalate to manual review — when the gate fails. Which `firefly.*`
    property would risk own?
 4. **Cost a re-submission.** A customer submits the same application twice within ten
    minutes, and the credit pull is `cacheable = true, cacheTtl = "15m"` at $0.85 per

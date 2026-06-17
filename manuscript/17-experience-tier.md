@@ -13,12 +13,22 @@ adds is the edge concerns a channel needs — validation at the boundary,
 declarative authorization, deterministic idempotency so a retried submit does not
 create two applications, and a response model decoupled from the domain's internals.
 
-In this chapter you slice Lumen's `exp-lending` module: a secured reactive
-controller, the service that validates and composes, the deterministic
-idempotency-key helper that makes a retry safe, and the channel DTOs that are the
-BFF's own wire contract. A nine-test suite proves it boots, validates, dedupes,
-and maps — with no domain service and no Docker. Let's start with what makes a
-module an experience tier at all.
+This chapter is the third tier of the live Lumen stack. The same loan application
+you POSTed to the core in Chapter 2 and orchestrated through the domain saga in the
+chapters since now enters from the *outside*, through `exp-lending`, the
+customer-facing channel. When all three modules are running, a single POST to the
+BFF flows end to end: `exp` validates and composes, calls the domain over HTTP, the
+domain runs `RegisterApplicationSaga`, the saga's root step writes to core, and the
+core-assigned id comes back through both seams stamped `SUBMITTED`. You will run that
+exact flow at the end of the chapter.
+
+In it you slice Lumen's `exp-lending` module: a secured reactive controller, the
+service that validates and composes, the deterministic idempotency-key helper that
+makes a retry safe, the channel DTOs that are the BFF's own wire contract, and the
+`WebClient`-backed seam that carries the call to the domain. A nine-test suite proves
+it boots, validates, dedupes, and maps — with no domain service and no Docker — and
+then you bring all three tiers up and watch the live submit land in core. Let's start
+with what makes a module an experience tier at all.
 
 ## The application starter
 
@@ -49,6 +59,15 @@ helpers you met in Chapter 6 — the `GlobalExceptionHandler` that renders RFC 7
 problem details, the idempotency filter, the transaction stamping. Because the web
 module is present, every `BusinessException` the BFF throws becomes a clean
 problem-detail response with no handler code, exactly as it did in the core tier.
+
+There is one quiet consequence worth flagging now, because it shapes Step 1.
+`starter-application` brings `spring-boot-starter-security` transitively, so the
+moment the module is on the classpath Spring Security's stateless-REST defaults turn
+on — HTTP Basic, form login, CSRF. The BFF does not want those; it wants *method*
+authorization via `@Secure`. So Lumen ships a tiny `WebSecurityConfig` that disables
+the noisy defaults and permits every exchange at the filter chain, leaving
+authorization to land on the handler. You will see why that division matters in a
+moment.
 
 !!! note "Key term — the application starter (`fireflyframework-starter-application`)"
     The Firefly Boot starter for the **experience/application layer** — the tier that
@@ -117,6 +136,13 @@ principal, and you do not configure a URL-pattern rule in a filter chain. You st
 the permission on the method, and the application starter's `SecurityAspect`
 intercepts the call and enforces it.
 
+Notice also where the URL space lives: `/api/v1/experience/lending/applications`. The
+`experience` segment is not decoration — it announces the tier in the path itself, so
+a gateway, a log line, or an engineer reading an access trace can tell a channel call
+apart from the domain's `/api/v1/applications` and the core's
+`/api/v1/loan-applications` at a glance. The three tiers share a vocabulary but never
+a path.
+
 !!! note "Key term — declarative security (`@Secure`)"
     `@Secure` is the application layer's method-level authorization annotation. You
     declare the `permissions` (and optionally roles, an expression, or a tenant scope)
@@ -136,13 +162,14 @@ intercepts the call and enforces it.
     that *method* authorization, not the filter chain, is the single place authorization
     lives.
 
-### `@Secure` is real, but disabled in the slice test
+### `@Secure` is real, but enforcement is disabled in local runs
 
-Be honest about what the slice test exercises. The controller's `@Secure`
-annotations are real production code — the `SecurityAspect` intercepts both methods
-at runtime, which you can see in the test log (`Intercepting @Secure method:
-createApplication`). But the slice test does not mint tokens or stand up a security
-center. Instead it flips one property in `src/test/resources/application.yml`:
+Be honest about what you actually exercise. The controller's `@Secure` annotations
+are real production code — the `SecurityAspect` intercepts both methods at runtime,
+which you can see in the test log (`Intercepting @Secure method: createApplication`).
+But neither the slice test nor the local run mints tokens or stands up a security
+center. Instead, enforcement is switched off with one property. In the runnable
+`src/main/resources/application.yml` it reads:
 
 ```yaml
 firefly:
@@ -151,21 +178,23 @@ firefly:
       enabled: false
 ```
 
+and the slice test sets the same property in `src/test/resources/application.yml`.
 With `firefly.application.security.enabled=false`, the aspect short-circuits — it
-logs that security is disabled and allows the call through — so the `WebTestClient`
-slice can drive the BFF without authentication. The annotation is present and
-intercepted; only *enforcement* is off. Production keeps the property `true` and the
-permissions are checked for real. Chapter 19 builds out the full security story —
-how `AppSecurityContext` is populated, how permissions are resolved, how the token
-arrives. Here, treat `@Secure` as wired and visible, with enforcement parked for the
-slice.
+logs that security is disabled and allows the call through — so the BFF is reachable
+locally with `curl` and the `WebTestClient` slice can drive it without authentication.
+The annotation is present and intercepted; only *enforcement* is off. Production keeps
+the property `true` and the permissions are checked for real. Chapter 19 builds out
+the full security story — how `AppSecurityContext` is populated, how permissions are
+resolved, how the token arrives. Here, treat `@Secure` as wired and visible, with
+enforcement parked.
 
-!!! warning "The slice proves wiring and composition, not authorization"
-    Because the test sets `security.enabled=false`, a green run does *not* prove that
-    `lending:application:create` is enforced. It proves the controller is secured-by-
-    annotation, that the request validates, that the service composes, and that errors
-    render as problem details. Do not read the passing slice as an authorization test —
-    that is Chapter 19's job, against the enforcement-on path.
+!!! warning "A green slice and a live curl prove wiring, not authorization"
+    Because `security.enabled=false`, neither a passing slice nor a successful local
+    POST proves that `lending:application:create` is enforced. They prove the controller
+    is secured-by-annotation, that the request validates, that the service composes, that
+    the call reaches the domain, and that errors render as problem details. Do not read
+    either as an authorization test — that is Chapter 19's job, against the
+    enforcement-on path.
 
 ## Step 2 — The channel DTOs
 
@@ -205,6 +234,15 @@ public record CreateApplicationRequest(
 amount is rejected with a `400` at the boundary — you will see exactly that in the
 run. The `simulationId` is a soft link back to the simulation that produced this
 application; the channel sends it so the BFF can echo it back.
+
+Look closely at the field names, because they are the channel's vocabulary, and it is
+deliberately *not* the core's. The channel speaks of a `productId`, a `term` (a bare
+month count), and a `simulationId`; the core's system-of-record DTO from Chapter 2
+speaks of an `applicantId`, `termMonths`, a `currency`, and a `purpose` it stores
+verbatim. Those are two different audiences — a phone screen versus a ledger — and the
+tiers in between translate. That mismatch is not an accident to be fixed; it is the
+seam doing its job, and you will see exactly which channel fields survive the trip to
+core (and which land as defaults) when you run the live flow.
 
 The response the channel renders is `ApplicationDetailDTO` — the BFF's own full view,
 shaped for a screen, not for the domain's storage.
@@ -282,15 +320,16 @@ raising a `BusinessException(BAD_REQUEST, "VALIDATION_FAILED", ...)` on a bad fi
 
 Then comes the key, the heart of the chapter, and we will dwell on it in the next
 step. With the key in hand, `domainClient.submitApplication(validated, submitKey)`
-crosses the SDK seam — the same kind of reactive port you met in Chapter 10, here
-named `LoanOriginationDomainClient`, standing in for the generated domain SDK so the
-sample runs with no domain service. Finally `.onErrorMap(this::isNotBusinessException,
-this::toUpstreamError)` translates any *non-business* failure — a transport blip, a
-deserialization error — into a `BusinessException(BAD_GATEWAY, "UPSTREAM_ERROR", ...)`,
-while leaving `BusinessException`s the domain already produced untouched. That is the
-error-mapping discipline: the channel never leaks a raw downstream stack trace; it
-either passes through a meaningful business error or wraps the rest as a clean
-`502`.
+crosses the SDK seam — `domainClient` is a `LoanOriginationDomainClient`, the reactive
+port the BFF calls to reach the domain origination service. That port is the same kind
+of seam you met in Chapter 10: an interface the service depends on, with the *how*
+(an in-memory stub in tests, a live `WebClient` in a running stack) supplied behind it.
+Finally `.onErrorMap(this::isNotBusinessException, this::toUpstreamError)` translates
+any *non-business* failure — a transport blip, a deserialization error — into a
+`BusinessException(BAD_GATEWAY, "UPSTREAM_ERROR", ...)`, while leaving
+`BusinessException`s the domain already produced untouched. That is the error-mapping
+discipline: the channel never leaks a raw downstream stack trace; it either passes
+through a meaningful business error or wraps the rest as a clean `502`.
 
 The read path is symmetrical, and shows the not-found mapping:
 
@@ -414,6 +453,127 @@ asserts the service handed that same key to the SDK seam.
     original application — one row, not two — and the BFF never minted an id to make that
     work. That is the entire pattern.
 
+## Step 5 — The seam: from a stub in tests to a live WebClient in a running stack
+
+`ApplicationService` depends only on the `LoanOriginationDomainClient` *interface* —
+it never names a transport. That is the seam, and it is what lets the same composing
+service run two ways: against an in-memory stub in the slice test, and against a real
+domain service over HTTP when you bring the stack up. The production adapter is a
+`WebClient`-backed implementation that forwards each call to the domain and carries the
+deterministic key as a standard header.
+
+::: listing exp-lending/src/main/java/com/firefly/lumen/exp/config/WebClientLoanOriginationDomainClient.java | Listing 17.8 — the live seam: POST the channel request to the domain, carrying the idempotency key
+    @Override
+    public Mono<ApplicationDetailDTO> submitApplication(CreateApplicationRequest request, String idempotencyKey) {
+        return webClient.post()
+                .uri(APPLICATIONS_PATH)
+                .header(IDEMPOTENCY_HEADER, idempotencyKey)
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(request)
+                .retrieve()
+                .bodyToMono(ApplicationDetailDTO.class);
+    }
+:::
+
+This is the whole live submit. `APPLICATIONS_PATH` is `"/api/v1/applications"` — the
+domain tier's REST face — and `IDEMPOTENCY_HEADER` is `"Idempotency-Key"`, so the key
+the service derived in Listing 17.5 rides across the wire as the standard header the
+downstream filter honors. The adapter posts the *channel* `CreateApplicationRequest`
+straight through and deserializes the domain's reply back into the *channel*
+`ApplicationDetailDTO`; the wire shapes the BFF and the domain agree on are the
+contract between the two tiers. The whole call stays reactive — `bodyToMono` returns a
+`Mono`, so nothing blocks a thread waiting on the domain.
+
+That adapter is wired by a small `@Configuration`, and the two conditions on its beans
+are the reason the same module boots both for the slice test and for the live run.
+
+::: listing exp-lending/src/main/java/com/firefly/lumen/exp/config/LoanOriginationClientConfig.java | Listing 17.9 — the live client only materialises when a base path is set, and never over a test stub
+    @Bean
+    @ConditionalOnProperty(prefix = "lumen.exp.loan-origination", name = "base-path")
+    @ConditionalOnMissingBean
+    public LoanOriginationDomainClient loanOriginationDomainClient(WebClient loanOriginationWebClient) {
+        return new WebClientLoanOriginationDomainClient(loanOriginationWebClient);
+    }
+:::
+
+Read the two conditions together. `@ConditionalOnProperty(... name = "base-path")`
+means the live client is created *only* when an operator has pointed the BFF at a real
+domain service — set `lumen.exp.loan-origination.base-path`, and the
+`WebClient`-backed adapter appears. `@ConditionalOnMissingBean` means it stands aside
+the instant another `LoanOriginationDomainClient` already exists — which is exactly
+what the slice test registers, an in-memory stub. So with no base path, or with a
+test stub present, the live HTTP client never wakes up; with a base path and no stub,
+it does. One module, two faithful behaviors, decided by configuration rather than a
+code branch.
+
+The base path itself binds through a tiny `@ConfigurationProperties` record, the same
+pattern the domain tier uses for its core client.
+
+::: listing exp-lending/src/main/java/com/firefly/lumen/exp/config/LoanOriginationClientProperties.java | Listing 17.10 — the bound properties: base URL and a defaulted timeout
+@ConfigurationProperties(prefix = "lumen.exp.loan-origination")
+public record LoanOriginationClientProperties(
+        String basePath,
+        Duration timeout
+) {
+
+    public LoanOriginationClientProperties {
+        if (timeout == null) {
+            timeout = Duration.ofSeconds(10);
+        }
+    }
+}
+:::
+
+And the runnable `application.yml` is what turns the live path on. It sets the BFF's
+port, points the seam at the domain, and flips security enforcement off for local use:
+
+::: listing exp-lending/src/main/resources/application.yml | Listing 17.11 — the runnable config: port, the domain base path, security enforcement off
+server:
+  port: 8080
+
+spring:
+  application:
+    name: exp-lending
+
+firefly:
+  application:
+    security:
+      enabled: false
+
+# Domain-tier Loan Origination service the BFF calls (prefix bound by
+# LoanOriginationClientProperties).
+lumen:
+  exp:
+    loan-origination:
+      base-path: http://localhost:8082
+:::
+
+That `base-path: http://localhost:8082` is the line that brings the whole chapter to
+life. It satisfies the `@ConditionalOnProperty`, so the `WebClient`-backed adapter
+materialises and the BFF's seam points at the *domain* service on port 8082 — not at
+core directly. The dependency direction is strict: `exp` knows only the domain; the
+domain knows core. And `firefly.application.security.enabled: false` is the same
+enforcement switch from Step 1, here in the runnable profile so a local `curl` is not
+turned away.
+
+!!! note "Key term — `@ConditionalOnProperty` / `@ConditionalOnMissingBean`"
+    Two Spring Boot conditions that make one module behave differently by configuration.
+    `@ConditionalOnProperty` creates a bean only when a named property is set, so the
+    live `WebClient` client appears exactly when `lumen.exp.loan-origination.base-path`
+    is configured. `@ConditionalOnMissingBean` creates a bean only when no bean of that
+    type already exists, so a test-registered stub always wins. Together they let the
+    same `exp-lending` jar run against a stub in a test and against a real domain service
+    in a deployment, with no code change — just a property.
+
+!!! spring "Spring parity"
+    In a vanilla Spring app you would hand-build a `WebClient` `@Bean`, hard-wire its
+    base URL, and conditionally swap it for a mock in tests by hand. Firefly's pattern is
+    the same `WebClient`, but the *generated SDK* normally supplies this adapter: the real
+    `exp-lending` injects a client generated from the domain's OpenAPI contract and wired
+    by a `ClientFactory`. The book sample hand-rolls the adapter so the seam is sliceable,
+    but the shape — a base-path property, a conditional bean, a stub in tests — is exactly
+    the production one.
+
 ## AppContext, AppSecurityContext, and back-office impersonation
 
 Two application-layer types thread through everything `@Secure` does, and they are
@@ -463,7 +623,7 @@ identity flowing through `AppContext` is what changes.
     `AppSecurityContext` for a target customer's, so downstream calls run with the
     customer's identity while the audit log keeps the operator's.
 
-## Run it
+## Step 6 — Prove the slice
 
 The slice is verified by a nine-test suite: four `WebTestClient` tests that boot the
 full BFF context and drive it over HTTP, four fast unit tests on the service, and one
@@ -483,10 +643,13 @@ BUILD SUCCESS
 The web tests (`ApplicationControllerTest`) boot the real application — controllers,
 the `@Secure`-annotated handlers, the security filter chain, and
 `fireflyframework-web`'s `GlobalExceptionHandler` — and satisfy the SDK seam with an
-in-memory `StubLoanOriginationDomainClient` bean, so there is no domain service and
-no Docker. They assert the `201` create with a mapped `ApplicationDetailDTO`, the
-create-then-get round trip, the `404` problem detail carrying `APPLICATION_NOT_FOUND`
-for an unknown id, and the `400` rejection of a zero amount at the validation edge.
+in-memory stub bean. Because that stub is a `LoanOriginationDomainClient`, the
+`@ConditionalOnMissingBean` on the live client (Listing 17.9) keeps the `WebClient`
+adapter from ever being created, so the slice runs with no domain service and no
+Docker. The four cases assert the `201` create with a mapped `ApplicationDetailDTO`,
+the create-then-get round trip, the `404` problem detail carrying
+`APPLICATION_NOT_FOUND` for an unknown id, and the `400` rejection of a zero amount at
+the validation edge.
 
 The service tests (`ApplicationServiceTest`) run with no Spring context at all — they
 construct `ApplicationService` directly over the stub. The one to read closely is the
@@ -504,15 +667,131 @@ assertThat(stub.idempotencyKeys()).containsExactly(expectedKey);
 
 The test recomputes the key from the same business fields and asserts the service
 handed that exact key across the SDK seam. That is the deterministic-key contract,
-verified: same logical request, same key, every time.
+verified: same logical request, same key, every time. The whole reactor is 33 green
+tests — core 18, domain 6, exp 9 — so the nine here are the BFF's slice of a stack
+that is proven end to end.
 
 !!! tip "Checkpoint"
     Nine green tests, no domain service, no Docker. The four web tests prove the secured
     controller composes and renders problem details; the four service tests prove
     validation, the deterministic key, the not-found mapping, and the round trip. Recall
-    the `@Secure` enforcement is disabled for the slice via
+    that `@Secure` enforcement is disabled for the slice via
     `firefly.application.security.enabled=false` — so this run validates composition and
     wiring, and Chapter 19 will validate authorization on the enforcement-on path.
+
+## Step 7 — Run the live exp → domain → core flow
+
+The slice proved the BFF in isolation. Now bring the whole stack up and watch a single
+channel POST travel all three tiers. Each module is an independent Spring Boot app on
+its own port; start all three (order does not matter — the tiers do not fail-fast on a
+missing downstream):
+
+```text
+( cd core-lending-loan-origination   && mvn spring-boot:run ) &
+( cd domain-lending-loan-origination && mvn spring-boot:run ) &
+( cd exp-lending                     && mvn spring-boot:run ) &
+```
+
+Each app logs `Started …Application in …` and `Netty started on port …` when ready —
+core on 8081, domain on 8082, exp on 8080. Confirm the BFF is healthy:
+
+```text
+$ curl -s localhost:8080/actuator/health
+{"status":"UP",...}
+```
+
+Now POST one channel request to the BFF. The body is the *channel* shape from Listing
+17.3 — a `productId`, a `requestedAmount`, a `term`, a `purpose`, and a `simulationId`:
+
+```text
+$ curl -s -X POST localhost:8080/api/v1/experience/lending/applications \
+    -H 'Content-Type: application/json' \
+    -d '{"productId":"11111111-1111-1111-1111-111111111111","requestedAmount":25000.00,"term":36,"purpose":"HOME_IMPROVEMENT","simulationId":"22222222-2222-2222-2222-222222222222"}'
+```
+
+That one call flows end to end: the BFF validates and derives the key, the
+`WebClient` seam (Listing 17.8) POSTs to the domain at
+`http://localhost:8082/api/v1/applications` with the `Idempotency-Key` header, the
+domain's `LoanOriginationController` runs `RegisterApplicationSaga`, the saga's root
+step writes to the core system of record over HTTP, and the core-assigned id comes back
+through both seams. The BFF answers `201 Created` with its channel view:
+
+```json
+{
+  "applicationId": "786544c7-2f10-4110-95fe-682d63edbace",
+  "simulationId": "22222222-2222-2222-2222-222222222222",
+  "status": "SUBMITTED",
+  "requestedAmount": 25000.00,
+  "term": 36,
+  "purpose": "HOME_IMPROVEMENT",
+  "createdAt": "2026-06-17T11:46:21.186231",
+  "updatedAt": "2026-06-17T11:46:21.186231"
+}
+```
+
+Read the response against the channel DTO in Listing 17.4: the `simulationId` is
+echoed straight back, the `status` is `SUBMITTED` (the saga submitted it, exactly as
+the core did in Chapter 2), and `applicationId` is the id the *core* assigned — the BFF
+never minted it. On the domain tier's console you can watch the saga drive the write,
+the same orchestration log you met in the domain chapters:
+
+```text
+[orchestration] started   name=RegisterApplicationSaga ... pattern=SAGA
+[orchestration] step.success ... stepId=registerLoanApplication latencyMs=94
+[orchestration] step.success ... stepId=proposeOffer
+[orchestration] step.success ... stepId=registerApplicant
+[orchestration] completed name=RegisterApplicationSaga ... success=true
+```
+
+The proof that it really landed in the system of record is to ask core directly, using
+the `applicationId` the BFF returned:
+
+```text
+$ curl -s localhost:8081/api/v1/loan-applications/786544c7-2f10-4110-95fe-682d63edbace
+```
+
+```json
+{
+  "loanApplicationId": "786544c7-2f10-4110-95fe-682d63edbace",
+  "applicationNumber": "9d2e8b8c-fc64-4aae-8578-c77558a3ec4b",
+  "applicantId": "8db1c7ab-5d74-44fd-a4c7-d9433f0ddaba",
+  "requestedAmount": 25000.00,
+  "currency": "EUR",
+  "termMonths": 12,
+  "purpose": "GENERAL",
+  "status": "SUBMITTED",
+  "decisionReason": null,
+  "createdAt": "2026-06-17T11:46:21.145765",
+  "updatedAt": "2026-06-17T11:46:21.145781"
+}
+```
+
+Same `loanApplicationId`, same `requestedAmount`, same `SUBMITTED` status — the channel
+request became a real system-of-record row. But look at the mismatched fields, because
+this is the honest part of the live flow. The channel sent `term: 36` and
+`purpose: "HOME_IMPROVEMENT"`, yet core stored `termMonths: 12`, `purpose: "GENERAL"`,
+`currency: "EUR"`, and an `applicantId` the channel never supplied. Those are *core
+defaults*: the trimmed write seam between domain and core carries only the applicant
+name and the amount, so the fields the channel cares about that have no slot in the
+minimal seam land as the core's defaults. The richer field-by-field mapping is the job
+of the *generated* SDK in the real service; the book's seam is intentionally minimal so
+the flow is sliceable. The point the run proves is structural — the path is wired and
+live, exp → domain → core — not that every channel field survives the trip.
+
+!!! note "Key term — the SDK seam, live"
+    A **seam** is the reactive client interface a tier depends on to reach the next tier
+    (`LoanOriginationDomainClient` here). In tests it is satisfied by an in-memory stub;
+    in a running stack it is satisfied by the `WebClient`-backed adapter pointed at the
+    downstream service. The service code is identical either way — it composes against
+    the interface — which is what lets a slice test and a live deployment exercise the
+    *same* composition logic. The seam is where decoupling becomes runnable.
+
+!!! tip "Checkpoint"
+    Three apps up, one POST to 8080, `201 SUBMITTED` back, and the same id readable
+    straight from core on 8081 — that is the live `exp → domain → core` path. When you
+    are done, free the ports with `lsof -ti:8080,8081,8082 | xargs kill`. If the BFF
+    returns a `502` with code `UPSTREAM_ERROR`, the domain tier is not up: that is
+    `onErrorMap` doing its job, wrapping a transport failure as a clean business error.
 
 ## What you built {.recap}
 
@@ -528,13 +807,19 @@ verified: same logical request, same key, every time.
 - The **deterministic idempotency-key** pattern via `IdempotencyKeys.of(...)` — a
   name-based (v3) UUID over the request's stable fields, so a retried submit dedupes
   downstream **without the channel minting a resource id**.
+- The **live SDK seam**: a `WebClient`-backed `LoanOriginationDomainClient` that POSTs
+  the channel request to the domain at `/api/v1/applications` carrying the
+  `Idempotency-Key` header, materialised by `@ConditionalOnProperty` on
+  `lumen.exp.loan-origination.base-path` and held back from tests by
+  `@ConditionalOnMissingBean`.
 - An honest account of **`@Secure`**: real and intercepted, but with enforcement
-  disabled in the slice via `firefly.application.security.enabled=false`; plus the
-  `AppContext`/`AppSecurityContext` model and a back-office impersonation use, shown
-  illustratively.
+  disabled both in the slice and the local run via
+  `firefly.application.security.enabled=false`; plus the `AppContext`/`AppSecurityContext`
+  model and a back-office impersonation use, shown illustratively.
 - A passing nine-test suite — four web slice tests, four service unit tests, one smoke
-  test — proving the BFF boots, validates, dedupes, and maps with no domain service and
-  no Docker.
+  test — plus the **live `exp → domain → core` run** that returns `201 SUBMITTED` and
+  lands a real row in core (with some channel fields arriving as core defaults across
+  the minimal seam).
 
 ## Try it yourself {.exercises}
 
@@ -548,25 +833,37 @@ verified: same logical request, same key, every time.
    summaries, a `listApplications` method to the service, and a stub-backed test
    asserting a created application appears in the list. Keep the `@Secure` permission
    consistent with the read endpoint.
-3. **Map an upstream failure.** Make `StubLoanOriginationDomainClient.submitApplication`
+3. **Map an upstream failure.** Make the test stub's `submitApplication`
    return `Mono.error(new RuntimeException("boom"))` for one input, then add a test
    asserting the service surfaces a `BusinessException` with status `BAD_GATEWAY` and
-   code `UPSTREAM_ERROR` — proving `onErrorMap` wraps non-business failures.
-4. **Read the disabled-security log.** Run `ApplicationControllerTest` and find the
+   code `UPSTREAM_ERROR` — proving `onErrorMap` wraps non-business failures. Then run the
+   live stack with the domain tier *stopped* and POST to the BFF: confirm you get the
+   same `502 UPSTREAM_ERROR` from the real `WebClient` seam.
+4. **Watch the conditional client.** Run `exp-lending` with the
+   `lumen.exp.loan-origination.base-path` line removed from `application.yml` and observe
+   the boot fail to find a `LoanOriginationDomainClient` (no stub, no base path, so the
+   conditional bean never appears). Put the line back and confirm the
+   `Building Loan Origination WebClient basePath=...` log line, then explain in one
+   sentence why the slice test still works without that property (hint:
+   `@ConditionalOnMissingBean` and the test stub).
+5. **Trace the live mismatch.** Run the full stack, POST a channel request with
+   `term: 36` and `purpose: "HOME_IMPROVEMENT"`, then GET the same id from core on 8081.
+   List which channel fields survived the trip and which arrived as core defaults, and
+   explain in one sentence why — pointing at the minimal write seam between domain and
+   core that this book uses in place of the generated SDK.
+6. **Read the disabled-security log.** Run `ApplicationControllerTest` and find the
    `Intercepting @Secure method: createApplication` line, then the line that says the
    security check was skipped. Flip `firefly.application.security.enabled` to `true` in
    the test `application.yml`, re-run, and explain what now changes in the aspect's
    behavior (you do not need to make the test pass — observe the difference).
-5. **Trace a retry end to end.** Starting from a double-submitted body, write down each
-   field that feeds `IdempotencyKeys.of(...)` in `createApplication`, then explain in one
-   sentence why a changed `purpose` produces a different key while leaving an optional
-   field unset still produces a usable key (recall null coercion to `"null"`).
 
 ## Where to go next
 
-You have a channel that composes one domain call cleanly. But a real submit is rarely
-one call — registering an application, attaching the applicant, and proposing an offer
-must succeed or fail *together*. Chapter 18 returns to the domain tier's **saga**:
-the `@Saga` orchestration that runs those steps as one atomic flow and compensates in
+You have a channel that composes one domain call cleanly — and you have watched that
+call travel all the way to the system of record and back. But a real submit is rarely
+one step: registering an application, attaching the applicant, and proposing an offer
+must succeed or fail *together*. You saw the three saga steps fly past in the
+orchestration log above; Chapter 18 returns to the domain tier's **saga** — the
+`@Saga` orchestration that runs those steps as one atomic flow and compensates in
 reverse when a step fails. The deterministic idempotency key you built here is exactly
 what keeps each saga step safe to retry without duplicating downstream work.
