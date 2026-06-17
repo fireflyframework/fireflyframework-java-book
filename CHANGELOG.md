@@ -6,6 +6,8 @@ section matching a `v*.*.*` tag as the GitHub Release notes.
 
 ## [Unreleased]
 
+## [26.06.01] — 2026-06-17
+
 ### Added — first complete edition (English + Spanish)
 
 - **Full manuscript (English, American):** a Prelude (Spring Boot · WebFlux ·
