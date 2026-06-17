@@ -265,7 +265,7 @@ public class ExperianCreditOperation
 ```
 
 The cache rides on the same provider-agnostic caching abstraction Firefly uses
-elsewhere (Chapter 13), so the backing store — Caffeine in-process, Redis across
+elsewhere (Chapter 7), so the backing store — Caffeine in-process, Redis across
 instances — is a configuration choice, not a code change. A cached enrichment never
 touches the provider, so it never trips a breaker, never incurs a fee, and returns in
 microseconds.
@@ -353,7 +353,7 @@ public Mono<CreditReport> trustedCreditReport(ApplicantRef applicant) {
 ```
 
 In a Lumen that owned this tier, that gate is precisely what protects the saga of
-Chapter 11: the `registerLoanApplication` step would not proceed on a credit report
+Chapter 18: the `registerLoanApplication` step would not proceed on a credit report
 that failed the gate — it would compensate, or hand off to a human, instead of
 scoring a decision on data the platform does not trust. The gate threshold and which
 dimensions are mandatory are configuration, so risk and compliance can tighten the
@@ -490,7 +490,7 @@ resilience code in a handler.
    `firefly.data.enrichers.creditReport` YAML with a per-provider timeout and circuit
    breaker. Then explain, in one sentence, what would break if you moved the circuit
    breaker up to the chain level instead of per provider.
-3. **Add a quality gate to the origination saga.** Re-read Chapter 11's
+3. **Add a quality gate to the origination saga.** Re-read Chapter 18's
    `registerLoanApplication` step. Describe where a `qualityEngine.assess(...)` gate
    on the credit report would sit in that reactive chain, and what the saga should do
    — proceed, compensate, or escalate — when the gate fails. Which `firefly.*`

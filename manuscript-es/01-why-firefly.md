@@ -42,7 +42,7 @@ fontanería transversal:
   sutilmente mal en tres sitios distintos.
 - **Publicación de eventos.** El código está soldado al cliente de un único broker,
   de modo que pasar de RabbitMQ a Kafka supone una reescritura.
-- **Transacciones distribuidas.** Las operaciones multipaso necesitan compensacion
+- **Transacciones distribuidas.** Las operaciones multipaso necesitan compensación
   cuando un paso falla; cada equipo improvisa su propia saga, normalmente sin
   recuperación ni ruta a cola de mensajes muertos.
 - **Clientes resilientes.** Cada servicio desarrolla su propio `WebClient`
@@ -59,7 +59,7 @@ Puedes pagar este impuesto para siempre, servicio a servicio. O puedes codificar
 las respuestas *una sola vez*, en una capa que cada servicio hereda. Esa capa es un
 metaframework.
 
-!!! note "Termino clave — framework frente a metaframework"
+!!! note "Término clave — framework frente a metaframework"
     Un **framework** te ofrece bloques de construcción y un sitio donde poner tu
     código (Spring Boot es un framework). Un **metaframework** es un framework
     construido *sobre* otro, que añade opiniones, convenciones y comportamiento
@@ -124,7 +124,7 @@ JSON, un banner de arranque) para cada tipo de servicio. Una CLI complementaria,
 `flywork`, genera proyectos andamiados y arranca toda la construcción del framework.
 «Levantar un microservicio correcto» se convierte en «añadir un starter».
 
-!!! note "Termino clave — reactivo (Mono/Flux)"
+!!! note "Término clave — reactivo (Mono/Flux)"
     De principio a fin, Firefly es reactivo de extremo a extremo: manejadores,
     repositorios, buses y clientes hablan todos el `Mono` (cero o uno) y el `Flux`
     (cero o muchos) de Project Reactor. El preludio los presentó; el capítulo 5 los
@@ -217,7 +217,7 @@ tenga algo sobre lo que crecer.
   dominio, core, data — que se integran sobre contratos, nunca sobre una base de
   datos compartida.
 
-## Pruebalo tu mismo {.exercises}
+## Pruébalo tú mismo {.exercises}
 
 1. **Audita tu propio impuesto.** Enumera las preocupaciones transversales de «El
    impuesto empresarial» que cada uno de tus servicios actuales implementa por
@@ -233,7 +233,7 @@ tenga algo sobre lo que crecer.
    servicios al cruzar una frontera asíncrona o reactiva hasta los logs de una
    llamada aguas abajo? Intenta seguir uno de extremo a extremo.
 
-## Adonde ir ahora
+## Adónde ir ahora
 
 El capítulo 2 genera el andamiaje y arranca tu primer servicio Firefly. Si las
 referencias reactivas a `Mono`/`Flux` de arriba te parecieron rápidas, es algo

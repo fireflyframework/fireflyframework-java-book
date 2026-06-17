@@ -36,7 +36,7 @@ The cast of files, all under `samples/lumen-lending/domain-lending-loan-originat
 - `src/test/java/com/firefly/lumen/domain/saga/RegisterApplicationSagaCompensationTest.java`
   — the headline compensation test.
 - `src/test/java/com/firefly/lumen/domain/saga/RegisterApplicationSagaHappyPathTest.java`
-  — the success-path companion, one of the module's six tests.
+  — the success-path companion. (These four are the saga-relevant files; the module's six tests also include the CQRS-handler and EDA-listener tests from Chapters 10 and 11.)
 
 ## What a saga is, and why a method tree
 

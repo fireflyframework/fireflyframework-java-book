@@ -449,7 +449,7 @@ deliverable, checking your work against the DSL conventions in this chapter.
    "DTI_EXCEEDED"` — placed so it runs before the approval logic. Describe, in one
    sentence, what the engine returns when the breaker trips.
 4. **Sketch the plug-in.** Re-read the illustrative `ProposeOfferHandler` in this chapter
-   and the real one in Chapter 9's domain code. Write three or four sentences naming
+   and the real one in Chapter 10's domain code. Write three or four sentences naming
    exactly which line changes, what new dependency the handler gains, and where the rate
    now comes from.
 5. **Justify the Python compile.** In a short paragraph, argue why compiling
