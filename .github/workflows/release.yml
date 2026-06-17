@@ -25,7 +25,9 @@ jobs:
           cache: maven
 
       - name: Release gate — verify the sample reactor
-        run: mvn -B -ntp -f samples/lumen-lending/pom.xml verify
+        # JDK 21 build → activate the framework's -Pjava21 profile (the parent
+        # defaults to --release 25, which JDK 21 cannot target).
+        run: mvn -B -ntp -f samples/lumen-lending/pom.xml -Pjava21 verify
 
       - name: Install WeasyPrint system libraries
         run: |

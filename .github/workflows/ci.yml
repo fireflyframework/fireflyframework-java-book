@@ -25,7 +25,9 @@ jobs:
           cache: maven
 
       - name: Build & verify the sample reactor
-        run: mvn -B -ntp -f samples/lumen-lending/pom.xml verify
+        # The framework parent defaults to --release 25; JDK 21 cannot target it,
+        # so the LTS leg activates the framework's -Pjava21 profile (release 21).
+        run: mvn -B -ntp -f samples/lumen-lending/pom.xml ${{ matrix.java == '21' && '-Pjava21' || '' }} verify
 
   book:
     name: Build the book (EN + ES)
