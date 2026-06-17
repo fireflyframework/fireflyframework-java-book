@@ -6,21 +6,26 @@
 html{ -webkit-text-size-adjust:100%; }
 body{
   color:var(--ink); background:var(--page);
-  font-family:-apple-system,"Segoe UI",Inter,Roboto,Helvetica,Arial,sans-serif;
-  font-size:1rem; line-height:1.72; margin:0;
+  font-family:"Maven Pro",-apple-system,"Segoe UI",Inter,Roboto,Helvetica,Arial,sans-serif;
+  font-size:1rem; line-height:1.7; margin:0;
   text-rendering:optimizeLegibility; -webkit-font-smoothing:antialiased;
 }
 .chapter{ padding:0 0 2.5rem; }
 
 /* ============ headings ============ */
-h1,h2,h3,h4{ color:var(--ink); line-height:1.22; font-weight:800; }
-.eyebrow{ display:block; color:var(--amber-deep); font-weight:800; letter-spacing:.18em;
+/* Maven Pro tops out at 700 in our embedded statics, so headings use 700 (not
+   800). Tighter line-heights/tracking suit Maven Pro's slightly wide metrics. */
+h1,h2,h3,h4{ font-family:"Maven Pro",-apple-system,"Segoe UI",sans-serif;
+  color:var(--ink); line-height:1.2; font-weight:700; }
+.eyebrow{ display:block; font-family:"Maven Pro",-apple-system,"Segoe UI",sans-serif;
+  color:var(--amber-deep); font-weight:700; letter-spacing:.18em;
   font-size:.72rem; text-transform:uppercase; margin-bottom:.4rem; }
-h1.chtitle{ font-size:2.3rem; line-height:1.08; margin:.1rem 0 1.15rem; color:var(--java-blue-deep);
-  letter-spacing:-.015em; }
-h2{ font-size:1.4rem; font-weight:800; color:#23303A; margin:2rem 0 .7rem;
-  padding-bottom:.35rem; border-bottom:2px solid #F0DEB8; }
-h3{ font-size:1.08rem; font-weight:700; margin:1.35rem 0 .4rem; color:#3a2c14; }
+h1.chtitle{ font-size:2.25rem; line-height:1.06; margin:.1rem 0 1.15rem; color:var(--java-blue-deep);
+  font-weight:700; letter-spacing:-.018em; }
+h2{ font-size:1.38rem; font-weight:700; color:#23303A; margin:2rem 0 .7rem;
+  padding-bottom:.35rem; border-bottom:2px solid #F0DEB8; letter-spacing:-.008em; }
+h3{ font-size:1.08rem; font-weight:600; margin:1.35rem 0 .4rem; color:#3a2c14;
+  letter-spacing:-.004em; }
 h2+p,h3+p{ margin-top:0; }
 
 /* ============ text ============ */
@@ -34,23 +39,27 @@ li{ margin:.28rem 0; }
 li::marker{ color:var(--amber); }
 hr{ border:none; border-top:1px solid var(--rule); margin:1.7rem 0; }
 
-/* inline code — warm tint, Java-blue text */
-code{ background:#F3ECDA; color:#2E5A78; padding:.06em .36em; border-radius:4px;
-  font-family:"SF Mono","JetBrains Mono",Menlo,Consolas,monospace; font-size:.85em;
-  word-break:break-word; }
+/* inline code — warm tint, Java-blue text. JetBrains Mono runs a touch wide,
+   so .82em keeps it level with the Maven Pro body it sits inside. Long tokens
+   (class names, URLs) must wrap rather than push past the trim. */
+code{ background:#F3ECDA; color:#2E5A78; padding:.06em .34em; border-radius:4px;
+  font-family:"JetBrains Mono","SF Mono",Menlo,Consolas,monospace; font-size:.82em;
+  overflow-wrap:anywhere; word-break:break-word; }
 
 /* ============ code listings ============ */
 .listing{ margin:1.2rem 0; }
 .filetab{ display:inline-block; background:#f3e9d2; color:var(--bronze);
-  font:600 .72rem/1 "SF Mono","JetBrains Mono",Menlo,monospace;
+  font:600 .72rem/1 "JetBrains Mono","SF Mono",Menlo,monospace;
   padding:.44rem .72rem; border:1px solid var(--code-border); border-bottom:none;
-  border-radius:8px 8px 0 0; }
+  border-radius:8px 8px 0 0; word-break:break-all; }
+/* code listings — JetBrains Mono. At .76rem the trim (~6.0in text column) holds
+   ~80 mono columns; pre-wrap + overflow-wrap guarantee nothing clips off-page. */
 pre.code{
   margin:0; background:var(--code-bg); border:1px solid var(--code-border);
-  border-radius:0 8px 8px 8px; padding:.85rem 1rem;
-  font-family:"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
-  font-size:.78rem; line-height:1.62; color:#24292f;
-  white-space:pre-wrap; overflow-wrap:anywhere; word-break:normal; tab-size:4;
+  border-radius:0 8px 8px 8px; padding:.85rem 1rem; max-width:100%;
+  font-family:"JetBrains Mono","SF Mono",Menlo,Consolas,monospace;
+  font-size:.76rem; line-height:1.6; color:#24292f;
+  white-space:pre-wrap; overflow-wrap:anywhere; word-break:break-word; tab-size:4;
 }
 .filetab + pre.code{ border-top-left-radius:0; }
 .lcap{ font-size:.76rem; color:var(--muted); margin-top:.45rem; font-style:italic; }
@@ -63,8 +72,12 @@ figcaption{ font-size:.78rem; color:var(--muted); margin-top:.55rem; line-height
 figcaption b,figcaption strong{ color:var(--bronze); }
 
 /* ============ tables ============ */
-table{ width:100%; border-collapse:collapse; margin:1.15rem 0; font-size:.9rem; line-height:1.5; }
-th,td{ border:1px solid #e7dcc4; padding:.5rem .72rem; text-align:left; vertical-align:top; }
+/* fixed layout + word-break keeps wide tables (and long code/URLs in cells)
+   inside the 7.5in trim instead of overflowing the page. */
+table{ width:100%; border-collapse:collapse; margin:1.15rem 0; font-size:.88rem; line-height:1.5;
+  table-layout:fixed; }
+th,td{ border:1px solid #e7dcc4; padding:.5rem .72rem; text-align:left; vertical-align:top;
+  overflow-wrap:anywhere; word-break:break-word; }
 thead th{ background:#FBF6EA; color:#2E5A78; font-weight:700; }
 tbody tr:nth-child(even){ background:#EEF3F7; }
 td code,th code{ background:#f3ecda; }
@@ -74,7 +87,7 @@ td code,th code{ background:#f3ecda; }
   line-height:1.6; border:1px solid var(--rule); border-left-width:4px; background:#f6f8f1; }
 .admonition>:last-child{ margin-bottom:0; }
 .admonition>:first-child{ margin-top:0; }
-.admonition-title{ font-weight:800; font-size:.7rem; letter-spacing:.08em; text-transform:uppercase;
+.admonition-title{ font-weight:700; font-size:.7rem; letter-spacing:.08em; text-transform:uppercase;
   margin:0 0 .35rem; display:flex; align-items:center; gap:.45rem; }
 .adm-ico{ flex:none; width:15px; height:15px; }
 .admonition.note{ background:var(--note-bg); border-color:#cfe3fb; border-left-color:var(--note); }
@@ -97,10 +110,10 @@ h2.exercises::before{ content:"\270E"; color:var(--java-orange); font-size:1.05r
 .toc h1.chtitle{ margin-bottom:1.4rem; }
 .toc-part-group{ margin:1.5rem 0 .4rem; }
 .toc-part-title{                       /* part heading in warm amber, no underline */
-  font-size:1.18rem; font-weight:800; color:var(--amber-deep);
+  font-size:1.18rem; font-weight:700; color:var(--amber-deep);
   margin:1.5rem 0 .55rem; padding:0; border:none; letter-spacing:-.005em;
 }
-.toc-part-eyebrow{ color:var(--bronze); font-weight:800; letter-spacing:.12em;
+.toc-part-eyebrow{ color:var(--bronze); font-weight:700; letter-spacing:.12em;
   font-size:.74rem; text-transform:uppercase; margin-right:.5rem; }
 ol.toc-chapters{ list-style:none; margin:0; padding:0; }
 ol.toc-chapters > li{ margin:.18rem 0; }
@@ -115,7 +128,7 @@ nav#toc > ol{ padding-left:0; }
 nav#toc li{ margin:.22rem 0; }
 nav#toc li.toc-part > a,
 nav#toc li.toc-part{                    /* part labels stand out in warm amber */
-  color:var(--amber-deep); font-weight:800; text-decoration:none;
+  color:var(--amber-deep); font-weight:700; text-decoration:none;
 }
 nav#toc li.toc-part > ol{ margin-top:.2rem; }
 nav#toc li.toc-part > ol a{ font-weight:400; color:var(--ink); }
@@ -124,10 +137,10 @@ nav#toc li.toc-part > ol a{ font-weight:400; color:var(--ink); }
 .part-divider{ padding:0; }
 .part-divider-inner{ text-align:center; }
 .part-eyebrow{                         /* "Part I" */
-  display:block; color:var(--amber-deep); font-weight:800; letter-spacing:.22em;
+  display:block; color:var(--amber-deep); font-weight:700; letter-spacing:.22em;
   font-size:1rem; text-transform:uppercase; margin-bottom:.8rem;
 }
 .part-title{                           /* "Foundations" — centered and large */
-  font-size:2.9rem; line-height:1.1; font-weight:800; color:var(--java-blue-deep);
+  font-size:2.9rem; line-height:1.1; font-weight:700; color:var(--java-blue-deep);
   letter-spacing:-.02em; margin:0; border:none; padding:0;
 }

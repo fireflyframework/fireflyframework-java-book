@@ -38,9 +38,8 @@ CREAM       = "#F5EFE2"   # cream — "Firefly for" + body text on dark
 WARM_COOL   = "#A9B7C2"   # cool warm-muted — publisher / secondary text
 WARM_WARM   = "#C9B896"   # warm warm-muted — subtitle
 
-FONT = "Avenir Next,Avenir,Helvetica Neue,Segoe UI,Helvetica,Arial,sans-serif"
-SERIF = ("Iowan Old Style,Palatino,Palatino Linotype,Georgia,"
-         "Times New Roman,serif")
+FONT = "Maven Pro,Avenir Next,Helvetica Neue,Segoe UI,Arial,sans-serif"
+MONO = "JetBrains Mono,SF Mono,Menlo,Consolas,monospace"
 
 
 # ---------------------------------------------------------------------------
@@ -53,8 +52,8 @@ def marble_diagram(y0: float) -> str:
     L, R = 150, W - 150               # rail extents
     rails = [
         (y0,      "Flux  source",  JAVA_BLUE,   JAVA_BLUE_LT,
-         [200, 360, 560, 760, 960, 1160]),
-        (y0 + 330, "Mono result",  AMBER,       AMBER_LT, [820]),
+         [210, 405, 600, 795, 990, 1185]),
+        (y0 + 330, "Mono result",  AMBER,       AMBER_LT, [750]),
     ]
     # operator box between the two rails (flatMap) — Java-orange hero
     opx, opy = W // 2 - 150, y0 + 120
@@ -63,9 +62,9 @@ def marble_diagram(y0: float) -> str:
         f'fill="{NAVY_2}" stroke="{JAVA_ORANGE}" stroke-width="2.5"/>'
     )
     g.append(
-        f'<text x="{W//2}" y="{opy+54}" text-anchor="middle" fill="{JAVA_ORANGE_LT}" '
-        f'font-size="34" font-weight="600" font-family="{FONT}" '
-        f'letter-spacing="1">flatMap()</text>'
+        f'<text x="{W//2}" y="{opy+55}" text-anchor="middle" fill="{JAVA_ORANGE_LT}" '
+        f'font-size="33" font-weight="700" font-family="{MONO}" '
+        f'letter-spacing="0">flatMap()</text>'
     )
 
     for ry, label, mcol, glint, marbles in rails:
@@ -106,15 +105,15 @@ def marble_diagram(y0: float) -> str:
                 f'r="{r*0.30:.1f}" fill="{glint}" opacity="0.85"/>'
             )
     # faint connecting threads from Flux marbles into the operator
-    for mx in [360, 560, 760]:
+    for mx in [405, 600, 795]:
         g.append(
             f'<path d="M{mx},{y0} C{mx},{y0+60} {W//2},{opy-40} {W//2},{opy}" '
             f'fill="none" stroke="{JAVA_ORANGE}" stroke-width="1.4" opacity="0.32"/>'
         )
-    # thread from operator down to the Mono (amber) marble
+    # thread from operator straight down to the centered Mono (amber) marble
     g.append(
-        f'<path d="M{W//2},{opy+88} C{W//2},{y0+260} 820,{y0+260} 820,{y0+330}" '
-        f'fill="none" stroke="{AMBER}" stroke-width="1.6" opacity="0.42"/>'
+        f'<path d="M{W//2},{opy+88} L{W//2},{y0+330}" '
+        f'fill="none" stroke="{AMBER}" stroke-width="1.6" opacity="0.46"/>'
     )
     return "<g>" + "".join(g) + "</g>"
 
@@ -170,7 +169,7 @@ def build_svg() -> str:
     # hero "Java" — the BIG Java-orange standout word
     p.append(
         f'<text x="{LX-4}" y="{RULE_Y+400}" fill="{JAVA_ORANGE}" '
-        f'font-size="240" font-weight="800" letter-spacing="-4" '
+        f'font-size="246" font-weight="700" letter-spacing="-5" '
         f'font-family="{FONT}">Java</text>'
     )
     # Java-blue separator under "Java"
@@ -182,7 +181,7 @@ def build_svg() -> str:
     p.append(
         f'<text x="{LX}" y="{RULE_Y+548}" fill="{JAVA_BLUE}" '
         f'font-size="92" font-weight="500" font-style="italic" '
-        f'font-family="{SERIF}">by Example</text>'
+        f'font-family="{FONT}">by Example</text>'
     )
 
     # subtitle (two lines) — warm-muted

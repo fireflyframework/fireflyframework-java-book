@@ -137,8 +137,11 @@ def main(argv: list[str] | None = None) -> int:
     contents_label = cfg.get("labels", {}).get("contents", "Contents")
     out_base = args.out or cfg.get("output_basename") or "firefly-java-by-example"
 
-    css_text = [(THEME / "book.css").read_text(), (THEME / "tokens.css").read_text(),
-                (THEME / "pygments.css").read_text()]
+    # fonts.css (base64-embedded @font-face) MUST come first so the Maven Pro /
+    # JetBrains Mono faces are declared before book.css references them. The same
+    # list feeds the EPUB package and the WeasyPrint PDF, so the fonts render in both.
+    css_text = [(THEME / "fonts.css").read_text(), (THEME / "tokens.css").read_text(),
+                (THEME / "pygments.css").read_text(), (THEME / "book.css").read_text()]
     items = _items_from_manifest(cfg, man, contents_label=contents_label)
 
     # ---- EPUB ----
@@ -181,7 +184,7 @@ def main(argv: list[str] | None = None) -> int:
     full = ("<!DOCTYPE html><html><head><meta charset='utf-8'></head><body>"
             + "\n".join(parts_html) + "</body></html>")
     render_pdf(full, base_url=BOOK,
-               css_paths=[THEME / "tokens.css", THEME / "pygments.css",
+               css_paths=[THEME / "fonts.css", THEME / "tokens.css", THEME / "pygments.css",
                           THEME / "book.css", THEME / "print.css"],
                out=DIST / f"{out_base}.pdf")
     n = sum(1 for it in items if it["kind"] in ("front", "chapter"))
