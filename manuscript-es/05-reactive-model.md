@@ -19,7 +19,7 @@ El fichero está en
 `core-lending-loan-origination/src/test/java/com/firefly/lumen/core/ReactiveModelTest.java`.
 Así es como empieza:
 
-::: listing core-lending-loan-origination/src/test/java/com/firefly/lumen/core/ReactiveModelTest.java | Listado 5.1 — los imports que enmarcan todo el capitulo
+::: listing core-lending-loan-origination/src/test/java/com/firefly/lumen/core/ReactiveModelTest.java | Listado 5.1 — los imports que enmarcan todo el capítulo
 package com.firefly.lumen.core;
 
 import org.junit.jupiter.api.Test;
@@ -80,7 +80,7 @@ nada llegaría a ejecutarse.
 Un `Mono` no tiene por qué llevar valor alguno. El vacío es un resultado esperado y de
 primera clase:
 
-::: listing core-lending-loan-origination/src/test/java/com/firefly/lumen/core/ReactiveModelTest.java | Listado 5.3 — completar sin ningun valor
+::: listing core-lending-loan-origination/src/test/java/com/firefly/lumen/core/ReactiveModelTest.java | Listado 5.3 — completar sin ningún valor
     @Test
     void emptyMonoCompletesWithoutAValue() {
         StepVerifier.create(Mono.empty())
@@ -286,7 +286,7 @@ En la pila reactiva, un error no se lanza hacia arriba por una pila de llamadas:
 `onNext`. Es una señal terminal: una vez que un publicador emite `onError`, no emite nada
 más. Lo afirmas con `StepVerifier` igual que un valor.
 
-::: listing core-lending-loan-origination/src/test/java/com/firefly/lumen/core/ReactiveModelTest.java | Listado 5.6 — un error es una senal terminal, afirmada como cualquier otra
+::: listing core-lending-loan-origination/src/test/java/com/firefly/lumen/core/ReactiveModelTest.java | Listado 5.6 — un error es una señal terminal, afirmada como cualquier otra
     @Test
     void errorsArePropagatedAsTerminalSignals() {
         Flux<Integer> failing = Flux.just(1, 2)

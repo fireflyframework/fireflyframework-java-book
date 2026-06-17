@@ -196,6 +196,8 @@ public class LoanApplicationController {
 }
 ```
 
+_This is a deliberately simplified sketch to show the shape; the real `LoanApplicationController` you meet in Chapter 6 lives at `/api/v1/loan-applications` and returns a `LoanApplicationResponse`._
+
 Returning a `Mono<LoanApplicationDto>` instead of a `LoanApplicationDto` tells the
 framework: *here is a recipe for one response; subscribe to it, and when the value
 arrives, write it out* — without parking a thread in the meantime. A collection

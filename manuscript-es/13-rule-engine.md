@@ -469,7 +469,7 @@ el entregable, comprobando tu trabajo contra las convenciones del DSL de este ca
    "DTI_EXCEEDED"`— situada de modo que se ejecute antes de la lógica de aprobación. Describe,
    en una frase, qué devuelve el motor cuando el cortacircuitos se dispara.
 4. **Esboza el enganche.** Vuelve a leer el `ProposeOfferHandler` ilustrativo de este capítulo
-   y el real en el código de dominio del Capítulo 9. Escribe tres o cuatro frases nombrando
+   y el real en el código de dominio del Capítulo 10. Escribe tres o cuatro frases nombrando
    exactamente qué línea cambia, qué nueva dependencia adquiere el manejador y de dónde viene
    ahora el tipo.
 5. **Justifica la compilación a Python.** En un párrafo breve, argumenta por qué compilar

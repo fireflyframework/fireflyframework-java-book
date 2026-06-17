@@ -265,7 +265,7 @@ public class ExperianCreditOperation
 ```
 
 La caché va sobre la misma abstracción de caché agnóstica del proveedor que Firefly usa
-en otros sitios (capítulo 13), de modo que el almacén subyacente — Caffeine en proceso, Redis entre
+en otros sitios (capítulo 7), de modo que el almacén subyacente — Caffeine en proceso, Redis entre
 instancias — es una elección de configuración, no un cambio de código. Un enriquecimiento cacheado nunca
 toca al proveedor, así que nunca dispara un cortocircuito, nunca incurre en una tarifa y se devuelve en
 microsegundos.
@@ -353,7 +353,7 @@ public Mono<CreditReport> trustedCreditReport(ApplicantRef applicant) {
 ```
 
 En un Lumen que poseyera esta capa, esa puerta es precisamente lo que protege la saga del
-capítulo 11: el paso `registerLoanApplication` no procedería con un informe de crédito que
+capítulo 18: el paso `registerLoanApplication` no procedería con un informe de crédito que
 suspendiera la puerta — compensaría, o lo delegaría a un humano, en lugar de
 puntuar una decisión sobre datos en los que la plataforma no confía. El umbral de la puerta y qué
 dimensiones son obligatorias son configuración, de modo que riesgo y cumplimiento pueden apretar el
@@ -490,7 +490,7 @@ código de resiliencia en un manejador.
    `firefly.data.enrichers.creditReport` con un tiempo de espera y un cortocircuito por proveedor. Después explica, en una frase,
    qué se rompería si subieras el cortocircuito al nivel de la cadena en lugar de por proveedor.
 3. **Añade una puerta de calidad a la saga de originación.** Vuelve a leer el paso
-   `registerLoanApplication` del capítulo 11. Describe dónde se situaría una puerta `qualityEngine.assess(...)`
+   `registerLoanApplication` del capítulo 18. Describe dónde se situaría una puerta `qualityEngine.assess(...)`
    sobre el informe de crédito en esa cadena reactiva, y qué debería hacer la saga
    — proceder, compensar o escalar — cuando la puerta falla. ¿Qué propiedad `firefly.*`
    poseería riesgo?
