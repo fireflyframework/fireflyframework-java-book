@@ -6,6 +6,17 @@ section matching a `v*.*.*` tag as the GitHub Release notes.
 
 ## [Unreleased]
 
+## [26.09.01] — 2026-09-24
+
+### Fixed
+
+- Wrap ordinary fenced code blocks in PDF and EPUB, matching the named listings, so long lines remain readable.
+- Use JDK 25 for the companion application gates, matching the published framework dependencies.
+- Install the book-tooling test dependency and pin the renderer dependencies.
+- Validate both English and Spanish listings and run the tooling tests before publishing all four download formats.
+
+The manuscript and companion application content are unchanged from the previous edition.
+
 ## [26.06.01] — 2026-06-17
 
 ### Added — first complete edition (English + Spanish)

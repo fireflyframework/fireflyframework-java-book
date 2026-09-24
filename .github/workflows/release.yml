@@ -17,17 +17,16 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Set up JDK 21
+      - name: Set up JDK 25
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: 21
+          java-version: 25
           cache: maven
 
       - name: Release gate — verify the sample reactor
-        # JDK 21 build → activate the framework's -Pjava21 profile (the parent
-        # defaults to --release 25, which JDK 21 cannot target).
-        run: mvn -B -ntp -f samples/lumen-lending/pom.xml -Pjava21 verify
+        # Published framework dependencies target Java 25 bytecode.
+        run: mvn -B -ntp -f samples/lumen-lending/pom.xml verify
 
       - name: Install WeasyPrint system libraries
         run: |
@@ -40,13 +39,21 @@ jobs:
         run: |
           python3 -m venv build/.venv
           ./build/.venv/bin/python -m pip install --upgrade pip
-          ./build/.venv/bin/pip install "weasyprint>=60" markdown pygments pyyaml cairosvg
+          ./build/.venv/bin/pip install -r build/requirements.txt
 
       - name: Build the English edition
         run: ./build/build-book.sh --config book.yaml
 
       - name: Build the Spanish edition
         run: ./build/build-book.sh --config book.es.yaml
+
+      - name: Run the book-tooling tests
+        run: ./build/.venv/bin/python -m pytest tests -q
+
+      - name: Verify English and Spanish code listings against the sample reactor
+        run: |
+          ./build/.venv/bin/python build/verify_code.py manuscript samples/lumen-lending
+          ./build/.venv/bin/python build/verify_code.py manuscript-es samples/lumen-lending
 
       - name: Extract release notes from the changelog
         env:
@@ -78,6 +85,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           body_path: release-notes.md
+          draft: true
           files: |
             dist/firefly-java-by-example.epub
             dist/firefly-java-by-example.pdf
