@@ -37,7 +37,7 @@ hr{ border:none; border-top:1px solid var(--rule); margin:1.7rem 0; }
 /* inline code — warm tint, firefly-green text */
 code{ background:#f3ecda; color:#2c6e22; padding:.06em .36em; border-radius:4px;
   font-family:"SF Mono","JetBrains Mono",Menlo,Consolas,monospace; font-size:.85em;
-  word-break:break-word; }
+  word-break:break-all; overflow-wrap:anywhere; }
 
 /* ============ code listings ============ */
 .listing{ margin:1.2rem 0; }
@@ -45,13 +45,15 @@ code{ background:#f3ecda; color:#2c6e22; padding:.06em .36em; border-radius:4px;
   font:600 .72rem/1 "SF Mono","JetBrains Mono",Menlo,monospace;
   padding:.44rem .72rem; border:1px solid var(--code-border); border-bottom:none;
   border-radius:8px 8px 0 0; }
-pre.code{
+pre.code,.code pre{
   margin:0; background:var(--code-bg); border:1px solid var(--code-border);
   border-radius:0 8px 8px 8px; padding:.85rem 1rem;
   font-family:"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
   font-size:.78rem; line-height:1.62; color:#24292f;
-  white-space:pre-wrap; overflow-wrap:anywhere; word-break:normal; tab-size:4;
+  white-space:pre-wrap; overflow-wrap:anywhere; word-break:break-all; tab-size:4;
 }
+.code pre{ border-radius:8px; margin:1.2rem 0; }
+.code pre code{ font:inherit; padding:0; background:none; color:inherit; }
 .filetab + pre.code{ border-top-left-radius:0; }
 .lcap{ font-size:.76rem; color:var(--muted); margin-top:.45rem; font-style:italic; }
 

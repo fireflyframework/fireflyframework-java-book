@@ -30,8 +30,8 @@ h1,h2,h3{ break-after:avoid; }
 p{ orphans:3; widows:3; }
 
 /* nothing may exceed the text column; code wraps instead of clipping */
-img,svg,table,pre.code{ max-width:100%; }
-pre.code{ white-space:pre-wrap; overflow-wrap:anywhere; }
+img,svg,table,pre.code,.code pre{ max-width:100%; }
+pre.code,.code pre{ white-space:pre-wrap; overflow-wrap:anywhere; word-break:break-all; }
 
 /* ============ Contents page (print) ============ */
 /* start on its own page; suppress the running head (no chtitle here) */

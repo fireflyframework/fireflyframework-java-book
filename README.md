@@ -17,7 +17,7 @@ The book is a print-grade EPUB + PDF produced by a self-contained Python (WeasyP
 ```bash
 # one-time
 python3 -m venv build/.venv
-./build/.venv/bin/pip install "weasyprint>=60" markdown pygments pyyaml cairosvg
+./build/.venv/bin/pip install -r build/requirements.txt
 
 # build (macOS — uses the DYLD shim for cairo/pango)
 ./build/run.sh --config book.yaml        # English  -> dist/firefly-java-by-example.{epub,pdf}
@@ -27,16 +27,20 @@ python3 -m venv build/.venv
 ./build/build-book.sh --config book.yaml
 ```
 
-Verify the sample reactor and the listings:
+Use JDK 25 for the companion application and verify that `mvn -version` reports that JDK. The published framework dependencies used by this sample target Java 25.
+
+Verify the sample reactor, book tooling, and both editions’ listings:
 
 ```bash
 mvn -f samples/lumen-lending/pom.xml verify
+./build/.venv/bin/python -m pytest tests -q
 ./build/.venv/bin/python build/verify_code.py manuscript samples/lumen-lending
+./build/.venv/bin/python build/verify_code.py manuscript-es samples/lumen-lending
 ```
 
 ## Releases
 
-Built editions (EN + ES, EPUB + PDF) are attached to each [GitHub Release](../../releases) on a CalVer (`YY.MM.PATCH`) tag.
+Built editions (EN + ES, EPUB + PDF) are attached to each [GitHub Release](../../releases) on a CalVer (`YY.MM.PATCH`) tag. The release workflow prepares a draft with all four files; publish the draft after reviewing the rendered editions.
 
 ## Scope
 
