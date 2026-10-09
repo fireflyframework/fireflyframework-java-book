@@ -1,7 +1,7 @@
 """Verify that every ``::: listing <label>`` whose label ends in .java / .xml is
 a verbatim slice of the file ``<reactor>/<label>`` in the built Maven reactor.
 
-This is the load-bearing guarantee of *Firefly for Java by Example*: the code on
+This is the load-bearing guarantee of *jafly by example*: the code on
 the page is exactly the code that compiles and runs in the sample reactor, never
 a hand-edited paraphrase that has silently drifted.
 

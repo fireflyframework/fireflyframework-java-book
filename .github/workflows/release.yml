@@ -69,7 +69,7 @@ jobs:
           ' CHANGELOG.md > release-notes.md
           # Fall back to a generic line if the changelog had no matching section.
           if [ ! -s release-notes.md ]; then
-            echo "Firefly for Java by Example — release ${TAG_NAME}." > release-notes.md
+            echo "jafly by example — release ${TAG_NAME}." > release-notes.md
           fi
           echo "----- release-notes.md -----"
           cat release-notes.md

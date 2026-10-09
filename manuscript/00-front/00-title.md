@@ -1,5 +1,5 @@
-# Firefly for Java by Example {.chtitle}
+# jafly by example {.chtitle}
 
-### Reactive Microservices with Spring Boot, WebFlux & the Firefly Framework
+### From Spring Boot to a connected enterprise architecture
 
 **Firefly Software Foundation**

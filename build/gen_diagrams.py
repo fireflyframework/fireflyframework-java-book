@@ -1,4 +1,4 @@
-"""Generate the on-brand inline concept diagrams for *Firefly for Rust by Example*.
+"""Generate the on-brand inline concept diagrams for *jafly by example*.
 
 These are the in-text technical figures (NOT the chapter openers — see
 ``gen_openers.py`` for those). Each diagram is a self-contained ``<figure class="fig">``
@@ -7,14 +7,14 @@ event-sourcing and saga chapters already embed.
 
 Design language (shared with the cover, the openers, and ``theme/tokens.css``):
 
-  * Cards are rounded rects ``rx=9..10``, cream fill ``#fdf6ea`` (or ``#fffaf0``),
-    stroke ``#e0cda8`` width ``1.5``. Accent/highlight cards use fill ``#fff6e6``
-    stroke ``#e0b96a``.
-  * Connectors are rust ``#d4793a`` ``stroke-width=3`` with arrowheads drawn as
+  * Cards are rounded rects ``rx=9..10``, cream fill ``#f3f1eb`` (or ``#ffffff``),
+    stroke ``#bfb8ab`` width ``1.5``. Accent/highlight cards use fill ``#fff0d9``
+    stroke ``#ffb34a``.
+  * Connectors are rust ``#855414`` ``stroke-width=3`` with arrowheads drawn as
     explicit ``<polygon>`` triangles (never ``<marker>``).
-  * Titles ``#2a1d10`` / ``#3a2a1c`` in the sans stack; sub-labels ``#7a6450``
-    smaller; code/type tokens in the mono stack. Gold accents ``#f6a821`` /
-    ``#ffc24a`` used sparingly.
+  * Titles ``#10110f`` / ``#272820`` in the sans stack; sub-labels ``#62645b``
+    smaller; code/type tokens in the mono stack. Gold accents ``#ffb34a`` /
+    ``#ffb34a`` used sparingly.
 
 WeasyPrint SVG constraints (violating these breaks PDF rendering):
 
@@ -29,7 +29,8 @@ the whole set looking like one family: nothing overlaps because positions are
 computed from a few constants, not hand-tuned per figure.
 
 Run:  python build/gen_diagrams.py     (writes art/diagrams/*.svg, bare SVG)
-The book EMBEDS the inline ``figure_*()`` strings; the bare files are for preview.
+These legacy concept previews are not included in the Java manifests.
+Do not insert them into the manuscript without a separate technical review.
 """
 from __future__ import annotations
 
@@ -40,26 +41,26 @@ from xml.sax.saxutils import escape as _xml_escape
 ART = Path(__file__).resolve().parents[1] / "art" / "diagrams"
 
 # --- palette (mirrors tokens.css + the existing inline figures) --------------
-FIELD    = "#fdf6ea"   # cream card fill
-FIELD2   = "#fffaf0"   # lighter cream card fill
-ACCENT   = "#fff6e6"   # highlight/accent card fill
-ACCENT_S = "#e0b96a"   # highlight/accent card stroke
-CARD_S   = "#e0cda8"   # default card stroke
-RUST     = "#d4793a"   # connectors, accent stroke
-RUST_D   = "#b5531f"   # deeper rust (arrowheads/emphasis)
-AMBER    = "#f6a821"
-AMBER_B  = "#ffc24a"
+FIELD    = "#f3f1eb"   # cream card fill
+FIELD2   = "#ffffff"   # lighter cream card fill
+ACCENT   = "#fff0d9"   # highlight/accent card fill
+ACCENT_S = "#ffb34a"   # highlight/accent card stroke
+CARD_S   = "#bfb8ab"   # default card stroke
+RUST     = "#855414"   # connectors, accent stroke
+RUST_D   = "#855414"   # deeper rust (arrowheads/emphasis)
+AMBER    = "#ffb34a"
+AMBER_B  = "#ffb34a"
 GREEN    = "#1f8a4c"   # query / success accent (matches admin "green" badges)
 GREEN_BG = "#ecf9f0"
 BLUE     = "#2563c9"   # command / note accent (matches admin "blue" badges)
 BLUE_BG  = "#eef4ff"
 RED      = "#b03a2e"   # failure / compensation (matches existing saga figs)
 RED_BG   = "#fdecea"
-TITLE    = "#2a1d10"   # card titles
-TITLE2   = "#3a2a1c"   # secondary titles
-SUB      = "#7a6450"   # sub-labels
-LANE_BG  = "#f7ecd8"   # swimlane background
-LANE_S   = "#e6d4b0"   # swimlane stroke
+TITLE    = "#10110f"   # card titles
+TITLE2   = "#272820"   # secondary titles
+SUB      = "#62645b"   # sub-labels
+LANE_BG  = "#f3f1eb"   # swimlane background
+LANE_S   = "#bfb8ab"   # swimlane stroke
 
 FONT = "Avenir Next,Avenir,Helvetica Neue,Helvetica,Arial,sans-serif"
 MONO = "SF Mono,JetBrains Mono,Menlo,Consolas,monospace"
@@ -100,7 +101,7 @@ def card(x, y, w, h, title, *, sub=None, mono=False, accent=False,
     out = [
         # soft drop shadow plate, then the card
         f'<rect x="{x:.1f}" y="{y + 2.5:.1f}" width="{w:.1f}" height="{h:.1f}" '
-        f'rx="9" fill="#d9c4a3" opacity="0.22"/>',
+        f'rx="9" fill="#bfb8ab" opacity="0.22"/>',
         f'<rect x="{x:.1f}" y="{y:.1f}" width="{w:.1f}" height="{h:.1f}" rx="9" '
         f'fill="{f}" stroke="{s}" stroke-width="1.5"/>',
         f'<text x="{x + w / 2:.1f}" y="{ty:.1f}" text-anchor="middle" '
@@ -772,7 +773,7 @@ def fig_openapi():
     b.append(arrow(224, 175, 318, 130, label=None))
     # spec card with little "lines"
     b.append(f'<rect x="320" y="80" width="120" height="92" rx="9" '
-             f'fill="#d9c4a3" opacity="0.22"/>')
+             f'fill="#bfb8ab" opacity="0.22"/>')
     b.append(f'<rect x="320" y="78" width="120" height="92" rx="9" '
              f'fill="{ACCENT}" stroke="{ACCENT_S}" stroke-width="1.5"/>')
     b.append(f'<rect x="338" y="94" width="84" height="9" rx="4.5" fill="{RUST}"/>')

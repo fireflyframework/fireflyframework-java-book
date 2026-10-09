@@ -1,10 +1,23 @@
 # Changelog
 
-All notable changes to *Firefly for Java by Example* are documented here.
+All notable changes to *jafly by example* are documented here.
 The project uses CalVer (`YY.MM.PATCH`). The `release.yml` workflow extracts the
 section matching a `v*.*.*` tag as the GitHub Release notes.
 
 ## [Unreleased]
+
+### Changed
+
+- Adopt the shared Framework by Firefly identity for English and Spanish front and back covers.
+- Introduce *jafly by example* as the collection title across both editions, with localized enterprise-architecture subtitles. Existing package identifiers and download filenames remain unchanged.
+- Place PDF covers on full trim pages without running headers or page numbers.
+- Include localized front and back cover documents in EPUB reading order, and retain chapter navigation.
+- Include publisher metadata in both formats and rights metadata in EPUB.
+- Replace the retired cover generator with canonical artwork validation and import.
+- Apply the shared logo and palette to title pages, part dividers and chapter openers.
+- Render localized chapter and prelude titles when the manuscript relies on manifest headings.
+
+The technical manuscript and companion application are unchanged.
 
 ## [26.09.01] — 2026-09-24
 
