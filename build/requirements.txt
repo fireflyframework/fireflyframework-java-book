@@ -3,4 +3,5 @@ markdown==3.10.3
 pygments==2.21.0
 pyyaml==6.0.3
 cairosvg==2.9.1
+pillow==12.3.0
 pytest==9.1.1

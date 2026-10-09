@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Linux/CI build entry for *Firefly for Java by Example*. No DYLD shim (on Linux
+# Linux/CI build entry for *jafly by example*. No DYLD shim (on Linux
 # the cairo/pango shared libs resolve via the normal loader). Resolves the repo
 # root, prefers the project venv at build/.venv, and falls back to system
 # python3. Pass-through args go to build.py (e.g. --config book.es.yaml).

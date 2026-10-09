@@ -1,4 +1,4 @@
-"""Build *Firefly for Java by Example* into EPUB + PDF from a book manifest.
+"""Build *jafly by example* into EPUB + PDF from a book manifest.
 
 Defaults to ``book.yaml`` (English). Pass ``--config book.es.yaml`` to build the
 Spanish edition; each manifest names its own ``manuscript_dir``, ``language``,
@@ -12,7 +12,7 @@ import argparse
 import re
 import sys
 from pathlib import Path
-from xml.sax.saxutils import escape
+from xml.sax.saxutils import escape, quoteattr
 import yaml  # PyYAML ships with the framework env; ensure installed in book/.venv
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -87,6 +87,7 @@ def _items_from_manifest(cfg: dict, man: Path, *, contents_label: str) -> list[d
                 "num": ch["num"],
                 "path": str(man / ch["file"]),
                 "part": ptitle_full,
+                "opener": ch.get("opener"),
             })
     return items
 
@@ -118,14 +119,14 @@ def _toc_html(items: list[dict], *, href_fmt: str, label: str) -> str:
     return f'<h1 class="chtitle">{escape(label)}</h1>{body}'
 
 
-def _divider_html(eyebrow: str, ptitle: str) -> str:
+def _divider_html(eyebrow: str, ptitle: str, logo: str = "") -> str:
     eb = f'<span class="eyebrow part-eyebrow">{escape(eyebrow)}</span>' if eyebrow else ""
-    return (f'<div class="part-divider-inner">{eb}'
+    return (f'<div class="part-divider-inner">{logo}{eb}'
             f'<h1 class="part-title">{escape(ptitle)}</h1></div>')
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description="Build Firefly for Java by Example (EPUB + PDF).")
+    ap = argparse.ArgumentParser(description="Build jafly by example (EPUB + PDF).")
     ap.add_argument("--config", default="book.yaml",
                     help="Manifest file at the repo root (default: book.yaml).")
     ap.add_argument("--out", default=None,
@@ -141,44 +142,106 @@ def main(argv: list[str] | None = None) -> int:
                 (THEME / "pygments.css").read_text()]
     items = _items_from_manifest(cfg, man, contents_label=contents_label)
 
+    covers = []
+    for kind, key, label_key, default_label in (
+        ("cover", "cover_png", "cover", "Cover"),
+        ("backcover", "back_cover_png", "back_cover", "Back cover"),
+    ):
+        if not cfg.get(key):
+            continue
+        path = BOOK / cfg[key]
+        if not path.is_file():
+            raise FileNotFoundError(f"Required {kind} artwork is missing: {path}")
+        label = cfg.get("labels", {}).get(label_key, default_label)
+        alt = cfg.get(label_key + "_alt", f"{label}: {cfg['title']}")
+        covers.append((kind, path, label, alt))
+
+    interior_assets = {}
+    if cfg.get("interior_logo"):
+        interior_assets["brand-logo"] = BOOK / cfg["interior_logo"]
+    for it in items:
+        if it.get("opener"):
+            interior_assets[f'opener-{it["id"]}'] = BOOK / it["opener"]
+    for path in interior_assets.values():
+        if not path.is_file():
+            raise FileNotFoundError(f"Required interior artwork is missing: {path}")
+
+    def interior_image(key: str, *, pdf: bool = False) -> str:
+        if key not in interior_assets:
+            return ""
+        path = interior_assets[key]
+        src = path.as_uri() if pdf else f"art/{key}{path.suffix}"
+        cls = "brand-logo" if key == "brand-logo" else "chapter-opener"
+        alt = "jafly by Firefly" if key == "brand-logo" else ""
+        return f'<img class="{cls}" src={quoteattr(src)} alt={quoteattr(alt)}/>'
+
     # ---- EPUB ----
     epub = EpubBuilder(title=cfg["title"], author=cfg["author"], language=cfg["language"],
-                       identifier=cfg["identifier"], css=css_text)
-    cover_png = BOOK / cfg["cover_png"]
-    if cover_png.exists():
-        epub.add_file(cover_png, "art/cover.png", "cover-img", properties="cover-image")
+                       identifier=cfg["identifier"], css=css_text,
+                       publisher=cfg.get("publisher", ""), rights=cfg.get("rights", ""),
+                       contents_title=contents_label)
+    for key, path in interior_assets.items():
+        epub.add_file(path, f"art/{key}{path.suffix}", key)
+    cover_docs = {}
+    for kind, path, label, alt in covers:
+        href = f"art/{kind}.png"
+        epub.add_file(path, href, f"{kind}-img",
+                      properties="cover-image" if kind == "cover" else "")
+        cover_docs[kind] = Doc(id=kind, title=label, in_nav=False, kind=kind,
+                              xhtml_body=f'<img src="{href}" alt={quoteattr(alt)}/>')
+    if "cover" in cover_docs:
+        epub.add_doc(cover_docs["cover"])
     for it in items:
         if it["kind"] == "toc":
             body = _toc_html(items, href_fmt="{cid}.xhtml", label=contents_label)
             epub.add_doc(Doc(id=it["id"], title=it["title"], xhtml_body=body,
                              in_nav=True, kind="toc"))
         elif it["kind"] == "divider":
-            body = _divider_html(it["eyebrow"], it["ptitle"])
+            body = _divider_html(it["eyebrow"], it["ptitle"], interior_image("brand-logo"))
             epub.add_doc(Doc(id=it["id"], title=it["part"], xhtml_body=body,
                              in_nav=False, kind="divider", part=it["part"]))
         else:  # front | chapter
             body = render_markdown(Path(it["path"]).read_text(encoding="utf-8"), BOOK)
+            if (it["kind"] == "chapter" or it.get("in_nav")) and not re.search(r"<h1(?:\s|>)", body):
+                body = f'<h1 class="chtitle">{escape(it["title"])}</h1>' + body
+            body = interior_image("brand-logo" if it["id"] == "title" else f'opener-{it["id"]}') + body
             epub.add_doc(Doc(id=it["id"], title=it["title"], xhtml_body=body,
                              in_nav=it.get("in_nav", True), kind=it["kind"],
                              part=it.get("part"), num=it.get("num")))
+    if "backcover" in cover_docs:
+        epub.add_doc(cover_docs["backcover"])
     DIST.mkdir(exist_ok=True)
     epub.build(DIST / f"{out_base}.epub")
 
     # ---- PDF (single concatenated document) ----
     parts_html: list[str] = []
-    if cover_png.exists():
-        parts_html.append(f'<div class="cover-page"><img src="{cfg["cover_png"]}"/></div>')
+    def pdf_cover(kind: str) -> str:
+        for cover_kind, path, label, alt in covers:
+            if cover_kind == kind:
+                return (f'<div class="cover-page {kind}"><img src={quoteattr(path.as_uri())} '
+                        f'alt={quoteattr(alt)}/></div>')
+        return ""
+
+    parts_html.append(pdf_cover("cover"))
     for it in items:
         if it["kind"] == "toc":
             body = _toc_html(items, href_fmt="#{cid}", label=contents_label)
             parts_html.append(f'<section class="toc" id="{it["id"]}">{body}</section>')
         elif it["kind"] == "divider":
-            body = _divider_html(it["eyebrow"], it["ptitle"])
+            body = _divider_html(it["eyebrow"], it["ptitle"], interior_image("brand-logo", pdf=True))
             parts_html.append(f'<section class="part-divider" id="{it["id"]}">{body}</section>')
         else:  # front | chapter
             body = render_markdown(Path(it["path"]).read_text(encoding="utf-8"), BOOK)
+            if (it["kind"] == "chapter" or it.get("in_nav")) and not re.search(r"<h1(?:\s|>)", body):
+                body = f'<h1 class="chtitle">{escape(it["title"])}</h1>' + body
+            body = interior_image("brand-logo" if it["id"] == "title" else f'opener-{it["id"]}', pdf=True) + body
             parts_html.append(f'<section class="chapter" id="{it["id"]}">{body}</section>')
-    full = ("<!DOCTYPE html><html><head><meta charset='utf-8'></head><body>"
+    parts_html.append(pdf_cover("backcover"))
+    full = (f'<!DOCTYPE html><html lang={quoteattr(cfg["language"])}><head><meta charset="utf-8">'
+            f'<title>{escape(cfg["title"])}</title>'
+            f'<meta name="author" content={quoteattr(cfg["author"])}>'
+            f'<meta name="publisher" content={quoteattr(cfg.get("publisher", ""))}>'
+            '</head><body>'
             + "\n".join(parts_html) + "</body></html>")
     render_pdf(full, base_url=BOOK,
                css_paths=[THEME / "tokens.css", THEME / "pygments.css",

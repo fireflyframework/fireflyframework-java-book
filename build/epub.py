@@ -37,6 +37,9 @@ class EpubBuilder:
     docs: list[Doc] = field(default_factory=list)
     assets: list[Asset] = field(default_factory=list)
     cover_asset_id: str | None = None
+    publisher: str = ""
+    rights: str = ""
+    contents_title: str = "Contents"
 
     def add_doc(self, d: Doc) -> None: self.docs.append(d)
     def add_asset(self, a: Asset) -> None: self.assets.append(a)
@@ -51,12 +54,14 @@ class EpubBuilder:
     def _xhtml(self, d: Doc) -> str:
         links = "\n".join(f'<link rel="stylesheet" href="style{i}.css"/>'
                           for i in range(len(self.css)))
-        sec_class = {"toc": "toc", "divider": "part-divider"}.get(d.kind, "chapter")
+        sec_class = {"toc": "toc", "divider": "part-divider",
+                     "cover": "cover-page", "backcover": "cover-page"}.get(d.kind, "chapter")
+        semantics = {"cover": ' epub:type="cover"', "backcover": ' epub:type="backmatter"'}.get(d.kind, "")
         return (f'<?xml version="1.0" encoding="utf-8"?>\n'
                 f'<html xmlns="http://www.w3.org/1999/xhtml" '
                 f'xmlns:epub="http://www.idpf.org/2007/ops" lang="{self.language}">\n'
                 f'<head><meta charset="utf-8"/><title>{escape(d.title)}</title>\n{links}\n</head>\n'
-                f'<body><section class="{sec_class}" id="{escape(d.id)}">'
+                f'<body><section class="{sec_class}" id="{escape(d.id)}"{semantics}>'
                 f'{d.xhtml_body}</section></body>\n</html>\n')
 
     def _nav(self) -> str:
@@ -90,8 +95,8 @@ class EpubBuilder:
         return ('<?xml version="1.0" encoding="utf-8"?>\n'
                 '<html xmlns="http://www.w3.org/1999/xhtml" '
                 'xmlns:epub="http://www.idpf.org/2007/ops"><head><meta charset="utf-8"/>'
-                '<title>Contents</title></head><body>'
-                f'<nav epub:type="toc" id="toc"><h1>Contents</h1><ol>{items}</ol></nav>'
+                f'<title>{escape(self.contents_title)}</title></head><body>'
+                f'<nav epub:type="toc" id="toc"><h1>{escape(self.contents_title)}</h1><ol>{items}</ol></nav>'
                 '</body></html>')
 
     def _opf(self) -> str:
@@ -117,6 +122,8 @@ class EpubBuilder:
                 f'<dc:title>{escape(self.title)}</dc:title>'
                 f'<dc:creator>{escape(self.author)}</dc:creator>'
                 f'<dc:language>{self.language}</dc:language>'
+                f'<dc:publisher>{escape(self.publisher)}</dc:publisher>'
+                f'<dc:rights>{escape(self.rights)}</dc:rights>'
                 f'<meta property="dcterms:modified">{modified}</meta>{cover_meta}</metadata>'
                 f'<manifest>{"".join(man)}</manifest>'
                 f'<spine>{spine}</spine></package>')
