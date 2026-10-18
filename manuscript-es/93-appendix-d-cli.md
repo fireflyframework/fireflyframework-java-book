@@ -6,25 +6,14 @@ escribes Go para usarlo, y este sigue siendo un libro sobre el framework de Java
 
 ## Arrancar el framework
 
-El framework son muchos repositorios, y se compilan en orden de dependencias.
-`flywork setup` los clona todos y los instala en tu repositorio Maven local
-(`~/.m2`) en la secuencia correcta, de modo que `fireflyframework-kernel` se compile
-antes que los módulos que dependen de él, y así sucesivamente subiendo por el grafo.
+El código Java actual vive en el [monorepositorio Jafly](https://github.com/fireflyframework/fireflyframework-jafly). `flywork setup` clona ese repositorio y ejecuta su reactor Maven completo. Maven ordena los módulos; la CLI trata el conjunto como un único repositorio Git. Las copias locales anteriores se conservan.
 
-```text
-$ flywork setup
-Resolving framework dependency graph … 41 repositories, 7 layers
-Layer 1/7  kernel, utils, validators …            installed
-Layer 2/7  observability, cache, eda …            installed
-…
-Layer 7/7  starter-core, starter-domain …         installed
-Done. Framework <version> available in ~/.m2.
+```bash
+flywork setup
+flywork doctor
 ```
 
-Una vez que esto termina, un proyecto que herede de `fireflyframework-parent` o
-importe `fireflyframework-bom` se resuelve completamente sin conexión, que es
-exactamente la razón por la que el reactor de acompañamiento de este libro se
-compila con `mvn -o verify`, sin necesidad de red.
+El parent y el BOM conservan las coordenadas `fireflyframework-parent` y `fireflyframework-bom`. El ejemplo publicado de este libro sigue fijado a su versión documentada del framework. Usa una versión instalada o publicada que coincida; la compilación sin conexión funciona una vez que las dependencias de ese ejemplo están en la caché.
 
 ## Generar el andamiaje de un servicio
 

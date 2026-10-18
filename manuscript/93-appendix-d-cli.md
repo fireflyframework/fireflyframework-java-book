@@ -6,24 +6,14 @@ book about the Java framework.)
 
 ## Bootstrapping the framework
 
-The framework is many repositories, and they build in dependency order. `flywork
-setup` clones them all and installs them to your local Maven repository
-(`~/.m2`) in the right sequence, so that `fireflyframework-kernel` is built before
-the modules that depend on it, and so on up the graph.
+The current Java source lives in the [Jafly monorepo](https://github.com/fireflyframework/fireflyframework-jafly). `flywork setup` clones that checkout and runs its complete Maven reactor. Maven orders the modules; the CLI treats the checkout as one Git repository. Existing older checkouts remain in place.
 
-```text
-$ flywork setup
-Resolving framework dependency graph … 41 repositories, 7 layers
-Layer 1/7  kernel, utils, validators …            installed
-Layer 2/7  observability, cache, eda …            installed
-…
-Layer 7/7  starter-core, starter-domain …         installed
-Done. Framework <version> available in ~/.m2.
+```bash
+flywork setup
+flywork doctor
 ```
 
-Once this completes, a project that inherits `fireflyframework-parent` or imports
-`fireflyframework-bom` resolves entirely offline — which is exactly why the
-companion reactor in this book builds with `mvn -o verify`, no network required.
+The parent and BOM retain the coordinates `fireflyframework-parent` and `fireflyframework-bom`. This book’s published sample remains pinned to its documented framework train. Use a matching installed or published version; offline builds work after that sample’s dependencies have been cached.
 
 ## Scaffolding a service
 
